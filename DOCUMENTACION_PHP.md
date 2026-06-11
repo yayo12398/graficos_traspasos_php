@@ -1047,7 +1047,83 @@ function getJsonBody(): array {
 
 ---
 
-## 13. Notas de implementación importantes
+## 13. Base de datos — solo lectura
+
+Las tres conexiones MySQL (`mysql_cuadrilla`, `mysql_retim`, `mysql_agui`) ejecutan únicamente sentencias `SELECT`. La aplicación **no hace INSERT, UPDATE ni DELETE** sobre ninguna tabla.
+
+Toda la persistencia generada por el usuario se almacena en el sistema de archivos local del servidor:
+
+| Datos | Archivo(s) |
+|---|---|
+| Caché de topología | `data/cache/aguas_abajo_sql.ser` (TTL 7 días) |
+| Caché de demandas | `data/cache/demandas_sql.ser` (TTL 30 días) |
+| Feeders en comisionamiento | `feeders_nuevos/<SLUG>.json` |
+| Evaluaciones VCC | `vcc_evaluaciones/<SLUG>.json` |
+| Ajustes de demanda | `data/ajustes_demanda.json` |
+| Reportes HTML generados | `data/reportes/*.html` |
+
+---
+
+## 14. Despliegue en IIS
+
+### Requisitos del servidor (verificar una vez)
+
+- IIS instalado y corriendo
+- PHP registrado como FastCGI en IIS (confirmado: servidor ya tiene PHP corriendo)
+- Módulo **URL Rewrite** de IIS instalado (necesario para que `/api/*` funcione)
+- Extensión PHP `mysqli` habilitada en `php.ini`
+
+### Proceso de despliegue — 3 pasos
+
+**Paso 1 — Copiar la carpeta**
+
+Copiar `codigo_php/` al servidor. Las carpetas de escritura ya vienen incluidas (vacías, con `.gitkeep`). El propio `index.php` las crea automáticamente si llegaran a faltar.
+
+```
+codigo_php/  →  C:\inetpub\wwwroot\AMEyAO\graficos_traspasos\
+```
+
+**Paso 2 — Permisos IIS (una vez, como Administrador)**
+
+Editar la variable `$base` al inicio del script con la ruta destino real, luego ejecutar:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File setup_permisos.ps1
+```
+
+Otorga permiso de modificación (`(OI)(CI)M`) a `IIS_IUSRS` sobre las 5 carpetas de escritura.
+
+**Paso 3 — Crear `config.php`**
+
+```
+Copiar:  config.example.php  →  config.php
+Editar:  completar host, user, password de cada conexión MySQL
+```
+
+Si `config.php` no existe, la app muestra una página HTML de error con instrucciones (no explota con un 500 genérico).
+
+### Actualizaciones futuras
+
+Solo repetir el Paso 1. Los pasos 2 y 3 no se vuelven a hacer.
+
+### Diagnóstico rápido post-despliegue
+
+```
+GET  /graficos_traspasos/                    → Carga la página principal
+GET  /graficos_traspasos/api/debug/status    → JSON con estado del servidor y caché
+POST /graficos_traspasos/api/reload          → Fuerza recarga del caché desde SQL
+```
+
+| Síntoma | Causa |
+|---|---|
+| 404 en `/api/*` | URL Rewrite no instalado |
+| Página de "Configuración pendiente" | Falta `config.php` |
+| Caché siempre vacío | Sin permisos de escritura en `data/cache/` |
+| Error mysqli | `extension=mysqli` no habilitado en `php.ini` |
+
+---
+
+## 15. Notas de implementación importantes
 
 1. **NaN/Infinity en JSON**: PHP `json_encode` falla con `NAN` o `INF`. Antes de codificar, reemplazar todos los floats no finitos por `null`. Equivalente al `_safe()` y `_json()` de Python.
 
