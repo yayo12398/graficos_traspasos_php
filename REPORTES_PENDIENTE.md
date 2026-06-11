@@ -1,19 +1,11 @@
-# Reportes.php — Plan de Traducción (Pendiente)
+# Reportes.php — Spec de Traducción
 
 ## Estado
-`codigo_php/src/Reportes.php` contiene solo el stub `<?php // Pendiente`.
-El Python fuente (`codigo_python/traspaso/reportes.py`, 2122 líneas) fue leído completo.
-**No hay que re-leer el Python.** Toda la información necesaria está en este documento.
+**COMPLETADO** — `codigo_php/src/Reportes.php` implementado y verificado con paridad total.
+Las tres funciones públicas (`generarReporteHtml`, `generarReporteFeeder`, `generarReporteVcc`)
+están operativas. Este documento se conserva como referencia de las decisiones de traducción.
 
 ---
-
-## Instrucción de reanudación
-
-Para continuar mañana:
-1. Leer este archivo.
-2. Usar un **sub-agente** para escribir `Reportes.php` basándose en la spec de abajo.
-3. Usar otro sub-agente para verificar la traducción.
-4. Agregar `require_once __DIR__ . '/src/Reportes.php';` en `index.php`.
 
 ---
 
