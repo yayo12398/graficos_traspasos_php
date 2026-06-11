@@ -2,15 +2,20 @@
 codigo_php/config.php
 
 # ── Caché PHP (archivos .ser generados en runtime) ──────────
-codigo_php/data/cache/
+codigo_php/data/cache/*
+!codigo_php/data/cache/.gitkeep
 
 # ── Reportes HTML generados ─────────────────────────────────
-codigo_php/data/reportes/
-codigo_php/resultados/
+codigo_php/data/reportes/*
+!codigo_php/data/reportes/.gitkeep
+codigo_php/resultados/*
+!codigo_php/resultados/.gitkeep
 
 # ── Datos de usuario (feeders en comisionamiento, VCC) ──────
 codigo_php/feeders_nuevos/*.json
+!codigo_php/feeders_nuevos/.gitkeep
 codigo_php/vcc_evaluaciones/*.json
+!codigo_php/vcc_evaluaciones/.gitkeep
 
 # ── Python (repo separado, tiene su propio .git) ─────────────
 codigo_python/

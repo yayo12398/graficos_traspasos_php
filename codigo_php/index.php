@@ -1,6 +1,35 @@
 <?php
 declare(strict_types=1);
 
+// ── Verificar config.php ──────────────────────────────────────────────────────
+if (!file_exists(__DIR__ . '/config.php')) {
+    header('Content-Type: text/html; charset=utf-8');
+    http_response_code(503);
+    echo '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Configuración pendiente</title>'
+       . '<style>body{font-family:sans-serif;max-width:600px;margin:80px auto;padding:0 20px}'
+       . 'pre{background:#f4f4f4;padding:12px;border-radius:4px;font-size:.9em}'
+       . '.warn{background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;border-radius:4px}</style></head>'
+       . '<body><h2>&#9888; Aplicación no configurada</h2>'
+       . '<p class="warn">No se encontró el archivo <strong>config.php</strong> con las credenciales de base de datos.</p>'
+       . '<h3>Pasos para configurar:</h3><ol>'
+       . '<li>Copie <code>config.example.php</code> → <code>config.php</code></li>'
+       . '<li>Edite <code>config.php</code> y complete host, usuario y contraseña de cada conexión MySQL</li>'
+       . '<li>Recargue esta página</li>'
+       . '</ol></body></html>';
+    exit;
+}
+
+// ── Crear carpetas de escritura si no existen ─────────────────────────────────
+foreach ([
+    __DIR__ . '/data/cache',
+    __DIR__ . '/data/reportes',
+    __DIR__ . '/feeders_nuevos',
+    __DIR__ . '/vcc_evaluaciones',
+    __DIR__ . '/resultados',
+] as $_dir) {
+    if (!is_dir($_dir)) mkdir($_dir, 0755, true);
+}
+
 require_once __DIR__ . '/src/Datos.php';
 require_once __DIR__ . '/src/Simulacion.php';
 require_once __DIR__ . '/src/Matching.php';
