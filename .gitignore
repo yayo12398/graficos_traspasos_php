@@ -1,0 +1,16 @@
+# ── Credenciales ───────────────────────────────────────────
+codigo_php/config.php
+
+# ── Caché PHP (archivos .ser generados en runtime) ──────────
+codigo_php/data/cache/
+
+# ── Reportes HTML generados ─────────────────────────────────
+codigo_php/data/reportes/
+codigo_php/resultados/
+
+# ── Datos de usuario (feeders en comisionamiento, VCC) ──────
+codigo_php/feeders_nuevos/*.json
+codigo_php/vcc_evaluaciones/*.json
+
+# ── Python (repo separado, tiene su propio .git) ─────────────
+codigo_python/

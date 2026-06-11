@@ -1,0 +1,13 @@
+# Solo si el servidor usa Apache (no IIS).
+# Requiere: AllowOverride All en la config de Apache.
+
+Options -Indexes
+RewriteEngine On
+
+# Archivos y directorios físicos se sirven directamente.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Todo lo demás va al router PHP.
+RewriteRule ^ index.php [L]
