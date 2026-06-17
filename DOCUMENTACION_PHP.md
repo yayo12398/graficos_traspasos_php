@@ -1002,6 +1002,12 @@ Lista todos los ajustes activos enriquecidos con nombre y valor SQL.
 ### GET /api/feeders_nuevos/{nombre}/informe
 **Respuesta:** HTML completo del informe del feeder (para modal).
 
+### GET /api/feeders_nuevos/{nombre}/transferencias/{idx}
+**Parámetros:** `nombre` (path), `idx` (path, int)
+**Respuesta:** `{ok: true, transferencia: {...}}` — objeto completo de la transferencia (para modal de detalle / descarga individual)
+
+> **Nota:** devuelve un wrapper `{ok, transferencia}`, no el objeto directo. El frontend accede como `resp.transferencia`.
+
 ### DELETE /api/feeders_nuevos/{nombre}/transferencias/{idx}
 **Respuesta:** `{ok: true}`
 
@@ -1043,9 +1049,13 @@ Lista todos los ajustes activos enriquecidos con nombre y valor SQL.
   "equipos_cn": [{"nombre":"DBC73621","cn":300,"fraccion":0.18,...}],
   "delta_traspaso_a": 0.0,
   "delta_traspaso_pct": 7.1,
-  "delta_traspaso_modo": "topo"
+  "delta_traspaso_modo": "topo",
+  "numalim_orig": 67890
 }
 ```
+
+`numalim_orig` es opcional. Si se envía, la respuesta incluye `lz_info` con los dispositivos LZ entre el origen y el receptor (`numalim`). Útil cuando la VCC coexiste con un traspaso activo.
+
 **Respuesta:**
 ```json
 {
@@ -1063,7 +1073,12 @@ Lista todos los ajustes activos enriquecidos con nombre y valor SQL.
   "delta_traspaso_a": 0.0,
   "delta_traspaso_pct": 7.1,
   "delta_traspaso_modo": "topo",
-  "alivio_A_peor": 12.9
+  "alivio_A_peor": 12.9,
+  "lz_info": {
+    "tiene_lz": true,
+    "dispositivos": [{"numpos_lz":"DBC108457","tipo":"bilateral","viable":true,...}],
+    "numpos_lz_sel": null
+  }
 }
 ```
 
@@ -1293,7 +1308,56 @@ function getJsonBody(): array {
 
 ---
 
-## 13. Notas de implementación importantes
+## 13. Frontend JS — Funciones LZ (Límites de Zona)
+
+Todas las funciones LZ viven en `templates/index.html`, en el bloque `<script>` principal.
+
+### Estado global LZ
+
+```js
+state.lzVecinos            // [{numpos_lz, tipo, vecinos, equipos_troncal_orig}] del origen actual
+state.selectedNumposLZ     // string|null — dispositivo LZ elegido por el usuario
+state.pendingPreselectDest // int|null    — numalim a pre-seleccionar tras corrimiento
+```
+
+### Funciones
+
+#### `actualizarDestinosLZ(numalim)`
+Llama `GET /api/vecinos_lz/{numalim}`, guarda en `state.lzVecinos` y reconstruye las opciones de `ts.destino` filtrando solo a los vecinos LZ. Muestra en `#lz-dest-info` cuántos vecinos tiene el origen.
+
+Se llama siempre al seleccionar un origen, incluso si el alimentador no tiene NOM_ALIM.
+
+#### `mostrarEquipoCierra(numalimDest)`
+Muestra en `#lz-equipo-cierra` los dispositivos LZ que conectan el origen actual con `numalimDest`. Usa un sistema de scoring para ordenar y colorear cada dispositivo:
+
+| Condición | Score | Badge |
+|---|---|---|
+| `_enIsla === true` | 0 | `success` — "En isla ✓" |
+| `_enIsla === null` | 1 | `secondary` — sin datos |
+| `_enIsla === false` | 2 | `warning` — "Verificar" |
+| `!viable` | 3 | `danger` deshabilitado |
+
+`_enIsla` se determina comparando `equipo_abre` (del selector de equipos) contra `dev.equipos_troncal_orig`.
+
+Al hacer clic en un dispositivo se actualiza `state.selectedNumposLZ` (enviado como `numpos_lz_sel` al simular).
+
+#### `renderSecEquiposInvolucrados(data)`
+Renderiza `#sec-equipos-involucrados` en los resultados. Dos `<details class="card step-card">`:
+1. **Troncal receptor** — equipos de `lz_info.dispositivos[seleccionado].equipos_troncal` con tabla Equipo/Tipo/Observación
+2. **Isla a vigilar** — equipos de `data.equipos_traspasados` + nota de `data._extras.cambio_topologico`
+
+#### `renderPanelLZ(lz, nombreOrig, nombreDest)`
+Renderiza `#panel-lz` en los resultados. Alert con color según viabilidad:
+- `success`: LZ viable y seleccionado
+- `warning`: LZ existe pero ninguno viable, o hay múltiples dispositivos
+- `danger`: `tiene_lz === false` — no hay LZ físico entre los alimentadores
+
+#### `_tipoEquipoTroncal(numpos)` / `_htmlEquiposTroncal(equipos)` / `_htmlTablaEquiposTroncal(equipos)`
+Helpers internos para clasificar y renderizar listas de equipos troncales por prefijo (`REG`→peligro, `ABB/G33/...`→subterráneo 3 ramas, `REC`→reconectador, `DBC/CLB/PPF`→aéreo).
+
+---
+
+## 15. Notas de implementación importantes
 
 1. **NaN/Infinity en JSON**: PHP `json_encode` falla con `NAN` o `INF`. Antes de codificar, reemplazar todos los floats no finitos por `null`. Equivalente al `_safe()` y `_json()` de Python.
 
@@ -1319,3 +1383,7 @@ readfile($ruta);
 ```
 
 10. **Frontend sin cambios**: el archivo `templates/index.html` (con todo el JS/CSS) no requiere modificaciones. Solo hay que asegurarse de que las rutas de la API coincidan exactamente.
+
+11. **`equipo_nombre` vs `equipo_abre`**: el frontend JS siempre envía el equipo como `equipo_nombre` en el body de `/api/simular`. En `/api/guardar_transferencia` y `/api/descargar_html`, el JS lo mapea explícitamente a `equipo_abre` antes de enviar. El backend debe aceptar ambos: `$b['equipo_nombre'] ?? $b['equipo_abre'] ?? ''`.
+
+12. **`_extras` en el frontend**: al recibir la respuesta de `/api/simular`, el JS ensambla `data._extras = {descripcion, cambio_topologico, equipo_cierra}` del estado del DOM en ese momento, antes de llamar a `mostrarResultados()`. `guardarTransferencia()` y `descargarHTML()` usan `sim._extras` (no el DOM en vivo) para preservar los valores al momento de la simulación.
