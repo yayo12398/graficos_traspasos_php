@@ -101,6 +101,81 @@ function gd(): array {
     return $_G;
 }
 
+// Carga lazy de límite de zona (tabla separada, solo para endpoints LZ).
+$_LZ = null;
+function getLz(): array {
+    global $_LZ;
+    if ($_LZ === null) $_LZ = cargarLimiteZona();
+    return $_LZ;
+}
+
+/**
+ * Devuelve info LZ entre dos alimentadores (perspectiva del receptor = numalim_b).
+ * Equivalente a _lz_info_entre() de Python.
+ */
+function _lzInfoEntre(?int $numalimA, ?int $numalimB): array {
+    if ($numalimA === null || $numalimB === null)
+        return ['tiene_lz' => null, 'dispositivos' => []];
+
+    $dfLz  = getLz();
+    $filas = array_values(array_filter(
+        $dfLz,
+        fn($r) => $r['numalim'] === $numalimA && in_array($numalimB, $r['vecinos'], true)
+    ));
+    if (!$filas) return ['tiene_lz' => false, 'dispositivos' => []];
+
+    // Mapa numalim → nom_alim para el campo tercero (solo se construye si hay 3 ramas)
+    $numalimMap = null;
+
+    $dispositivos = [];
+    foreach ($filas as $row) {
+        $d = [
+            'numpos_lz' => $row['numpos_lz'],
+            'tipo'      => $row['tipo'],
+            'excepcion' => (bool)$row['excepcion'],
+        ];
+
+        // Campo "tercero" para subterraneo_3ramas
+        if ($row['tipo'] === 'subterraneo_3ramas') {
+            $terceros = array_values(array_filter($row['vecinos'], fn($v) => $v !== $numalimB));
+            if ($terceros) {
+                $t = $terceros[0];
+                if ($numalimMap === null) {
+                    $numalimMap = [];
+                    foreach (gd()['dfAb'] as $abRow) {
+                        $nm = $abRow['numalim'] ?? null;
+                        if ($nm !== null && !isset($numalimMap[(int)$nm])) {
+                            $numalimMap[(int)$nm] = $abRow['nom_alim'] ?? '';
+                        }
+                    }
+                }
+                $d['tercero'] = [
+                    'numalim' => $t,
+                    'nombre'  => $numalimMap[$t] ?? (string)$t,
+                ];
+            }
+        }
+
+        // Viabilidad desde perspectiva del receptor (numalimB)
+        $bRows = array_values(array_filter(
+            $dfLz,
+            fn($r) => $r['numalim'] === $numalimB && $r['numpos_lz'] === $row['numpos_lz']
+        ));
+        if ($bRows) {
+            $br = $bRows[0];
+            $d['viable']          = (bool)$br['viable'];
+            $d['n_troncal']       = (int)$br['n_troncal'];
+            $d['equipos_troncal'] = (array)$br['equipos_troncal'];
+        } else {
+            $d['viable']          = true;
+            $d['n_troncal']       = 0;
+            $d['equipos_troncal'] = [];
+        }
+        $dispositivos[] = $d;
+    }
+    return ['tiene_lz' => (bool)$dispositivos, 'dispositivos' => $dispositivos];
+}
+
 // Selecciona TDs según modo del body (acepta Python y PHP field names).
 function seleccionarTds(array $dfAb, string $nomAlim, array $b): array {
     $modo = $b['modo'] ?? null;
@@ -447,6 +522,7 @@ if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
         $b['cambio_topologico']  ?? '',
         $b['equipos_traspasados'] ?? null,
         $_ajustesInfo ?: null,
+        $b['lz_info'] ?? null,
     );
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $slug . '.html"');
@@ -460,10 +536,11 @@ if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
 
 // ── POST /api/reload ───────────────────────────────────────────────────────────
 if ($method === 'POST' && $a === 'reload' && !$b0) {
-    global $_G;
+    global $_G, $_LZ;
     cargarAguasAbajo(true);
     cargarDemandas(true);
-    $_G = null;
+    cargarLimiteZona(true);
+    $_G = null; $_LZ = null;
     jsonOk(['message' => 'Caché recargado']);
 }
 
@@ -533,8 +610,9 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     $tds = seleccionarTds($dfAb, $nomOrig, $b);
     if (empty($tds)) jsonErr('Sin TDs para la selección indicada');
 
-    $equiposTrasp = !empty($b['equipo_abre'])
-        ? equiposEnIsla($dfAb, $tds, $b['equipo_abre'], $nomOrig)
+    $equipoAbre = $b['equipo_nombre'] ?? $b['equipo_abre'] ?? '';
+    $equiposTrasp = ($equipoAbre !== '')
+        ? equiposEnIsla($dfAb, $tds, $equipoAbre, $nomOrig)
         : [];
 
     $isla  = infoIsla($tds, $nomOrig, $dfAb);
@@ -597,6 +675,17 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $numalimTrafoDest = $numalimTN ?? null;
     }
 
+    // LZ info entre origen y destino
+    $lzInfo = _lzInfoEntre($nOrig, $nDest ?? null);
+    $numposLzSel = $b['numpos_lz_sel'] ?? null;
+    if ($numposLzSel && $lzInfo['tiene_lz']) {
+        foreach ($lzInfo['dispositivos'] as &$_d) {
+            $_d['seleccionado'] = ($_d['numpos_lz'] === $numposLzSel);
+        }
+        unset($_d);
+    }
+    $lzInfo['numpos_lz_sel'] = $numposLzSel;
+
     // Generar reporte HTML
     $dir  = __DIR__ . '/data/reportes';
     if (!is_dir($dir)) mkdir($dir, 0755, true);
@@ -611,18 +700,21 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         null,
         $trafoOrig, $trafoDest,
         $isla['detalle_tds']     ?? [],
-        $b['equipo_abre']        ?? '',
+        $equipoAbre,
         $b['escenario']          ?? 'normal',
         $b['equipo_cierra']      ?? '',
         null,
         $dfSimMam, $trafoOrigMam, $trafoDestMam,
         $b['cambio_topologico']  ?? '',
         $equiposTrasp,
+        null,
+        $lzInfo,
     );
 
     // Respuesta en formato Python plano
     jsonPy([
         'ok'                  => true,
+        'lz_info'             => $lzInfo,
         'equipos_traspasados' => $equiposTrasp,
         'nombre_orig'         => $nomOrig,
         'nombre_dest'         => $nomDest,
@@ -660,6 +752,58 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'serie_raw_trafo_dest'=> serieRawDeFila($trafoDestRowRaw ?? null),
         'reporte_url'         => '/data/reportes/' . $slug . '.html',
     ]);
+}
+
+// ── GET /api/vecinos_lz/{numalim} ─────────────────────────────────────────────
+// Dispositivos LZ del alimentador con vecinos, viabilidad y equipos troncales.
+if ($method === 'GET' && $a === 'vecinos_lz' && $b0 && !$b1) {
+    $numalim = (int)$b0;
+    $dfLz    = getLz();
+    // Mapa numalim → nom_alim para enriquecer vecinos
+    ['dfAb' => $dfAb] = gd();
+    $numalimMap = [];
+    foreach ($dfAb as $row) {
+        $nm = $row['numalim'] ?? null;
+        if ($nm !== null && !isset($numalimMap[(int)$nm])) $numalimMap[(int)$nm] = $row['nom_alim'] ?? '';
+    }
+
+    $filas     = array_values(array_filter($dfLz, fn($r) => $r['numalim'] === $numalim));
+    $resultado = [];
+    foreach ($filas as $row) {
+        $vecinos = [];
+        foreach ($row['vecinos'] as $v) {
+            $vRows = array_values(array_filter(
+                $dfLz,
+                fn($r) => $r['numalim'] === $v && $r['numpos_lz'] === $row['numpos_lz']
+            ));
+            if ($vRows) {
+                $vr = $vRows[0];
+                $vecinos[] = [
+                    'numalim'         => $v,
+                    'nom_alim'        => $numalimMap[$v] ?? (string)$v,
+                    'viable'          => (bool)$vr['viable'],
+                    'n_troncal'       => (int)$vr['n_troncal'],
+                    'equipos_troncal' => (array)$vr['equipos_troncal'],
+                ];
+            } else {
+                $vecinos[] = [
+                    'numalim'         => $v,
+                    'nom_alim'        => $numalimMap[$v] ?? (string)$v,
+                    'viable'          => true,
+                    'n_troncal'       => 0,
+                    'equipos_troncal' => [],
+                ];
+            }
+        }
+        $resultado[] = [
+            'numpos_lz'            => $row['numpos_lz'],
+            'tipo'                 => $row['tipo'],
+            'excepcion'            => (bool)$row['excepcion'],
+            'equipos_troncal_orig' => $row['equipos_troncal'],
+            'vecinos'              => $vecinos,
+        ];
+    }
+    jsonPy($resultado);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -822,8 +966,9 @@ if ($method === 'POST' && $a === 'feeders_nuevos' && $b0 && $b1 === 'transferenc
     $tds = seleccionarTds($dfAb, $nomOrig, $b);
     if (empty($tds)) jsonErr('Sin TDs para la selección indicada');
 
-    $equiposTrasp = !empty($b['equipo_abre'])
-        ? equiposEnIsla($dfAb, $tds, $b['equipo_abre'], $nomOrig) : [];
+    $equipoAbre2  = $b['equipo_nombre'] ?? $b['equipo_abre'] ?? '';
+    $equiposTrasp = ($equipoAbre2 !== '')
+        ? equiposEnIsla($dfAb, $tds, $equipoAbre2, $nomOrig) : [];
 
     $isla  = infoIsla($tds, $nomOrig, $dfAb);
     $nOrig = numalimDeNomAlim($dfAb, $nomOrig);
@@ -872,7 +1017,7 @@ if ($method === 'POST' && $a === 'feeders_nuevos' && $b0 && $b1 === 'transferenc
         $trafoOrig, $trafoDest, $trafoOrigMam, $trafoDestMam,
         $mesesSel,
         $isla['detalle_tds']  ?? [],
-        $b['equipo_abre']     ?? '',
+        $equipoAbre2,
         $b['equipo_cierra']   ?? '',
         $b['escenario']       ?? 'normal',
         null,
@@ -892,7 +1037,7 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && $b1 === 'transferenci
         if (($t['idx'] ?? null) === $idx) { $found = $t; break; }
     }
     if ($found === null) jsonErr("Transferencia $idx no existe", 404);
-    jsonPy($found);
+    jsonPy(['ok' => true, 'transferencia' => $found]);
 }
 
 // ── DELETE /api/feeders_nuevos/{nombre}/transferencias/{idx} ──────────────────
@@ -1152,6 +1297,12 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
         $result['pct_max_alim_sens']  = $pctMaxSens;
         $result['mes_max_alim_sens']  = $mesMaxSens;
     }
+
+    // lz_info: disponible cuando hay traspaso simultáneo con origen conocido.
+    // El receptor es siempre $numalim; el origen es opcional en el body.
+    $numalimOrig = isset($b['numalim_orig']) ? (int)$b['numalim_orig'] : null;
+    $result['lz_info'] = _lzInfoEntre($numalimOrig, $numalim);
+
     jsonPy($result);
 }
 

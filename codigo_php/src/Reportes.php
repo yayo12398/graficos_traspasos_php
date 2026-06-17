@@ -93,7 +93,52 @@ details.bloque > .bloque-body {
   border-radius: 3px; padding: 1px 5px; font-size: .78em;
   font-weight: bold; margin-right: 2px;
 }
+details.equip-det { margin: 10px 0; border-radius: 6px; overflow: hidden; }
+details.equip-det > summary {
+  cursor: pointer; padding: 8px 14px; font-weight: 600; font-size: .9em;
+  list-style: none; display: flex; align-items: center; gap: 6px;
+}
+details.equip-det > summary::-webkit-details-marker { display: none; }
+details.equip-det.troncal > summary { background: #e8f4fd; color: #1a5276; border-left: 4px solid #2980b9; }
+details.equip-det.isla    > summary { background: #fef9e7; color: #7d6608; border-left: 4px solid #f39c12; }
+details.equip-det > .equip-det-body { padding: 10px 14px; border: 1px solid #ddd; border-top: none; }
+.eq-tabla { width: 100%; border-collapse: collapse; font-size: .85em; margin: 4px 0; }
+.eq-tabla th, .eq-tabla td { border: 1px solid #e0e0e0; padding: 4px 8px; text-align: left; }
+.eq-tabla thead { background: #f5f5f5; }
+.cnt-badge {
+  display: inline-block; background: #6c757d; color: #fff;
+  border-radius: 10px; padding: 0 7px; font-size: .75em; font-weight: bold; line-height: 1.6;
+}
 CSS;
+}
+
+/** Clasifica un equipo troncal por prefijo: [label, color_hex, nota]. */
+function _repTipoEquipoTroncal(string $numpos): array
+{
+    $p = strtoupper(substr($numpos, 0, 3));
+    if ($p === 'REC') return ['Reconectador', '#c0392b', 'Equipo de protección — puede disparar ante sobrecarga'];
+    if ($p === 'REG') return ['Regulador',    '#c0392b', 'No maniobrable'];
+    if (in_array($p, ['ABB','G33','ORM','SCH','GMT','VIS','CGP','GLT'], true))
+        return ['Subt.',  '#e67e22', '3 ramas — verificar cuál operar'];
+    if (in_array($p, ['DBC','PPF','CLB'], true))
+        return ['Aéreo',  '#7f8c8d', ''];
+    return ['—',          '#95a5a6', ''];
+}
+
+/** Tabla HTML de equipos troncales con tipo y observación. */
+function _repHtmlTablaEquipos(array $equipos): string
+{
+    if (!$equipos) return '';
+    $filas = '';
+    foreach ($equipos as $eq) {
+        [$label, $color, $nota] = _repTipoEquipoTroncal($eq);
+        $bdg   = "<span style=\"background:{$color};color:#fff;border-radius:3px;"
+               . "padding:1px 6px;font-size:.8em;font-weight:bold\">{$label}</span>";
+        $notaH = $nota ? "<span style=\"color:{$color};font-size:.85em\">" . _h($nota) . '</span>' : '';
+        $filas .= '<tr><td><code>' . _h($eq) . "</code></td><td>{$bdg}</td><td>{$notaH}</td></tr>";
+    }
+    return "<table class='eq-tabla'><thead><tr><th>Equipo</th><th>Tipo</th><th>Observación</th></tr></thead>"
+         . "<tbody>{$filas}</tbody></table>";
 }
 
 function _repSafe(mixed $v): mixed {
@@ -559,6 +604,7 @@ function generarReporteHtml(
     string  $cambioTopologico   = '',
     ?array  $equiposTraspasados = null,
     ?array  $ajustesInfo        = null,
+    ?array  $lzInfo             = null,
 ): string {
     $pPct = (float)($isla['p_pct'] ?? 0);
 
@@ -593,19 +639,60 @@ function generarReporteHtml(
         $notaTdsHtml = "<p><em>Se traspasan <strong>$nTdSel</strong> de <strong>$nTdEquipoTotal</strong> TDs aguas abajo del equipo <strong>" . _h(strtoupper($equipoAbre)) . '</strong>.</em></p>';
     }
 
-    $cambioTopoHtml = '';
-    if ($cambioTopologico && trim($cambioTopologico)) {
-        $cambioTopoHtml = "<div class='cambio-topo'><strong>⚡ Cambio topológico previo:</strong> " . _h(trim($cambioTopologico)) . '</div>';
+    // ── Equipos troncales del receptor (lz_info) ────────────────────────────
+    $troncalHtml = '';
+    if (!empty($lzInfo['tiene_lz'])) {
+        $devs   = $lzInfo['dispositivos'] ?? [];
+        $selDev = null;
+        foreach ($devs as $d) { if ($d['seleccionado'] ?? false) { $selDev = $d; break; } }
+        if (!$selDev && $devs) $selDev = $devs[0];
+        $troncal = ($selDev && ($selDev['viable'] ?? true)) ? ($selDev['equipos_troncal'] ?? []) : [];
+        if ($troncal) {
+            $tieneAlerta = (bool)array_filter($troncal, fn($e) => in_array(strtoupper(substr($e,0,3)), ['REC','REG'], true));
+            $icono  = $tieneAlerta ? '⚠ ' : '';
+            $numpos = $lzInfo['numpos_lz_sel'] ?? '';
+            $via    = $numpos ? ' <span style="color:#888;font-size:.85em">vía ' . _h($numpos) . '</span>' : '';
+            $cnt    = '<span class="cnt-badge">' . count($troncal) . '</span>';
+            $desc   = '<p style="color:#555;font-size:.87em;margin:4px 0 8px">Equipos en el camino troncal '
+                    . 'entre el LZ y la cabecera del alimentador receptor. La carga traspasada circulará a través de ellos.</p>';
+            $troncalHtml = "<details class='equip-det troncal' open>"
+                         . "<summary>{$icono}Equipos troncales en alimentador receptor{$via}{$cnt}</summary>"
+                         . "<div class='equip-det-body'>{$desc}" . _repHtmlTablaEquipos($troncal) . "</div>"
+                         . "</details>";
+        }
     }
 
-    $inversionHtml = '';
+    // ── Equipos en isla a vigilar (inversión de flujo + cambio topológico) ──
+    $invInner  = '';
+    $topoInner = '';
     if (!empty($equiposTraspasados)) {
-        $badges = implode(' ', array_map(
-            fn($e) => "<span class='badge-eq-tipo'>" . _h($e['tipo']) . "</span> <code>" . _h($e['nombre']) . "</code>",
+        $filasInv = implode('', array_map(
+            fn($e) => '<tr><td><code>' . _h($e['nombre']) . "</code></td>"
+                    . "<td><span class='badge-eq-tipo'>" . _h($e['tipo']) . "</span></td></tr>",
             $equiposTraspasados
         ));
-        $inversionHtml = "<div class='inversion-flujo'><strong>↔ Posible inversión de flujo:</strong> $badges"
-            . "<p class='nota'>Estos equipos quedan dentro de la isla traspasada y recibirán corriente desde la dirección opuesta a la habitual. Verificar si aplica.</p></div>";
+        $invInner = "<div style='margin-bottom:10px'>"
+                  . "<strong style='font-size:.9em'>↔ Posible inversión de flujo</strong>"
+                  . "<table class='eq-tabla' style='margin-top:4px'>"
+                  . "<thead><tr><th>Equipo</th><th>Tipo</th></tr></thead>"
+                  . "<tbody>{$filasInv}</tbody></table>"
+                  . "<p style='color:#555;font-size:.85em;margin:4px 0 0'>Estos equipos quedan dentro "
+                  . "de la isla y recibirán corriente desde la dirección opuesta a la habitual. "
+                  . "Verificar si aplica.</p></div>";
+    }
+    $ct = trim($cambioTopologico ?? '');
+    if ($ct !== '') {
+        $topoInner = "<div><strong style='font-size:.9em'>⚡ Cambio topológico previo</strong>"
+                   . "<p style='margin:4px 0 0'>" . _h($ct) . "</p></div>";
+    }
+    $islaVigilarHtml = '';
+    if ($invInner || $topoInner) {
+        $nItems = count($equiposTraspasados ?? []) + ($topoInner ? 1 : 0);
+        $cnt    = "<span class='cnt-badge'>{$nItems}</span>";
+        $islaVigilarHtml = "<details class='equip-det isla' open>"
+                         . "<summary>Equipos en isla a vigilar{$cnt}</summary>"
+                         . "<div class='equip-det-body'>{$invInner}{$topoInner}</div>"
+                         . "</details>";
     }
 
     $ajustesHtml = '';
@@ -711,8 +798,8 @@ function generarReporteHtml(
   $descHtml
   $escHtml
   $notaTdsHtml
-  $cambioTopoHtml
-  $inversionHtml
+  $troncalHtml
+  $islaVigilarHtml
   $ajustesHtml
 
   <h2>Resumen de la isla</h2>

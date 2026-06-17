@@ -22,9 +22,21 @@ define('D_BASE',  dirname(__DIR__));
 define('D_CACHE', D_BASE . '/data/cache');
 define('D_CFG',   D_BASE . '/config.php');
 
-const TTL_AB         = 604800;   // 7 días en segundos
-const TTL_DEM        = 2592000;  // 30 días en segundos
+const TTL_AB          = 604800;   // 7 días en segundos
+const TTL_DEM         = 2592000;  // 30 días en segundos
+const TTL_LZ          = 604800;   // 7 días — límite de zona
 const TIPOS_INVERSION = ['DBC', 'REC', 'RTS'];
+
+// Dispositivos LZ con registro incorrecto en BD → par correcto según STM oficial.
+const _LZ_EXCEPCIONES = [
+    'DBC37788'  => [7011, 114],   // Independencia ↔ Barros Arana
+    'DBC93154'  => [7011, 113],   // Independencia ↔ Hirmas
+    'ORM85783'  => [7011, 114],   // Independencia ↔ Barros Arana
+    'ORM97066'  => [3117, 7011],  // Mapocho ↔ Independencia
+    'SCH90623'  => [114,  7011],  // Barros Arana ↔ Independencia
+    'DBC108457' => [2032, 5721],  // S.Pablo ↔ Comendador
+    'DBC108720' => [5721, 442],   // Comendador ↔ Rodas
+];
 
 @mkdir(D_CACHE, 0755, true);
 
@@ -623,4 +635,106 @@ function nombreDisplayAlim(array $row): string
     $bar = trim((string)($row['barra_alim'] ?? ''));
     if ($bar !== '' && !in_array(strtolower($bar), ['nan', 'none'])) return $bar;
     return isset($row['numalim']) ? (string)$row['numalim'] : '—';
+}
+
+/**
+ * Carga meyg.maniobras_rapidas_limite_zona y construye un array plano de registros LZ.
+ *
+ * Cada registro: numpos_lz, numalim, vecinos[], tipo, excepcion, viable, n_troncal, equipos_troncal[]
+ *
+ * - viable = (n_troncal > 0): hay troncal en el receptor, el traspaso es físicamente posible.
+ * - equipos_troncal: camino desde el LZ hasta la cabecera del receptor (perspectiva del receptor).
+ * - Los dispositivos en _LZ_EXCEPCIONES se descartan de BD y se reemplazan por pares correctos.
+ *
+ * TTL caché: 7 días.
+ * Equivalente a cargar_limite_zona_sql() de Python.
+ */
+function cargarLimiteZona(bool $force = false): array
+{
+    $cacheKey = 'limite_zona_sql';
+    if (!$force && _cacheValida($cacheKey, TTL_LZ)) {
+        $cached = _cacheCargar($cacheKey);
+        if (!empty($cached) && array_key_exists('viable', $cached[0] ?? [])) {
+            error_log('[INFO] limite_zona: cargando desde caché...');
+            return $cached;
+        }
+    }
+
+    error_log('[INFO] limite_zona: consultando MySQL...');
+    $pdo  = datosConectar();
+    $rows = $pdo->query(
+        'SELECT NUMALIM_LZ, NUMALIM, NUMPOS_LZ, NUMPOS_troncal FROM meyg.maniobras_rapidas_limite_zona'
+    )->fetchAll(PDO::FETCH_ASSOC);
+    unset($pdo);
+
+    $excepcionKeys = array_keys(_LZ_EXCEPCIONES);
+
+    // troncal_map['NUMPOS_LZ|NUMALIM'] → lista de equipos no-"cabecera" en el troncal del receptor
+    $troncalMap = [];
+    // byNumpos['NUMPOS_LZ'] → [numalim => true, ...]  (todos los NUMALIMs del dispositivo)
+    $byNumpos   = [];
+
+    foreach ($rows as $r) {
+        $numposLz = trim((string)($r['NUMPOS_LZ'] ?? ''));
+        if (in_array($numposLz, $excepcionKeys, true)) continue;
+
+        $numalimLz = is_numeric($r['NUMALIM_LZ'] ?? null) ? (int)(float)$r['NUMALIM_LZ'] : null;
+        $numalim   = is_numeric($r['NUMALIM']    ?? null) ? (int)(float)$r['NUMALIM']    : null;
+        if ($numalimLz === null || $numalim === null) continue;
+
+        $numposTroncal = trim((string)($r['NUMPOS_troncal'] ?? ''));
+        $tk = $numposLz . '|' . $numalim;
+        if (!isset($troncalMap[$tk])) $troncalMap[$tk] = [];
+        if ($numposTroncal !== '' && strtolower($numposTroncal) !== 'cabecera') {
+            if (!in_array($numposTroncal, $troncalMap[$tk], true)) {
+                $troncalMap[$tk][] = $numposTroncal;
+            }
+        }
+
+        if (!isset($byNumpos[$numposLz])) $byNumpos[$numposLz] = [];
+        $byNumpos[$numposLz][$numalimLz] = true;
+        $byNumpos[$numposLz][$numalim]   = true;
+    }
+
+    $records = [];
+    foreach ($byNumpos as $numpos => $numalimSet) {
+        $numalims = array_keys($numalimSet);
+        sort($numalims);
+        $tipo = count($numalims) === 3 ? 'subterraneo_3ramas' : 'bilateral';
+        foreach ($numalims as $nm) {
+            $vecinos = array_values(array_filter($numalims, fn($v) => $v !== $nm));
+            $equipos = $troncalMap[$numpos . '|' . $nm] ?? [];
+            $records[] = [
+                'numpos_lz'       => (string)$numpos,
+                'numalim'         => (int)$nm,
+                'vecinos'         => $vecinos,
+                'tipo'            => $tipo,
+                'excepcion'       => false,
+                'viable'          => count($equipos) > 0,
+                'n_troncal'       => count($equipos),
+                'equipos_troncal' => $equipos,
+            ];
+        }
+    }
+
+    foreach (_LZ_EXCEPCIONES as $numpos => [$a, $b]) {
+        foreach ([[$a, $b], [$b, $a]] as [$nm, $vecino]) {
+            $records[] = [
+                'numpos_lz'       => (string)$numpos,
+                'numalim'         => (int)$nm,
+                'vecinos'         => [(int)$vecino],
+                'tipo'            => 'bilateral',
+                'excepcion'       => true,
+                'viable'          => true,
+                'n_troncal'       => 0,
+                'equipos_troncal' => [],
+            ];
+        }
+    }
+
+    _cacheGuardar($cacheKey, $records);
+    $nDisp = count(array_unique(array_column($records, 'numpos_lz')));
+    $nAlim = count(array_unique(array_column($records, 'numalim')));
+    error_log("[INFO] limite_zona: $nDisp dispositivos, $nAlim alimentadores. Caché guardada.");
+    return $records;
 }

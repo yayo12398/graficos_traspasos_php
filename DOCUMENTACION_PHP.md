@@ -88,6 +88,60 @@ $pdo = new PDO($dsn, $c['user'], $c['password'], [
 | `meyg.maniobras_rapidas_aguas_abajo` | Topología alimentadores (TDs, equipos, potencias) | 7 días |
 | `meyg.dem_maximas` | Demandas máximas mensuales por alimentador (long) | 30 días |
 | `meyg.dem_maximas_trafos` | Demandas máximas mensuales por trafo (long) | 30 días |
+| `meyg.maniobras_rapidas_limite_zona` | Límites de zona físicos entre alimentadores (dispositivos LZ y troncales receptor) | 7 días |
+
+**`meyg.maniobras_rapidas_limite_zona`:**
+```
+NUMALIM_LZ       INT     — NUMALIM del alimentador origen
+NOMBRE_alim_LZ   VARCHAR — nombre del alimentador origen
+NUMPOS_LZ        VARCHAR — dispositivo de corte LZ ("0" = cabecera/troncal)
+RAMASC_LZ        VARCHAR — código RAMASC del punto de corte en el origen
+NUMALIM          INT     — NUMALIM del alimentador receptor
+NOM_ALIM         VARCHAR — nombre del alimentador receptor
+RAMASC_troncal   VARCHAR — código RAMASC del troncal del receptor
+NUMPOS_troncal   VARCHAR — equipo en el troncal del receptor ("cabecera" o código)
+NOMBRE_troncal   VARCHAR — nombre del troncal
+equip_alim       VARCHAR — clave compuesta interna
+```
+
+**SQL de carga (sin DISTINCT — necesario para obtener todos los NUMPOS_troncal):**
+```php
+$sql = "SELECT NUMALIM_LZ, NUMALIM, NUMPOS_LZ, NUMPOS_troncal
+        FROM meyg.maniobras_rapidas_limite_zona";
+```
+
+**Estructura resultante en caché:**
+```json
+[
+  {
+    "numpos_lz": "DBC108457",
+    "numalim_lz": 2032,
+    "numalim": 5721,
+    "vecinos": [5721],
+    "tipo": "bilateral",
+    "excepcion": false,
+    "viable": true,
+    "n_troncal": 12,
+    "equipos_troncal": ["CLB104708", "DBC109312", "REC118524", ...]
+  }
+]
+```
+
+**Viabilidad:** `viable = (n_troncal > 0)`, donde `n_troncal` es la cantidad de equipos con `NUMPOS_troncal != 'cabecera'` para el par `(NUMPOS_LZ, NUMALIM)`. Si solo hay `cabecera`, el LZ conecta directamente en la cabecera del receptor y el traspaso no tiene recorrido físico posible.
+
+**Clasificación de equipos del troncal por prefijo:**
+```php
+function tipoEquipoTroncal(string $numpos): array {
+    $p = strtoupper(substr($numpos, 0, 3));
+    if ($p === 'REC') return ['label'=>'Reconectador', 'obs'=>'Puede disparar ante sobrecarga'];
+    if ($p === 'REG') return ['label'=>'Regulador',    'obs'=>'No maniobrable'];
+    if (in_array($p, ['ABB','G33','ORM','SCH','GMT','VIS','CGP','GLT']))
+        return ['label'=>'Subt.', 'obs'=>'3 ramas — verificar cuál operar'];
+    if (in_array($p, ['DBC','PPF','CLB']))
+        return ['label'=>'Aéreo', 'obs'=>''];
+    return ['label'=>'—', 'obs'=>''];
+}
+```
 
 ### 4.2 Columnas clave
 
@@ -216,6 +270,152 @@ class DataCache {
 }
 
 // TTLs: aguas_abajo = 7*86400, demandas = 30*86400
+```
+
+---
+
+## 4bis. Límites de Zona — Construcción del endpoint `GET /api/vecinos_lz/{numalim}`
+
+Esta sección describe en detalle cómo reproducir en PHP la lógica de `app.py:api_vecinos_lz()`.
+
+### Estructura del df_lz (caché)
+
+Cada fila del caché LZ representa un dispositivo LZ único `(NUMPOS_LZ, NUMALIM_LZ)` y contiene:
+
+```php
+[
+    'numpos_lz'       => 'DBC108457',   // string — dispositivo de corte
+    'numalim_lz'      => 2032,          // int    — alimentador origen
+    'vecinos'         => [5721, 3214],  // int[]  — NUMALIM de vecinos
+    'tipo'            => 'bilateral',   // string — "bilateral" | "subterraneo_3ramas" | otro
+    'excepcion'       => false,         // bool   — corregido en _LZ_EXCEPCIONES
+    'viable'          => true,          // bool   — n_troncal > 0
+    'n_troncal'       => 12,            // int    — equipos no-cabecera en troncal receptor
+    'equipos_troncal' => ['CLB104708', 'DBC109312', 'REC118524', ...],  // perspectiva ORIGEN
+]
+```
+
+> **Importante:** `equipos_troncal` en el caché es siempre la perspectiva del `NUMALIM_LZ` (el alimentador que actúa como origen en esa fila). Cuando se construye la respuesta del endpoint, se necesitan **dos perspectivas** para cada par:
+> - `equipos_troncal_orig`: perspectiva del alimentador consultado como **origen** → viene directamente de la fila del caché donde `numalim_lz == numalim_param`
+> - `equipos_troncal` del vecino: perspectiva del vecino como **receptor** → se busca la fila donde `numalim_lz == vecino` y `numalim == numalim_param` (dirección inversa)
+
+### Algoritmo PHP completo
+
+```php
+/**
+ * GET /api/vecinos_lz/{numalim}
+ * 
+ * Devuelve los dispositivos LZ del alimentador, con vecinos, viabilidad
+ * y equipos troncales desde ambas perspectivas (origen y receptor).
+ */
+function apiVecinosLz(int $numalim): void {
+    $dfLz  = cargarLimiteZona();    // array de filas del caché LZ
+    $dfAlim = cargarAlim();         // para resolver nom_alim de cada vecino
+
+    // Índice por numalim_lz para búsqueda rápida
+    $porOrigen = [];   // numalim_lz => list of rows
+    $porReceptor = []; // [numalim_lz][numalim] => row  (para perspectiva receptor)
+    foreach ($dfLz as $row) {
+        $porOrigen[$row['numalim_lz']][] = $row;
+        $porReceptor[$row['numalim_lz']][$row['numalim_lz']] = $row; // misma fila
+    }
+    // Reindexar para lookup (numalim_orig => (numalim_receptor => row))
+    $troncalPorPar = []; // [numalim_lz][numalim_receptor] => ['viable','n_troncal','equipos_troncal']
+    foreach ($dfLz as $row) {
+        $orig = $row['numalim_lz'];
+        foreach ($row['vecinos'] as $vec) {
+            // La perspectiva del vecino como receptor está en la fila donde
+            // numalim_lz == $vec y el vecino tiene $orig como vecino (dirección inversa)
+        }
+    }
+
+    // Forma más directa: reconstruir desde el campo 'vecinos' de cada fila
+    // Para el par (A→B): la perspectiva de B como receptor está en la fila
+    // del caché donde numalim_lz == B, si esa fila tiene a A en sus vecinos.
+    // Dado que el caché ya tiene 'viable'/'n_troncal'/'equipos_troncal' calculados
+    // desde la perspectiva de NUMALIM_LZ, necesitamos la fila donde numalim_lz == vecino
+    // que contenga al numalim consultado en sus vecinos.
+
+    $resultado = [];
+
+    foreach ($dfLz as $row) {
+        if ($row['numalim_lz'] !== $numalim) continue;
+
+        // Para cada vecino de este dispositivo LZ
+        $vecinosData = [];
+        foreach ($row['vecinos'] as $vecNm) {
+            // Perspectiva del vecino como receptor:
+            // buscar fila donde numalim_lz == vecNm y numalim consultado está en vecinos
+            $viable    = true;   $nTroncal = 0;  $eqTroncal = [];
+            foreach ($dfLz as $r2) {
+                if ($r2['numalim_lz'] !== $vecNm) continue;
+                if (!in_array($numalim, $r2['vecinos'])) continue;
+                // Misma llave NUMPOS_LZ
+                if ($r2['numpos_lz'] !== $row['numpos_lz']) continue;
+                $viable    = $r2['viable'];
+                $nTroncal  = $r2['n_troncal'];
+                $eqTroncal = $r2['equipos_troncal'];
+                break;
+            }
+
+            // Resolver nom_alim del vecino
+            $nomAlim = '';
+            foreach ($dfAlim as $ar) {
+                if ((int)($ar['numalim'] ?? 0) === $vecNm) {
+                    $nomAlim = $ar['nom_alim'] ?? '';
+                    break;
+                }
+            }
+
+            $vecinosData[] = [
+                'numalim'         => $vecNm,
+                'nom_alim'        => $nomAlim,
+                'viable'          => $viable,
+                'n_troncal'       => $nTroncal,
+                'equipos_troncal' => $eqTroncal,
+            ];
+        }
+
+        $resultado[] = [
+            'numpos_lz'            => $row['numpos_lz'],
+            'tipo'                 => $row['tipo'],
+            'excepcion'            => $row['excepcion'],
+            'equipos_troncal_orig' => $row['equipos_troncal'],  // perspectiva origen
+            'vecinos'              => $vecinosData,
+        ];
+    }
+
+    jsonResponse($resultado);
+}
+```
+
+> **Nota de rendimiento:** El lookup triple anidado es O(n²) sobre el caché LZ. En producción con ~33k filas procesadas a ~200 dispositivos únicos por alimentador, esto puede ser lento. Se recomienda pre-indexar el caché en un array `[$numpos_lz][$numalim_lz][$numalim_receptor]` al cargar.
+
+### Clasificación de tipos de dispositivo LZ
+
+```php
+// Determinado al cargar el caché — no viene directo de SQL
+// bilateral: exactamente 2 alimentadores vecinos
+// subterraneo_3ramas: 3+ alimentadores vecinos (dispositivo subterráneo con múltiples ramas)
+// excepcion: listado en _LZ_EXCEPCIONES (7 dispositivos con datos BD incorrectos)
+
+$tipo = match(true) {
+    count($vecinos) === 1 => 'unilateral',
+    count($vecinos) === 2 => 'bilateral',
+    default               => 'subterraneo_3ramas',
+};
+```
+
+### Uso en el frontend
+
+El frontend llama a este endpoint al seleccionar un alimentador origen (`renderPanelLZ`). Cada vez que el usuario cambia el equipo que abre la isla, se re-evalúa:
+
+```javascript
+// Si tipoIsla === "equipo":
+const enIsla = dev.equipos_troncal_orig?.includes(equipo_abre);
+// enIsla === true  → score 0, badge "En isla ✓"
+// enIsla === false → score 2, badge "Verificar"
+// enIsla === undefined → score 1 (no hay datos)
 ```
 
 ---
@@ -660,6 +860,37 @@ Enumera todos los alimentadores con sus datos básicos, ordenados por nombre. Fu
 
 ---
 
+### GET /api/vecinos_lz/{numalim}
+**Parámetros:** `numalim` (path, int)
+**Respuesta:** Array de dispositivos LZ del alimentador, con vecinos y datos de troncal:
+```json
+[
+  {
+    "numpos_lz": "DBC108457",
+    "tipo": "bilateral",
+    "excepcion": false,
+    "equipos_troncal_orig": ["CLB104708", "DBC109312"],
+    "vecinos": [
+      {
+        "numalim": 5721,
+        "nom_alim": "COMENDADOR",
+        "viable": true,
+        "n_troncal": 12,
+        "equipos_troncal": ["CLB104708", "DBC109312", "REC118524"]
+      }
+    ]
+  }
+]
+```
+
+Campos por vecino:
+- `viable`: bool — si el LZ tiene troncal físico en el receptor (n_troncal > 0)
+- `n_troncal`: int — cantidad de equipos no-cabecera en el troncal receptor
+- `equipos_troncal`: list[str] — nombres de esos equipos (perspectiva del vecino como receptor)
+- `equipos_troncal_orig`: list[str] — equipos en el troncal del alimentador consultado como origen (perspectiva opuesta; usado para island-LZ position check en el frontend)
+
+---
+
 ### POST /api/isla/preview
 **Body:**
 ```json
@@ -722,7 +953,21 @@ Calcula la isla de TDs aguas abajo del equipo y la fracción de carga a traspasa
   "serie_raw_dest": {"2025-04": 130.2, ...},
   "serie_raw_trafo_orig": {"2025-04": 310.5, ...},
   "serie_raw_trafo_dest": {"2025-04": 260.0, ...},
-  "equipos_traspasados": []
+  "equipos_traspasados": [],
+  "lz_info": {
+    "dispositivos": [
+      {
+        "numpos_lz": "DBC108457",
+        "tipo": "bilateral",
+        "excepcion": false,
+        "seleccionado": true,
+        "viable": true,
+        "n_troncal": 12,
+        "equipos_troncal": ["CLB104708", "DBC109312", "REC118524"],
+        "vecinos": [...]
+      }
+    ]
+  }
 }
 ```
 
@@ -943,7 +1188,8 @@ Genera `resultados/traspaso_<slug>_<fecha>.html` con:
 - Tabla mes a mes transpuesta
 - Secciones de trafo (origen y destino)
 - Sección de ajustes de demanda (si aplica)
-- Sección inversión de flujo (si aplica)
+- Sección `<details class="equip-det troncal">`: equipos troncales en receptor (tabla Equipo/Tipo/Observación, REC en rojo)
+- Sección `<details class="equip-det isla">`: inversión de flujo + cambio topológico (si aplica)
 
 ### 10.2 Reporte VCC individual
 Genera `resultados/vcc_<slug>_<fecha>.html` con:
@@ -1047,83 +1293,7 @@ function getJsonBody(): array {
 
 ---
 
-## 13. Base de datos — solo lectura
-
-Las tres conexiones MySQL (`mysql_cuadrilla`, `mysql_retim`, `mysql_agui`) ejecutan únicamente sentencias `SELECT`. La aplicación **no hace INSERT, UPDATE ni DELETE** sobre ninguna tabla.
-
-Toda la persistencia generada por el usuario se almacena en el sistema de archivos local del servidor:
-
-| Datos | Archivo(s) |
-|---|---|
-| Caché de topología | `data/cache/aguas_abajo_sql.ser` (TTL 7 días) |
-| Caché de demandas | `data/cache/demandas_sql.ser` (TTL 30 días) |
-| Feeders en comisionamiento | `feeders_nuevos/<SLUG>.json` |
-| Evaluaciones VCC | `vcc_evaluaciones/<SLUG>.json` |
-| Ajustes de demanda | `data/ajustes_demanda.json` |
-| Reportes HTML generados | `data/reportes/*.html` |
-
----
-
-## 14. Despliegue en IIS
-
-### Requisitos del servidor (verificar una vez)
-
-- IIS instalado y corriendo
-- PHP registrado como FastCGI en IIS (confirmado: servidor ya tiene PHP corriendo)
-- Módulo **URL Rewrite** de IIS instalado (necesario para que `/api/*` funcione)
-- Extensión PHP `mysqli` habilitada en `php.ini`
-
-### Proceso de despliegue — 3 pasos
-
-**Paso 1 — Copiar la carpeta**
-
-Copiar `codigo_php/` al servidor. Las carpetas de escritura ya vienen incluidas (vacías, con `.gitkeep`). El propio `index.php` las crea automáticamente si llegaran a faltar.
-
-```
-codigo_php/  →  C:\inetpub\wwwroot\AMEyAO\graficos_traspasos\
-```
-
-**Paso 2 — Permisos IIS (una vez, como Administrador)**
-
-Editar la variable `$base` al inicio del script con la ruta destino real, luego ejecutar:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File setup_permisos.ps1
-```
-
-Otorga permiso de modificación (`(OI)(CI)M`) a `IIS_IUSRS` sobre las 5 carpetas de escritura.
-
-**Paso 3 — Crear `config.php`**
-
-```
-Copiar:  config.example.php  →  config.php
-Editar:  completar host, user, password de cada conexión MySQL
-```
-
-Si `config.php` no existe, la app muestra una página HTML de error con instrucciones (no explota con un 500 genérico).
-
-### Actualizaciones futuras
-
-Solo repetir el Paso 1. Los pasos 2 y 3 no se vuelven a hacer.
-
-### Diagnóstico rápido post-despliegue
-
-```
-GET  /graficos_traspasos/                    → Carga la página principal
-GET  /graficos_traspasos/api/debug/status    → JSON con estado del servidor y caché
-POST /graficos_traspasos/api/reload          → Fuerza recarga del caché desde SQL
-```
-
-| Síntoma | Causa |
-|---|---|
-| 404 en `/api/*` | URL Rewrite no instalado |
-| Página de "Configuración pendiente" | Falta `config.php` |
-| Caché siempre vacío | Sin permisos de escritura en `data/cache/` |
-| Error mysqli | `extension=mysqli` no habilitado en `php.ini` |
-
----
-
-## 15. Notas de implementación importantes
+## 13. Notas de implementación importantes
 
 1. **NaN/Infinity en JSON**: PHP `json_encode` falla con `NAN` o `INF`. Antes de codificar, reemplazar todos los floats no finitos por `null`. Equivalente al `_safe()` y `_json()` de Python.
 

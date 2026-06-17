@@ -330,6 +330,8 @@
               <div id="sec-dest-excel">
                 <label class="form-label text-muted small mb-1">Alimentador destino</label>
                 <select id="sel-destino" placeholder="Buscar alimentador destino..."></select>
+                <div id="lz-dest-info" class="small text-muted mt-1" style="display:none"></div>
+                <div id="lz-equipo-cierra" class="small mt-1" style="display:none"></div>
               </div>
 
               <!-- Destino nuevo (comisionamiento) -->
@@ -465,6 +467,12 @@
 
           <!-- Info equipos abre/cierra -->
           <div id="info-equipos" class="mb-2" style="display:none"></div>
+
+          <!-- Equipos involucrados (troncal receptor + isla a vigilar) -->
+          <div id="sec-equipos-involucrados" class="mb-2"></div>
+
+          <!-- Panel Límite de Zona (resultado) -->
+          <div id="panel-lz" class="mb-2" style="display:none"></div>
 
           <!-- Tarjeta peor caso estándar -->
           <div class="card step-card mb-2">
@@ -1032,9 +1040,12 @@ window.onerror = function(msg, src, line, col, err) {
 
 // ── Estado global ─────────────────────────────────────────────────────────
 const state = {
-  feedersData:     [],   // lista de feeders del Excel (origen)
-  destinosData:    [],   // lista de feeders del Excel (destino)
-  feedersNuevos:   [],   // feeders en comisionamiento
+  feedersData:          [],   // lista de feeders del Excel (origen)
+  destinosData:         [],   // lista de feeders del Excel (destino)
+  feedersNuevos:        [],   // feeders en comisionamiento
+  pendingPreselectDest: null, // numalim a pre-seleccionar tras corrimiento
+  lzVecinos:            [],   // vecinos LZ del origen actual [{numpos_lz, tipo, vecinos}]
+  selectedNumposLZ:     null, // dispositivo LZ seleccionado por el usuario
   equiposData:     [],   // equipos del feeder origen
   tdsData:         [],   // TDs del feeder origen
   tdsEquipoData:   [],   // TDs del equipo seleccionado (sub-panel)
@@ -1357,6 +1368,9 @@ async function seleccionarOrigen(numalimStr) {
   ocultarPanelTDsEquipo();
   state.tdsData = [];
 
+  // Filtrar destinos por LZ del origen seleccionado (siempre, incluso sin NOM_ALIM)
+  actualizarDestinosLZ(numalim);
+
   if (!state.origenNomAlim) {
     // Sin correspondencia en aguas_abajo → no hay equipos/TDs
     renderEquipos([]);
@@ -1406,6 +1420,9 @@ function renderEquipos(equipos) {
       if (val) {
         cargarTDsEquipo(val);
         actualizarPreviewIsla();
+        // Re-evaluar posición en isla si ya hay destino seleccionado
+        const destVal = ts.destino?.getValue();
+        if (destVal) mostrarEquipoCierra(parseInt(destVal));
       } else {
         ocultarPanelTDsEquipo();
         ocultarPreviewIsla();
@@ -1636,6 +1653,392 @@ async function cargarDestinos() {
   });
 }
 
+// ── FILTRO LZ DESTINO ─────────────────────────────────────────────────────
+async function actualizarDestinosLZ(numalim) {
+  const lzInfoEl     = document.getElementById("lz-dest-info");
+  const equipoCierra = document.getElementById("lz-equipo-cierra");
+  if (equipoCierra) equipoCierra.style.display = "none";
+  state.lzVecinos       = [];
+  state.selectedNumposLZ = null;
+
+  let vecinos = [];
+  try {
+    vecinos = await apiFetch(`/api/vecinos_lz/${numalim}`);
+  } catch (e) {
+    console.warn("[LZ] No se pudo obtener vecinos:", e);
+  }
+  state.lzVecinos = vecinos;
+
+  const numalimSet = new Set(vecinos.flatMap(v => v.vecinos.map(x => x.numalim)));
+  const filtrados  = state.destinosData.filter(d => numalimSet.has(d.numalim));
+
+  if (ts.destino) ts.destino.destroy();
+  ts.destino = new TomSelect("#sel-destino", {
+    options: filtrados.map(d => ({
+      value: d.numalim,
+      text: `${d.nombre}  (CN=${d.cn?.toFixed(0) ?? "?"} A)`,
+    })),
+    valueField: "value",
+    labelField: "text",
+    searchField: ["text"],
+    maxOptions: 50,
+    placeholder: "Buscar alimentador destino...",
+    onChange: v => mostrarEquipoCierra(v ? parseInt(v) : null),
+  });
+
+  if (lzInfoEl) {
+    if (filtrados.length) {
+      lzInfoEl.innerHTML = `<i class="bi bi-geo-alt-fill me-1 text-success"></i>${filtrados.length} alimentador(es) con LZ disponible`;
+      lzInfoEl.className = "small text-success mt-1";
+    } else {
+      lzInfoEl.innerHTML = `<i class="bi bi-x-circle me-1"></i>Sin vecinos LZ — este alimentador no puede traspasar`;
+      lzInfoEl.className = "small text-danger mt-1";
+    }
+    lzInfoEl.style.display = "";
+  }
+
+  if (state.pendingPreselectDest != null) {
+    const pd = state.pendingPreselectDest;
+    state.pendingPreselectDest = null;
+    ts.destino.setValue(String(pd));
+  }
+}
+
+// ── CLASIFICACIÓN EQUIPOS TRONCALES ───────────────────────────────────────
+function _tipoEquipoTroncal(numpos) {
+  const p = (numpos || "").slice(0, 3).toUpperCase();
+  if (p === "REG") return { label: "Regulador",  color: "danger",    msg: "No maniobrable" };
+  if (["ABB","G33","ORM","SCH","GMT","VIS","CGP","GLT"].includes(p))
+    return { label: "Subt.",    color: "warning",  msg: "3 ramas — verificar cuál operar" };
+  if (["DBC","REC","PPF","CLB"].includes(p))
+    return { label: "Aéreo",    color: "secondary", msg: null };
+  return   { label: "—",        color: "secondary", msg: null };
+}
+
+// Lista compacta usada en el panel de selección de equipo LZ
+function _htmlEquiposTroncal(equipos) {
+  if (!equipos?.length) return "";
+  const tieneReg = equipos.some(eq => eq.slice(0,3).toUpperCase() === "REG");
+  const items = equipos.map(eq => {
+    const t = _tipoEquipoTroncal(eq);
+    const warnTxt = t.msg ? `<span class="text-${t.color}" style="font-size:.75rem">${t.msg}</span>` : "";
+    return `<li class="d-flex align-items-center gap-1 mb-1">
+      <code class="small">${eq}</code>
+      <span class="badge bg-${t.color} text-${t.color === "warning" ? "dark" : "white"}" style="font-size:.7rem">${t.label}</span>
+      ${warnTxt}
+    </li>`;
+  }).join("");
+  const regWarn = tieneReg
+    ? `<div class="text-danger small mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Hay reguladores de tensión en el troncal — no son maniobrables.</div>`
+    : "";
+  return `<details class="mt-1">
+    <summary class="small text-muted" style="cursor:pointer">
+      <i class="bi bi-list-ul me-1"></i>${equipos.length} equipo(s) troncales en alimentador receptor
+    </summary>
+    <ul class="list-unstyled ms-2 mt-1 mb-0">${items}</ul>
+    ${regWarn}
+  </details>`;
+}
+
+// ── EQUIPO QUE CIERRA (selector LZ) ───────────────────────────────────────
+function mostrarEquipoCierra(numalimDest) {
+  const el = document.getElementById("lz-equipo-cierra");
+  if (!el) return;
+  if (!numalimDest || !state.lzVecinos?.length) {
+    el.style.display = "none";
+    state.selectedNumposLZ = null;
+    return;
+  }
+
+  const TIPO_LABEL = {
+    bilateral:          "Bilateral",
+    subterraneo_3ramas: "Equipo subterráneo de 3 ramas",
+  };
+  const dispositivos = state.lzVecinos.filter(v =>
+    v.vecinos.some(x => x.numalim === numalimDest)
+  );
+  if (!dispositivos.length) {
+    el.style.display = "none";
+    state.selectedNumposLZ = null;
+    return;
+  }
+
+  const tipoIsla   = document.querySelector('input[name="tipo-isla"]:checked')?.value;
+  const equipoAbre = (tipoIsla === "equipo" && ts.equipo?.getValue())
+    ? ts.equipo.getValue().toUpperCase().trim() : null;
+
+  const devs = dispositivos.map(d => {
+    const vi = d.vecinos.find(x => x.numalim === numalimDest);
+    let enIsla = null;
+    if (equipoAbre && d.equipos_troncal_orig?.length) {
+      enIsla = d.equipos_troncal_orig.some(eq => eq.toUpperCase().trim() === equipoAbre);
+    }
+    return {
+      ...d,
+      _viable:          vi?.viable ?? true,
+      _equipos_troncal: vi?.equipos_troncal ?? [],
+      _enIsla:          enIsla,
+    };
+  });
+
+  const _score = d => {
+    if (!d._viable)         return 3;
+    if (d._enIsla === true) return 0;
+    if (d._enIsla === null) return 1;
+    return 2;
+  };
+  devs.sort((a, b) => _score(a) - _score(b));
+
+  const primerOk = devs.find(d => d._viable && d._enIsla !== false)
+                || devs.find(d => d._viable);
+  state.selectedNumposLZ = primerOk?.numpos_lz || null;
+
+  const _badge = d => {
+    const tipo  = TIPO_LABEL[d.tipo] || d.tipo;
+    const color = d._viable ? (d.tipo === "subterraneo_3ramas" ? "warning" : "success") : "secondary";
+    const exc   = d.excepcion
+      ? ` <span class="badge bg-secondary" title="Registro corregido respecto a BD">BD corr.</span>`
+      : "";
+    return `<span class="badge bg-${color} text-${color === "warning" ? "dark" : "white"} me-1">${tipo}</span>${exc}`;
+  };
+
+  const _islaBadge = d => {
+    if (d._enIsla === true)
+      return ` <span class="badge bg-info text-dark" title="LZ encontrado en camino troncal aguas abajo del equipo que abre">En isla ✓</span>`;
+    if (d._enIsla === false)
+      return ` <span class="badge bg-warning text-dark" title="No encontrado en camino troncal — verificar si pertenece a la isla">Verificar</span>`;
+    return "";
+  };
+
+  const _islaWarnTxt = d => d._enIsla === false
+    ? `<div class="small text-warning-emphasis mt-1">
+        <i class="bi bi-exclamation-triangle me-1"></i>No encontrado en el camino troncal de la isla — verificar si este LZ pertenece al segmento a traspasar.
+       </div>`
+    : "";
+
+  if (devs.length === 1) {
+    const d = devs[0];
+    if (!d._viable) {
+      el.innerHTML = `<div class="d-flex align-items-center gap-1" style="opacity:.6">
+        <i class="bi bi-toggle-off me-1 text-danger"></i>
+        <span class="text-muted">Equipo que cierra:</span>
+        <code class="ms-1 me-1 text-muted">${d.numpos_lz}</code>${_badge(d)}
+        <span class="badge bg-danger text-white">No viable</span>
+      </div>
+      <div class="small text-danger mt-1">
+        <i class="bi bi-info-circle me-1"></i>LZ conecta directamente en cabecera — no permite aislar una isla en el alimentador receptor.
+      </div>`;
+    } else {
+      el.innerHTML = `<i class="bi bi-toggle-on me-1 text-primary"></i>
+        <span class="text-muted">Equipo que cierra:</span>
+        <code class="ms-1 me-1">${d.numpos_lz}</code>${_badge(d)}${_islaBadge(d)}
+        ${_islaWarnTxt(d)}
+        ${_htmlEquiposTroncal(d._equipos_troncal)}`;
+    }
+  } else {
+    const opciones = devs.map(d => {
+      if (!d._viable) {
+        return `<div class="form-check form-check-inline mb-0" style="opacity:.55" title="No viable — LZ en cabecera del receptor">
+          <input class="form-check-input" type="radio" name="sel-numpos-lz"
+                 id="lz-radio-${d.numpos_lz}" value="${d.numpos_lz}" disabled>
+          <label class="form-check-label small text-muted" for="lz-radio-${d.numpos_lz}">
+            <code>${d.numpos_lz}</code> ${_badge(d)}
+            <span class="badge bg-danger text-white">No viable</span>
+          </label>
+        </div>`;
+      }
+      const checked = d.numpos_lz === state.selectedNumposLZ ? "checked" : "";
+      return `<div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="sel-numpos-lz"
+               id="lz-radio-${d.numpos_lz}" value="${d.numpos_lz}" ${checked}
+               onchange="state.selectedNumposLZ = this.value">
+        <label class="form-check-label small" for="lz-radio-${d.numpos_lz}">
+          <code>${d.numpos_lz}</code> ${_badge(d)}${_islaBadge(d)}
+        </label>
+      </div>`;
+    }).join("");
+    const selDev = devs.find(d => d.numpos_lz === state.selectedNumposLZ);
+    el.innerHTML = `<div class="text-muted small mb-1">
+      <i class="bi bi-toggle-on me-1 text-primary"></i>Equipo que cierra — selecciona:
+    </div>${opciones}
+    ${selDev ? _islaWarnTxt(selDev) : ""}
+    ${selDev ? _htmlEquiposTroncal(selDev._equipos_troncal) : ""}`;
+  }
+  el.style.display = "";
+}
+
+// ── RESULTADOS LZ: TABLAS Y PANELES ───────────────────────────────────────
+// Tabla de equipos troncales usada en el panel de resultados
+function _htmlTablaEquiposTroncal(equipos) {
+  if (!equipos?.length) return "";
+  const filas = equipos.map(eq => {
+    const t = _tipoEquipoTroncal(eq);
+    const esRec = eq.slice(0,3).toUpperCase() === "REC";
+    const label = esRec ? "Reconectador" : t.label;
+    const color = esRec ? "danger"        : t.color;
+    const nota  = esRec
+      ? `<span class="text-danger small"><i class="bi bi-exclamation-triangle-fill me-1"></i>Equipo de protección — puede disparar ante sobrecarga</span>`
+      : (t.msg ? `<span class="text-${t.color} small">${t.msg}</span>` : "");
+    return `<tr>
+      <td><code>${eq}</code></td>
+      <td><span class="badge bg-${color} text-${color === "warning" ? "dark" : "white"}">${label}</span></td>
+      <td>${nota}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="table table-sm mb-0 small">
+    <thead class="table-light"><tr><th>Equipo</th><th>Tipo</th><th>Observación</th></tr></thead>
+    <tbody>${filas}</tbody>
+  </table>`;
+}
+
+function renderSecEquiposInvolucrados(data) {
+  const el = document.getElementById("sec-equipos-involucrados");
+  if (!el) return;
+
+  const selDev = data.lz_info?.dispositivos?.find(d => d.seleccionado)
+              || data.lz_info?.dispositivos?.[0];
+  const troncal = (selDev?.viable !== false) ? (selDev?.equipos_troncal || []) : [];
+  const eqTsp   = data.equipos_traspasados || [];
+  const camTopo = (data._extras?.cambio_topologico || "").trim();
+
+  const partes = [];
+
+  if (troncal.length) {
+    const tieneRec = troncal.some(eq => eq.slice(0,3).toUpperCase() === "REC");
+    const tieneReg = troncal.some(eq => eq.slice(0,3).toUpperCase() === "REG");
+    const iconoTroncal = (tieneRec || tieneReg) ? "bi-exclamation-triangle text-warning" : "bi-diagram-3 text-muted";
+    const numposLZ = selDev?.numpos_lz || "";
+    partes.push(`<details class="card step-card mb-2" open>
+      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
+        <i class="bi ${iconoTroncal}"></i>
+        <span>Equipos troncales en alimentador receptor</span>
+        <span class="badge bg-secondary ms-1">${troncal.length}</span>
+        ${numposLZ ? `<span class="text-white-50 small ms-auto">vía ${numposLZ}</span>` : ""}
+      </summary>
+      <div class="step-body p-2">
+        <p class="small text-muted mb-2">Equipos en el camino troncal entre el LZ y la cabecera del alimentador receptor. La carga traspasada circulará a través de ellos.</p>
+        ${_htmlTablaEquiposTroncal(troncal)}
+      </div>
+    </details>`);
+  }
+
+  if (eqTsp.length || camTopo) {
+    const nItems  = eqTsp.length + (camTopo ? 1 : 0);
+    const invHtml = eqTsp.length ? `
+      <div class="mb-2">
+        <div class="fw-semibold small mb-1 text-info">
+          <i class="bi bi-arrow-left-right me-1"></i>Posible inversión de flujo
+        </div>
+        <table class="table table-sm mb-0 small">
+          <thead class="table-light"><tr><th>Equipo</th><th>Tipo</th></tr></thead>
+          <tbody>${eqTsp.map(e => `<tr>
+            <td><code>${e.nombre}</code></td>
+            <td><span class="badge bg-warning text-dark">${e.tipo}</span></td>
+          </tr>`).join("")}</tbody>
+        </table>
+        <p class="small text-muted mt-1 mb-0">Estos equipos quedan dentro de la isla y recibirán corriente desde la dirección opuesta a la habitual.</p>
+      </div>` : "";
+    const topoHtml = camTopo ? `
+      <div>
+        <div class="fw-semibold small mb-1 text-warning-emphasis">
+          <i class="bi bi-diagram-2 me-1"></i>Cambio topológico previo
+        </div>
+        <p class="small mb-0">${camTopo}</p>
+      </div>` : "";
+    partes.push(`<details class="card step-card mb-2" open>
+      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
+        <i class="bi bi-exclamation-triangle text-warning"></i>
+        <span>Equipos en isla a vigilar</span>
+        <span class="badge bg-warning text-dark ms-1">${nItems}</span>
+      </summary>
+      <div class="step-body p-2">${invHtml}${topoHtml}</div>
+    </details>`);
+  }
+
+  el.innerHTML = partes.join("");
+}
+
+function renderPanelLZ(lz, nombreOrig, nombreDest) {
+  const el = document.getElementById("panel-lz");
+  if (!el) return;
+  if (!lz || lz.tiene_lz === null) { el.style.display = "none"; return; }
+
+  const TIPO_LABEL = {
+    bilateral:          "Bilateral",
+    subterraneo_3ramas: "Equipo subterráneo de 3 ramas",
+  };
+
+  if (!lz.tiene_lz) {
+    el.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">
+      <i class="bi bi-x-circle me-1"></i>
+      <strong>Sin límite de zona físico</strong> entre <em>${nombreOrig}</em> y <em>${nombreDest}</em> —
+      no existe un dispositivo operable entre estos alimentadores.
+    </div>`;
+    el.style.display = "";
+    return;
+  }
+
+  const todosNoViables = lz.dispositivos.every(d => d.viable === false);
+  const algunoNoViable = lz.dispositivos.some(d => d.viable === false);
+  const hay3ramas      = lz.dispositivos.some(d => d.tipo === "subterraneo_3ramas" && d.viable !== false);
+
+  let colorBase, icono, titulo;
+  if (todosNoViables) {
+    colorBase = "danger";  icono = "bi-x-circle";
+    titulo = "Límite de zona — traspaso no viable por topología";
+  } else if (algunoNoViable || hay3ramas) {
+    colorBase = "warning"; icono = "bi-exclamation-triangle";
+    titulo = hay3ramas ? "Límite de zona disponible — Equipo subterráneo de 3 ramas" : "Límite de zona disponible — advertencia";
+  } else {
+    colorBase = "success"; icono = "bi-check-circle";
+    titulo = "Límite de zona disponible";
+  }
+
+  const filas = lz.dispositivos.map(d => {
+    const tipoLabel = TIPO_LABEL[d.tipo] || d.tipo;
+    const devColor  = d.viable === false ? "secondary" : (d.tipo === "subterraneo_3ramas" ? "warning" : "success");
+    const exceLabel = d.excepcion ? ' <span class="badge bg-secondary ms-1" title="Registro corregido respecto a BD">BD corr.</span>' : "";
+    const selIcon   = d.seleccionado ? ' <i class="bi bi-check-circle-fill text-white ms-1" title="Equipo seleccionado para esta maniobra"></i>' : "";
+    const selStyle  = d.seleccionado ? "fw-bold" : "text-body-secondary";
+
+    let viableHtml = "";
+    if (d.viable === false) {
+      viableHtml = ` <span class="badge bg-danger text-white">No viable</span>
+        <div class="small text-danger mt-1">
+          <i class="bi bi-info-circle me-1"></i>Conecta en cabecera del alimentador receptor — sin punto de aislamiento.
+        </div>`;
+    }
+
+    let extra = "";
+    if (d.tipo === "subterraneo_3ramas" && d.tercero && d.viable !== false) {
+      extra = `<div class="text-warning-emphasis small mt-1">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Este equipo también conecta con <strong>${d.tercero.nombre}</strong> — verificar disponibilidad operacional.
+      </div>`;
+    }
+
+    const troncalHtml = (d.viable !== false && d.equipos_troncal?.length)
+      ? _htmlEquiposTroncal(d.equipos_troncal) : "";
+
+    const opacityStyle = d.viable === false ? ' style="opacity:.7"' : "";
+    return `<div class="d-flex align-items-start gap-2 mb-1"${opacityStyle}>
+      <div>
+        <div class="d-flex align-items-center gap-1">
+          <code class="${selStyle}">${d.numpos_lz}</code>${selIcon}
+          <span class="badge bg-${devColor} text-${devColor === "warning" ? "dark" : "white"}">${tipoLabel}</span>${exceLabel}${viableHtml}
+        </div>
+        ${extra}${troncalHtml}
+      </div>
+    </div>`;
+  }).join("");
+
+  el.innerHTML = `<div class="alert alert-${colorBase} py-2 mb-0 small">
+    <div class="fw-semibold mb-1"><i class="bi ${icono} me-1"></i>${titulo}</div>
+    ${filas}
+  </div>`;
+  el.style.display = "";
+}
+
 // ── TRAFOS DISPONIBLES ────────────────────────────────────────────────────
 let _trafosData = [];  // [{numalim, nombre, cn, subestacion}]
 
@@ -1693,6 +2096,7 @@ async function ejecutarSimulacion() {
     descripcion:   document.getElementById("inp-descripcion").value.trim(),
     escenario:     document.querySelector('input[name="escenario-op"]:checked')?.value || "normal",
     equipo_cierra: document.getElementById("inp-equipo-cierra").value.trim(),
+    numpos_lz_sel:  state.selectedNumposLZ || null,
   };
 
   // TDs excluidos en modo equipo (sub-panel activo)
@@ -1741,6 +2145,11 @@ async function ejecutarSimulacion() {
       return;
     }
     dbg(`✓ Respuesta OK — delta_max=${data.delta?.delta_max?.toFixed(1)}A meses=${data.tabla?.length}`, "ok");
+    data._extras = {
+      descripcion:       document.getElementById("inp-descripcion")?.value.trim() || "",
+      cambio_topologico: document.getElementById("inp-cambio-topo")?.value.trim() || "",
+      equipo_cierra:     body.equipo_cierra || "",
+    };
     state.ultimaSimulacion = { ...data, body_request: body };
     mostrarResultados(data);
   } catch (e) {
@@ -1844,6 +2253,12 @@ function mostrarResultados(data) {
     _infoEq.innerHTML = _eqHtml;
     _infoEq.style.display = _eqHtml ? "" : "none";
   }
+
+  // Sección equipos involucrados (troncal receptor + isla a vigilar)
+  renderSecEquiposInvolucrados(data);
+
+  // Panel Límite de Zona
+  renderPanelLZ(data.lz_info, data.nombre_orig, data.nombre_dest);
 
   // Peor caso (escenario conservador Δ fijo)
   renderPeorCaso(data);
@@ -2520,7 +2935,7 @@ async function guardarTransferencia() {
     p_pct:         sim.isla.p_pct,
     n_td:          sim.isla.n_td,
     clientes:      sim.isla.clientes,
-    descripcion:   document.getElementById("inp-descripcion").value.trim(),
+    descripcion:      sim._extras?.descripcion       || "",
     tabla:           sim.tabla,
     tabla_mam:       sim.tabla_mam       || [],
     cn_orig:         sim.cn_orig,
@@ -2535,9 +2950,9 @@ async function guardarTransferencia() {
     detalle_tds:     sim.detalle_tds     || [],
     equipo_abre:        sim.body_request?.equipo_nombre  || "",
     escenario:          sim.body_request?.escenario      || "normal",
-    equipo_cierra:      sim.body_request?.equipo_cierra  || "",
+    equipo_cierra:      sim._extras?.equipo_cierra || sim.lz_info?.numpos_lz_sel || "",
     n_td_equipo_total:  sim.isla?.n_td_equipo_total      ?? null,
-    cambio_topologico:   document.getElementById("inp-cambio-topo").value.trim(),
+    cambio_topologico:   sim._extras?.cambio_topologico  || "",
     equipos_traspasados: sim.equipos_traspasados || [],
   };
 
@@ -2575,24 +2990,25 @@ async function descargarHTML() {
     resumen:     sim.resumen,
     tabla:       sim.tabla,
     feeder_nuevo:  sim.feeder_nuevo,
-    descripcion:   document.getElementById("inp-descripcion").value.trim(),
+    descripcion:      sim._extras?.descripcion      || "",
     trafo_orig:    sim.trafo_orig,
     trafo_dest:    sim.trafo_dest,
     detalle_tds:   sim.detalle_tds  || [],
     equipo_abre:       sim.body_request?.equipo_nombre  || "",
     escenario:         sim.body_request?.escenario      || "normal",
-    equipo_cierra:     sim.body_request?.equipo_cierra  || "",
+    equipo_cierra:     sim._extras?.equipo_cierra || sim.lz_info?.numpos_lz_sel || "",
     n_td_equipo_total: sim.isla?.n_td_equipo_total      ?? null,
     tabla_mam:           sim.tabla_mam          || [],
     trafo_orig_mam:      sim.trafo_orig_mam     || null,
     trafo_dest_mam:      sim.trafo_dest_mam     || null,
-    cambio_topologico:   document.getElementById("inp-cambio-topo").value.trim(),
+    cambio_topologico:   sim._extras?.cambio_topologico || "",
     equipos_traspasados: sim.equipos_traspasados || [],
     ajustes_activos:     sim.ajustes_activos      || {},
     serie_raw_orig:      sim.serie_raw_orig        || {},
     serie_raw_dest:      sim.serie_raw_dest        || {},
     serie_raw_trafo_orig: sim.serie_raw_trafo_orig || {},
     serie_raw_trafo_dest: sim.serie_raw_trafo_dest || {},
+    lz_info:             sim.lz_info              || null,
   };
 
   spinner(true, "Generando informe...");
