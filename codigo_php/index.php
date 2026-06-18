@@ -130,9 +130,10 @@ function _lzInfoEntre(?int $numalimA, ?int $numalimB): array {
     $dispositivos = [];
     foreach ($filas as $row) {
         $d = [
-            'numpos_lz' => $row['numpos_lz'],
-            'tipo'      => $row['tipo'],
-            'excepcion' => (bool)$row['excepcion'],
+            'numpos_lz'            => $row['numpos_lz'],
+            'tipo'                 => $row['tipo'],
+            'excepcion'            => (bool)$row['excepcion'],
+            'equipos_troncal_orig' => (array)$row['equipos_troncal'],
         ];
 
         // Campo "tercero" para subterraneo_3ramas
@@ -340,7 +341,7 @@ if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'equipos' && !$b2) {
             'pct_feeder' => $kvaFeeder > 0 ? round($kvaEq / $kvaFeeder * 100, 1) : 0.0,
         ];
     }
-    usort($result, fn($a, $b) => strcmp((string)($a['nombre'] ?? ''), (string)($b['nombre'] ?? '')));
+    usort($result, fn($a, $b) => ($b['pct_feeder'] ?? 0) <=> ($a['pct_feeder'] ?? 0));
     jsonPy($result);
 }
 
@@ -466,6 +467,19 @@ if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
     $b   = bodyJson();
     $dir = __DIR__ . '/data/reportes';
     if (!is_dir($dir)) mkdir($dir, 0755, true);
+
+    // ── Multi-caso (cadena de corrimiento) ─────────────────────────────────
+    $casosRaw = $b['casos'] ?? null;
+    if ($casosRaw && count($casosRaw) > 1) {
+        $slug = 'corrimiento_' . date('Ymd_His');
+        $ruta = $dir . '/' . $slug . '.html';
+        generarReporteCadenaHtml($casosRaw, $ruta);
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $slug . '.html"');
+        readfile($ruta);
+        exit;
+    }
+
     $slug = slugFeeder($b['nombre_orig'] ?? 'rep') . '_' . slugFeeder($b['nombre_dest'] ?? '') . '_' . date('Ymd_His');
     $ruta = $dir . '/' . $slug . '.html';
 
@@ -619,9 +633,23 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     $nOrig = numalimDeNomAlim($dfAb, $nomOrig);
     if (!$nOrig) jsonErr("Alimentador origen '$nomOrig' no encontrado en aguas_abajo");
 
-    $serieOrigRaw = obtenerSerieAlim($dfAlim, $nOrig);
-    $serieOrig    = aplicarAjustes($serieOrigRaw['serie'], 'alim', $nOrig);
-    $cnOrig       = $serieOrigRaw['cn'];
+    $serieOrigRaw   = obtenerSerieAlim($dfAlim, $nOrig);
+    $serieOrigClean = aplicarAjustes($serieOrigRaw['serie'], 'alim', $nOrig);
+    $cnOrig         = $serieOrigRaw['cn'];
+
+    // P2: delta acumulado de casos anteriores en cadena de corrimientos.
+    // Se aplica SOLO al display (serieOrig); el delta transferido se calcula
+    // siempre desde la BD limpia (serieOrigClean) para no sobreestimar la carga
+    // de la isla con corriente de casos anteriores que no pertenece a ese tramo.
+    $deltaAcumOrig = $b['delta_acum_orig'] ?? [];
+    $serieOrig     = $serieOrigClean;
+    if ($deltaAcumOrig) {
+        foreach ($deltaAcumOrig as $_m => $_d) {
+            if (array_key_exists($_m, $serieOrig)) {
+                $serieOrig[$_m] = round((float)$serieOrig[$_m] + (float)$_d, 2);
+            }
+        }
+    }
 
     // Series y CN del destino
     if ($tipoDest === 'excel') {
@@ -639,16 +667,33 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     }
 
     $mesesSel  = $b['meses_sel'] ?? [];
-    $deltaInfo = calcularDelta($serieOrig, (float)($isla['p'] ?? 0.0));
+    // Delta siempre desde la serie limpia de BD: la isla solo lleva la carga propia del feeder,
+    // no la corriente de casos anteriores que llegó al feeder pero no a este tramo específico.
+    // Filtrar por meses seleccionados para que mes_peor y delta_max correspondan al periodo estudiado.
+    $serieCleanSel = $mesesSel
+        ? array_intersect_key($serieOrigClean, array_flip($mesesSel))
+        : $serieOrigClean;
+    $deltaInfo = calcularDelta($serieCleanSel, (float)($isla['p'] ?? 0.0));
     $deltaMax  = $deltaInfo['delta_max'];
     $isla['mes_peor'] = $deltaInfo['mes_peor'] ?? '';
 
+    // simular(): deltaMax limpio + serieOrig ajustada → I_orig_antes muestra carga real de B
     $dfSim    = filtrarMeses(simular($serieOrig, $serieDest, $cnOrig, $cnDest, $deltaMax), $mesesSel);
-    $dfSimMam = filtrarMeses(simularMesAMes($serieOrig, $serieDest, $cnOrig, $cnDest, (float)($isla['p'] ?? 0.0)), $mesesSel);
+    // simularMesAMes(): display desde ajustada, delta calculado desde limpia
+    $dfSimMam = filtrarMeses(simularMesAMes($serieOrig, $serieDest, $cnOrig, $cnDest, (float)($isla['p'] ?? 0.0), 0.90, $serieOrigClean), $mesesSel);
     $resumen  = resumenEstados($dfSim);
 
     $trafoOrigRowRaw = trafoDeFeeder($dfTrafo, $nOrig);
     $trafoOrigRow    = $trafoOrigRowRaw ? aplicarAjustesFila($trafoOrigRowRaw, 'trafo', $nOrig) : null;
+    // P2: propagar delta acumulado al trafo origen (solo si caso anterior NO era misma barra)
+    $deltaAcumOrigMismaBarra = (bool)($b['delta_acum_orig_misma_barra'] ?? false);
+    if ($trafoOrigRow && $deltaAcumOrig && !$deltaAcumOrigMismaBarra) {
+        foreach ($deltaAcumOrig as $_m => $_d) {
+            if (array_key_exists($_m, $trafoOrigRow) && preg_match('/^\d{4}-\d{2}$/', $_m)) {
+                $trafoOrigRow[$_m] = round((float)$trafoOrigRow[$_m] + (float)$_d, 2);
+            }
+        }
+    }
     $trafoOrig       = $trafoOrigRow ? analizarTrafo($trafoOrigRow, $deltaMax, 'alivio', 0.90, $mesesSel) : null;
     $trafoOrigMam    = $trafoOrigRow ? analizarTrafoMesAMes($trafoOrigRow, $deltaInfo['serie_deltas'], 'alivio', 0.90, $mesesSel) : null;
 
@@ -674,6 +719,25 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $numalimTrafoOrig = $trafoOrigRow ? $nOrig : null;
         $numalimTrafoDest = $numalimTN ?? null;
     }
+
+    // Misma barra: si ambos feeders cuelgan del mismo trafo, el impacto en SE es nulo → anular análisis
+    $mismaBarra = false;
+    if (!empty($trafoOrigRowRaw) && !empty($trafoDestRowRaw)) {
+        $_barraO = trim((string)($trafoOrigRowRaw['barra'] ?? ''));
+        $_barraD = trim((string)($trafoDestRowRaw['barra'] ?? ''));
+        $mismaBarra = $_barraO !== '' && $_barraO === $_barraD;
+    }
+    if ($mismaBarra) {
+        $trafoOrig = $trafoOrigMam = $trafoDest = $trafoDestMam = null;
+    }
+
+    // P1: propagar barra y subestacion a los objetos trafo para labels en reportes
+    $_subOrig = trim((string)($dfAlim[$nOrig]['subestacion'] ?? ''));
+    if ($trafoOrig)    { $trafoOrig['barra']    = trim((string)($trafoOrigRowRaw['barra'] ?? '')); $trafoOrig['subestacion']    = $_subOrig; }
+    if ($trafoOrigMam) { $trafoOrigMam['barra'] = trim((string)($trafoOrigRowRaw['barra'] ?? '')); $trafoOrigMam['subestacion'] = $_subOrig; }
+    $_subDest = ($tipoDest === 'excel' && $nDest) ? trim((string)($dfAlim[$nDest]['subestacion'] ?? '')) : '';
+    if ($trafoDest)    { $trafoDest['barra']    = trim((string)(($trafoDestRowRaw ?? [])['barra'] ?? '')); $trafoDest['subestacion']    = $_subDest; }
+    if ($trafoDestMam) { $trafoDestMam['barra'] = trim((string)(($trafoDestRowRaw ?? [])['barra'] ?? '')); $trafoDestMam['subestacion'] = $_subDest; }
 
     // LZ info entre origen y destino
     $lzInfo = _lzInfoEntre($nOrig, $nDest ?? null);
@@ -732,6 +796,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'feeder_nuevo'        => $feederNuevo,
         'trafo_orig'          => $trafoOrig,
         'trafo_dest'          => $trafoDest,
+        'misma_barra_se'      => $mismaBarra,
         'meses_sel'           => $mesesSel,
         'tabla_mam'           => $dfSimMam,
         'trafo_orig_mam'      => $trafoOrigMam,
@@ -803,6 +868,70 @@ if ($method === 'GET' && $a === 'vecinos_lz' && $b0 && !$b1) {
             'vecinos'              => $vecinos,
         ];
     }
+    jsonPy($resultado);
+}
+
+// ── GET /api/corrimiento_candidatos/{numalim} ──────────────────────────────────
+// Retorna alimentadores vecinos (vía LZ) con capacidad disponible para recibir
+// un corrimiento de carga desde {numalim}. Ordenados por remanente_A desc.
+if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
+    $numalim = (int)$b0;
+    $dfLz    = getLz();
+    if (!$dfLz) { jsonPy([]); }
+
+    ['dfAlim' => $dfAlim] = gd();
+
+    // Recopilar vecinos del alimentador dado
+    $vecinosSet = [];
+    foreach ($dfLz as $row) {
+        if ($row['numalim'] !== $numalim) continue;
+        foreach ($row['vecinos'] as $v) {
+            $vecinosSet[(int)$v] = true;
+        }
+    }
+
+    $meses     = mesesDisponibles($dfAlim);
+    $resultado = [];
+
+    foreach (array_keys($vecinosSet) as $nm) {
+        $row = $dfAlim[$nm] ?? null;
+        if ($row === null) continue;
+
+        $cn = isset($row['cn']) ? (float)$row['cn'] : NAN;
+        if (!is_finite($cn) || $cn <= 0) continue;
+
+        // dem_max sobre meses disponibles
+        $demMax = NAN;
+        foreach ($meses as $mes) {
+            $v = isset($row[$mes]) && $row[$mes] !== '' ? (float)$row[$mes] : NAN;
+            if (is_finite($v) && (!is_finite($demMax) || $v > $demMax)) $demMax = $v;
+        }
+
+        $remanenteA   = is_finite($demMax) ? $cn - $demMax : NAN;
+        $remanentesPct = is_finite($remanenteA) ? $remanenteA / $cn * 100 : NAN;
+
+        // Vecinos propios del candidato (excluyendo el origen)
+        $vecinosPropios = [];
+        foreach ($dfLz as $fila) {
+            if ($fila['numalim'] !== $nm) continue;
+            foreach ($fila['vecinos'] as $vp) {
+                if ((int)$vp !== $numalim) $vecinosPropios[(int)$vp] = true;
+            }
+        }
+
+        $resultado[] = [
+            'numalim'          => $nm,
+            'nombre'           => nombreDisplayAlim($row),
+            'cn'               => is_finite($cn)          ? round($cn, 3)           : null,
+            'dem_max'          => is_finite($demMax)       ? round($demMax, 3)       : null,
+            'remanente_A'      => is_finite($remanenteA)   ? round($remanenteA, 3)   : null,
+            'remanente_pct'    => is_finite($remanentesPct)? round($remanentesPct, 2): null,
+            'tiene_vecinos_lz' => count($vecinosPropios) > 0,
+            'n_vecinos_lz'     => count($vecinosPropios),
+        ];
+    }
+
+    usort($resultado, fn($a, $b) => ($b['remanente_A'] ?? PHP_INT_MIN) <=> ($a['remanente_A'] ?? PHP_INT_MIN));
     jsonPy($resultado);
 }
 
@@ -983,7 +1112,10 @@ if ($method === 'POST' && $a === 'feeders_nuevos' && $b0 && $b1 === 'transferenc
     $serieDest = serieAcumulada($nombreFeeder, $meses);
     $acumActual = deltaAcumulado($nombreFeeder);
 
-    $deltaInfo = calcularDelta($serieOrig, (float)($isla['p'] ?? 0.0));
+    $serieOrigSel = $mesesSel
+        ? array_intersect_key($serieOrig, array_flip($mesesSel))
+        : $serieOrig;
+    $deltaInfo = calcularDelta($serieOrigSel, (float)($isla['p'] ?? 0.0));
     $deltaMax  = $deltaInfo['delta_max'];
     $isla['mes_peor'] = $deltaInfo['mes_peor'] ?? '';
 

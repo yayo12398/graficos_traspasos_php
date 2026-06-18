@@ -1118,6 +1118,319 @@ HTML;
 }
 
 
+// ── Helpers tabla FU resumen cadena ───────────────────────────────────────────
+function _repMesAbr(string $mes): string {
+    static $M = ['01'=>'ene','02'=>'feb','03'=>'mar','04'=>'abr','05'=>'may','06'=>'jun',
+                 '07'=>'jul','08'=>'ago','09'=>'sep','10'=>'oct','11'=>'nov','12'=>'dic'];
+    if (strlen($mes) >= 7)
+        return ($M[substr($mes, 5, 2)] ?? substr($mes, 5, 2)) . '-' . substr($mes, 2, 2);
+    return $mes ?: '—';
+}
+
+function _repCadPctColor(?float $pct): string {
+    if ($pct === null) return '#78909c';
+    if ($pct >= 100)   return '#c0392b';
+    if ($pct >= 85)    return '#e67e22';
+    return '#27ae60';
+}
+
+function _tablaFuPeriodosHtml(array $casos): string {
+    if (!$casos) return '';
+
+    $cadenaColors      = ['#1565c0', '#e65100', '#1b5e20'];
+    $cadenaColorsLight = ['#dbeafe', '#fde8d8', '#d4edda'];
+
+    // Unión de meses, orden cronológico
+    $mesesSet = [];
+    foreach ($casos as $c) {
+        $tab = $c['tabla_mam'] ?? $c['tabla'] ?? [];
+        foreach ($tab as $r) { $m = $r['mes'] ?? ''; if ($m) $mesesSet[$m] = true; }
+    }
+    if (!$mesesSet) return '';
+    $mesesOrd = array_keys($mesesSet);
+    sort($mesesOrd);
+
+    $alimPct     = [];
+    $trafoPct    = [];
+    $trafoLbl    = [];
+    $casoPorAlim = [];
+    $orden       = [];
+
+    $barrLbl = function(array $t, string $nombreAlim): string {
+        $b = trim((string)($t['barra']       ?? ''));
+        $s = trim((string)($t['subestacion'] ?? ''));
+        if (ctype_digit($b) && $b !== '' && $s) return "Barra {$b} — SE {$s}";
+        if ($b && $s) return "{$b} — SE {$s}";
+        if ($b)       return $b;
+        if ($s)       return "SE {$s}";
+        return "Trafo alim. {$nombreAlim}";
+    };
+
+    foreach ($casos as $i => $caso) {
+        $n    = (int)($caso['numero_caso'] ?? ($i + 1));
+        $orig = $caso['nombre_orig'] ?? '';
+        $dest = $caso['nombre_dest'] ?? '';
+        $tab  = $caso['tabla_mam'] ?? $caso['tabla'] ?? [];
+
+        $toBase = $caso['trafo_orig'] ?? [];
+        $tdBase = $caso['trafo_dest'] ?? [];
+        $toMam  = !empty($caso['trafo_orig_mam']) ? $caso['trafo_orig_mam'] : null;
+        $tdMam  = !empty($caso['trafo_dest_mam']) ? $caso['trafo_dest_mam'] : null;
+        $toT    = ($toMam ?? $toBase)['tabla'] ?? [];
+        $tdT    = ($tdMam ?? $tdBase)['tabla'] ?? [];
+
+        $origByMes = [];
+        foreach ($tab as $r) {
+            $m = $r['mes'] ?? '';
+            if ($m) $origByMes[$m] = array_key_exists('uso_orig_despues_pct', $r) ? (float)$r['uso_orig_despues_pct'] : null;
+        }
+        $destByMes = [];
+        foreach ($tab as $r) {
+            $m = $r['mes'] ?? '';
+            if ($m) $destByMes[$m] = array_key_exists('uso_dest_despues_pct', $r) ? (float)$r['uso_dest_despues_pct'] : null;
+        }
+        $toByMes = [];
+        foreach ($toT as $r) {
+            $m = $r['mes'] ?? '';
+            if ($m) $toByMes[$m] = array_key_exists('uso_despues_pct', $r) ? (float)$r['uso_despues_pct'] : null;
+        }
+        $tdByMes = [];
+        foreach ($tdT as $r) {
+            $m = $r['mes'] ?? '';
+            if ($m) $tdByMes[$m] = array_key_exists('uso_despues_pct', $r) ? (float)$r['uso_despues_pct'] : null;
+        }
+
+        // Origen — sobreescribir siempre (caso más reciente gana)
+        if (!in_array($orig, $orden)) $orden[] = $orig;
+        $alimPct[$orig]     = $origByMes;
+        $trafoPct[$orig]    = $toByMes;
+        $trafoLbl[$orig]    = $barrLbl($toBase, $orig);
+        $casoPorAlim[$orig] = $n;
+
+        // Destino — idem
+        if (!in_array($dest, $orden)) $orden[] = $dest;
+        $alimPct[$dest]     = $destByMes;
+        $trafoPct[$dest]    = $tdByMes;
+        $trafoLbl[$dest]    = $barrLbl($tdBase, $dest);
+        $casoPorAlim[$dest] = $n;
+    }
+
+    // Cabecera
+    $th = '<th style="min-width:180px;text-align:left;padding:6px 8px">Alimentador / SE</th>'
+        . '<th style="min-width:44px;text-align:center;padding:6px 4px">Caso</th>';
+    foreach ($mesesOrd as $mes) {
+        $th .= '<th style="text-align:center;padding:4px 6px;min-width:62px">' . _repMesAbr($mes) . '</th>';
+    }
+
+    // Filas
+    $rows = '';
+    foreach ($orden as $nombre) {
+        $pcts      = array_map(fn($m) => $alimPct[$nombre][$m]  ?? null, $mesesOrd);
+        $trafoPcts = array_map(fn($m) => $trafoPct[$nombre][$m] ?? null, $mesesOrd);
+        $casoN     = $casoPorAlim[$nombre] ?? 1;
+        $cIdx      = ($casoN - 1) % count($cadenaColors);
+        $colorBg   = $cadenaColorsLight[$cIdx];
+        $colorFg   = $cadenaColors[$cIdx];
+
+        $worstIdx = -1; $worstVal = -INF;
+        foreach ($pcts as $idx => $p) {
+            if ($p !== null && $p > $worstVal) { $worstVal = $p; $worstIdx = $idx; }
+        }
+        $casoCell  = "<td style=\"text-align:center;background:{$colorBg};color:{$colorFg};font-weight:700;font-size:.8rem;padding:4px\">C{$casoN}</td>";
+        $dataCells = '';
+        foreach ($pcts as $idx => $p) {
+            $ws = ($idx === $worstIdx) ? 'border-left:2px solid rgba(192,0,0,.55);border-right:2px solid rgba(192,0,0,.55);font-weight:bold;' : '';
+            if ($p !== null) {
+                $col = _repCadPctColor($p);
+                $dataCells .= "<td style=\"text-align:center;padding:4px 6px;{$ws}color:{$col}\">" . number_format($p, 1) . "%</td>";
+            } else {
+                $dataCells .= "<td style=\"text-align:center;padding:4px 6px;{$ws}color:#bbb\">—</td>";
+            }
+        }
+        $rows .= "<tr style=\"border-bottom:1px solid #eee\">"
+               . "<td style=\"padding:6px 8px;font-weight:700\">" . _h($nombre) . "</td>"
+               . $casoCell . $dataCells . "</tr>";
+
+        // Fila trafo (indentada, mismo color indicador)
+        $lbl = _h($trafoLbl[$nombre] ?? '—');
+        $worstTIdx = -1; $worstTVal = -INF;
+        foreach ($trafoPcts as $idx => $p) {
+            if ($p !== null && $p > $worstTVal) { $worstTVal = $p; $worstTIdx = $idx; }
+        }
+        $trafoCasoCell  = "<td style=\"background:{$colorBg};padding:4px\"></td>";
+        $trafoDataCells = '';
+        foreach ($trafoPcts as $idx => $p) {
+            $ws = ($idx === $worstTIdx) ? 'border-left:2px solid rgba(192,0,0,.55);border-right:2px solid rgba(192,0,0,.55);font-weight:bold;' : '';
+            if ($p !== null) {
+                $col = _repCadPctColor($p);
+                $trafoDataCells .= "<td style=\"text-align:center;padding:4px 6px;{$ws}color:{$col}\">" . number_format($p, 1) . "%</td>";
+            } else {
+                $trafoDataCells .= "<td style=\"text-align:center;padding:4px 6px;{$ws}color:#bbb\">—</td>";
+            }
+        }
+        $rows .= "<tr style=\"border-bottom:1px solid #f0f0f0\">"
+               . "<td style=\"padding:4px 8px 4px 22px;font-size:.9em;color:#555\">{$lbl}</td>"
+               . $trafoCasoCell . $trafoDataCells . "</tr>";
+    }
+
+    return '<div style="overflow-x:auto;width:100%;margin-bottom:24px">'
+         . '<table style="width:100%;border-collapse:collapse;font-size:.9rem;background:#fff;border:1px solid #ddd;border-radius:4px">'
+         . "<thead style=\"background:#f5f7fa\"><tr>{$th}</tr></thead>"
+         . "<tbody>{$rows}</tbody>"
+         . '</table></div>';
+}
+
+
+// ── Reporte cadena de corrimientos ────────────────────────────────────────────
+function generarReporteCadenaHtml(array $casos, string $rutaSalida): string {
+    $cadenaColors = ['#1565c0', '#e65100', '#1b5e20'];
+    $dir = dirname(realpath($rutaSalida) ?: $rutaSalida);
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+
+    $sharedHead = null;
+    $secciones  = [];
+
+    foreach ($casos as $i => $caso) {
+        $n = (int)($caso['numero_caso'] ?? ($i + 1));
+
+        // Reconstruir ajustes_info igual que el endpoint caso único
+        $_ajActivos  = $caso['ajustes_activos'] ?? [];
+        $_seriesRaw  = [
+            'alim_orig'  => $caso['serie_raw_orig']      ?? [],
+            'alim_dest'  => $caso['serie_raw_dest']      ?? [],
+            'trafo_orig' => $caso['serie_raw_trafo_orig'] ?? [],
+            'trafo_dest' => $caso['serie_raw_trafo_dest'] ?? [],
+        ];
+        $_nomOrig    = $caso['nombre_orig'] ?? '';
+        $_nomDest    = $caso['nombre_dest'] ?? '';
+        $_tOrigBarra = trim((string)(($caso['trafo_orig'] ?? [])['barra'] ?? ''));
+        $_tDestBarra = trim((string)(($caso['trafo_dest'] ?? [])['barra'] ?? ''));
+        $_labels     = [
+            'alim_orig'  => "Alim. Origen ({$_nomOrig})",
+            'alim_dest'  => "Alim. Destino ({$_nomDest})",
+            'trafo_orig' => $_tOrigBarra ? "Trafo Origen ({$_tOrigBarra})" : 'Trafo Origen',
+            'trafo_dest' => $_tDestBarra ? "Trafo Destino ({$_tDestBarra})" : 'Trafo Destino',
+        ];
+        $ajustesInfo = [];
+        foreach ($_ajActivos as $_key => $_aj) {
+            if (empty($_aj)) continue;
+            $_raw = $_seriesRaw[$_key] ?? [];
+            ksort($_aj);
+            $_mesesAj = [];
+            foreach ($_aj as $_mes => $_val) {
+                $_mesesAj[] = ['mes' => $_mes, 'valor_sql' => $_raw[$_mes] ?? null, 'valor_ajustado' => $_val];
+            }
+            $ajustesInfo[] = ['label' => $_labels[$_key] ?? $_key, 'meses' => $_mesesAj];
+        }
+
+        // Generar HTML del caso en archivo temporal
+        $tmpFile = $dir . '/~cadtmp_' . $n . '_' . uniqid() . '.html';
+        generarReporteHtml(
+            $caso['tabla']              ?? [],
+            $caso['isla']               ?? [],
+            $_nomOrig,
+            $_nomDest,
+            (float)($caso['cn_orig']    ?? 0),
+            (float)($caso['cn_dest']    ?? 0),
+            (float)($caso['delta_max']  ?? 0),
+            $caso['resumen']            ?? [],
+            $tmpFile,
+            $caso['descripcion']        ?? '',
+            null,
+            $caso['trafo_orig']         ?? null,
+            $caso['trafo_dest']         ?? null,
+            $caso['detalle_tds']        ?? [],
+            $caso['equipo_abre']        ?? '',
+            $caso['escenario']          ?? 'normal',
+            $caso['equipo_cierra']      ?? '',
+            isset($caso['n_td_equipo_total']) ? (int)$caso['n_td_equipo_total'] : null,
+            $caso['tabla_mam']          ?? null,
+            $caso['trafo_orig_mam']     ?? null,
+            $caso['trafo_dest_mam']     ?? null,
+            $caso['cambio_topologico']  ?? '',
+            $caso['equipos_traspasados'] ?? null,
+            $ajustesInfo ?: null,
+            $caso['lz_info']            ?? null,
+        );
+        $singleHtml = file_get_contents($tmpFile);
+        @unlink($tmpFile);
+
+        // Extraer <head> del primer caso (CSS + CDN compartidos)
+        if ($sharedHead === null) {
+            preg_match('/<head>(.*?)<\/head>/si', $singleHtml, $hm);
+            $sharedHead = $hm[1] ?? '';
+        }
+
+        // Extraer contenido del <body>
+        preg_match('/<body>(.*?)<\/body>/si', $singleHtml, $bm);
+        $bodyContent = trim($bm[1] ?? $singleHtml);
+
+        // Prefijar IDs de Chart.js para evitar conflictos entre casos en el mismo DOM
+        $pfx         = "c{$n}_";
+        $bodyContent = preg_replace("/id='(cjs_[^']+)'/", "id='{$pfx}$1'", $bodyContent);
+        $bodyContent = preg_replace("/getElementById\('(cjs_[^']+)'\)/", "getElementById('{$pfx}$1')", $bodyContent);
+
+        $color  = $cadenaColors[($n - 1) % count($cadenaColors)];
+        $pct    = number_format((float)(($caso['isla'] ?? [])['p_pct'] ?? 0), 1);
+        $origH  = _h($_nomOrig);
+        $destH  = _h($_nomDest);
+        $peor   = $caso['resumen']['peor_estado'] ?? '';
+        $estLbl = ['critico' => 'Crítico ⚠', 'prealerta' => 'Prealerta', 'viable' => 'Viable ✓'][$peor] ?? $peor;
+        $openAtr = $n === 1 ? ' open' : '';
+
+        $secciones[] = "<details class=\"caso-det\"{$openAtr} style=\"margin-bottom:14px;border-radius:4px;overflow:hidden\">"
+            . "<summary style=\"background:{$color};color:#fff;padding:10px 16px;cursor:pointer;list-style:none\">"
+            . "<strong>Caso {$n}: {$origH} &rarr; {$destH}</strong> &mdash; {$pct}% &mdash; {$estLbl}"
+            . "</summary>"
+            . "<div style=\"border-left:4px solid {$color};padding:16px\">{$bodyContent}</div>"
+            . "</details>";
+    }
+
+    // Texto introductorio
+    $pasos  = [];
+    $nCasos = count($casos);
+    foreach ($casos as $c) {
+        $p       = number_format((float)(($c['isla'] ?? [])['p_pct'] ?? 0), 1);
+        $pasos[] = '<strong>' . _h($c['nombre_orig'] ?? '') . ' &rarr; ' . _h($c['nombre_dest'] ?? '') . "</strong> transfiriendo {$p}%";
+    }
+    if ($nCasos === 1) {
+        $introTxt = "Traspaso de carga: {$pasos[0]}.";
+    } elseif ($nCasos === 2) {
+        $introTxt = "Traspaso de carga con 1 corrimiento: desde {$pasos[0]}, luego {$pasos[1]}.";
+    } else {
+        $mid      = implode(', luego ', array_slice($pasos, 1, $nCasos - 2));
+        $introTxt = "Traspaso de carga con " . ($nCasos - 1) . " corrimientos: desde {$pasos[0]}, {$mid}, y finalmente {$pasos[$nCasos - 1]}.";
+    }
+
+    $today         = date('Y-m-d H:i');
+    $orig0H        = _h($casos[0]['nombre_orig']           ?? '');
+    $destNH        = _h($casos[$nCasos - 1]['nombre_dest'] ?? '');
+    $seccionesHtml = implode("\n", $secciones);
+    $sharedHead    = $sharedHead ?? '';
+    $nCasosStr     = $nCasos . ' caso' . ($nCasos > 1 ? 's' : '');
+    $fuTablaHtml   = "<h2 style=\"margin:20px 0 8px;font-size:1.05rem;color:#333\">FU por per&iacute;odo &mdash; alimentadores y transformadores</h2>\n  "
+                   . _tablaFuPeriodosHtml($casos);
+
+    $html = "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n"
+        . "  <meta charset=\"utf-8\">\n"
+        . "  <title>Traspaso con corrimiento &mdash; {$nCasosStr} ({$orig0H} &rarr; {$destNH})</title>\n"
+        . "  {$sharedHead}\n"
+        . "  <style>details.caso-det>summary::-webkit-details-marker{display:none}details.caso-det>summary::marker{display:none}</style>\n"
+        . "</head>\n<body>\n"
+        . "  <h1>Traspaso con corrimiento &mdash; {$nCasosStr} ({$orig0H} &rarr; {$destNH})</h1>\n"
+        . "  <p>Generado el {$today}</p>\n"
+        . "  <div style=\"background:#f0f4ff;border-left:4px solid #1565c0;padding:12px 16px;border-radius:4px;margin-bottom:20px\">\n"
+        . "    <p style=\"margin:0\">{$introTxt}</p>\n  </div>\n"
+        . "  {$fuTablaHtml}\n"
+        . "  {$seccionesHtml}\n"
+        . "</body>\n</html>";
+
+    file_put_contents($rutaSalida, $html);
+    return $rutaSalida;
+}
+
+
+
 function _repTablaMensualVcc(array $tabla, string $nombre, float $dtA = 0.0, float $dtPct = 0.0): string {
     if (empty($tabla)) return '<p>Sin datos.</p>';
     $worstIdx = 0; $worstVal = -1.0;

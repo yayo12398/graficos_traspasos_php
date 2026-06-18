@@ -240,6 +240,7 @@ function simularMesAMes(
     float|null $cnDestino,
     float      $p,
     float      $umbral = 0.90,
+    array      $serieDelta = [],  // si se pasa, usa esta serie para delta×p en vez de serieOrigen
 ): array {
     [$orig, $dest, $meses] = _simReindexar($serieOrigen, $serieDestino);
 
@@ -247,8 +248,11 @@ function simularMesAMes(
     foreach ($meses as $mes) {
         $iOA   = $orig[$mes];
         $iDA   = $dest[$mes];
+        // Para el delta usamos serieDelta (carga limpia de BD) si se suministra;
+        // de lo contrario serieOrigen (comportamiento original intacto).
+        $iOAD  = $serieDelta ? ($serieDelta[$mes] ?? $iOA) : $iOA;
         // null cuando origen no tiene datos: propaga incertidumbre al destino (igual que NaN en pandas)
-        $delta = $iOA !== null ? $iOA * $p : null;
+        $delta = $iOAD !== null ? $iOAD * $p : null;
 
         $iOD = $iOA !== null ? max(0.0, round($iOA - $delta, 1)) : null;
         $iDD = ($iDA !== null && $delta !== null) ? round($iDA + $delta, 1) : null;

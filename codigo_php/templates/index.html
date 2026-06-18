@@ -198,6 +198,7 @@
                 <i class="bi bi-info-circle me-1"></i>
                 <span id="orig-cn-txt"></span>
               </div>
+              <div id="corrimiento-origen-notice" style="display:none"></div>
             </div>
           </div>
 
@@ -208,6 +209,7 @@
               <span class="fw-semibold">Selección de Isla</span>
             </div>
             <div class="step-body">
+              <div id="corrimiento-isla-notice" style="display:none" class="mb-2"></div>
               <!-- Toggle equipo / TDs -->
               <div class="btn-group w-100 mb-3" role="group">
                 <input type="radio" class="btn-check" name="tipo-isla" id="modo-equipo" value="equipo" checked>
@@ -457,8 +459,15 @@
         <!-- Columna resultados (siempre visible) -->
         <div class="col-lg-8" id="sec-resultado">
 
+          <!-- Cadena de corrimiento (casos anteriores colapsados) -->
+          <div id="cadena-casos"></div>
+
           <!-- Resultados -->
           <div id="resultado-contenido" style="display:none">
+
+          <!-- Banner caso actual (dentro para que se copie al colapsar) -->
+          <div id="caso-banner" style="display:none" class="mb-2"></div>
+
           <div class="row g-2 mb-3" id="cards-resumen"></div>
 
           <!-- Alerta crítico/prealerta -->
@@ -473,6 +482,9 @@
 
           <!-- Panel Límite de Zona (resultado) -->
           <div id="panel-lz" class="mb-2" style="display:none"></div>
+
+          <!-- Panel Corrimiento -->
+          <div id="panel-corrimiento" class="mb-2" style="display:none"></div>
 
           <!-- Tarjeta peor caso estándar -->
           <div class="card step-card mb-2">
@@ -524,6 +536,12 @@
 
                 <!-- Trafos mam -->
                 <div id="sec-trafos-mam" style="display:none">
+                  <div id="misma-barra-nota" style="display:none" class="mb-2">
+                    <div class="alert alert-info py-2 mb-0" style="font-size:.88rem">
+                      <i class="bi bi-info-circle me-1"></i>
+                      Alimentadores en la <strong>misma barra SE</strong> — el transformador de potencia no ve cambio neto en su cargabilidad.
+                    </div>
+                  </div>
                   <div id="trafo-orig-mam-section" style="display:none" class="mb-2">
                     <div class="small text-muted fw-semibold mb-1"
                          id="trafo-orig-mam-label"></div>
@@ -1044,6 +1062,10 @@ const state = {
   destinosData:         [],   // lista de feeders del Excel (destino)
   feedersNuevos:        [],   // feeders en comisionamiento
   pendingPreselectDest: null, // numalim a pre-seleccionar tras corrimiento
+  esCorrimiento:        false,// true cuando viene de precargarCorrimiento
+  esRecalculo:          false,// true cuando se recalcula por ajuste (no reiniciar cadena)
+  numeroCaso:           0,    // caso actual (1-3)
+  cadenaSimulaciones:   [],   // historial de simulaciones de la cadena
   lzVecinos:            [],   // vecinos LZ del origen actual [{numpos_lz, tipo, vecinos}]
   selectedNumposLZ:     null, // dispositivo LZ seleccionado por el usuario
   equiposData:     [],   // equipos del feeder origen
@@ -1705,6 +1727,12 @@ async function actualizarDestinosLZ(numalim) {
 }
 
 // ── CLASIFICACIÓN EQUIPOS TRONCALES ───────────────────────────────────────
+const _PREFIJOS_SUBT = ["ABB","G33","ORM","SCH","GMT","VIS","CGP","GLT"];
+const _esTroncalRelevante = eq => {
+  const p = (eq || "").slice(0, 3).toUpperCase();
+  return _PREFIJOS_SUBT.includes(p) || p === "PPF" || p === "REC";
+};
+
 function _tipoEquipoTroncal(numpos) {
   const p = (numpos || "").slice(0, 3).toUpperCase();
   if (p === "REG") return { label: "Regulador",  color: "danger",    msg: "No maniobrable" };
@@ -1770,8 +1798,12 @@ function mostrarEquipoCierra(numalimDest) {
   const devs = dispositivos.map(d => {
     const vi = d.vecinos.find(x => x.numalim === numalimDest);
     let enIsla = null;
-    if (equipoAbre && d.equipos_troncal_orig?.length) {
-      enIsla = d.equipos_troncal_orig.some(eq => eq.toUpperCase().trim() === equipoAbre);
+    if (equipoAbre) {
+      if (d.equipos_troncal_orig?.length) {
+        enIsla = d.equipos_troncal_orig.some(eq => eq.toUpperCase().trim() === equipoAbre);
+      } else {
+        enIsla = false; // sin datos de troncal desde origen → no se puede confirmar
+      }
     }
     return {
       ...d,
@@ -1897,7 +1929,8 @@ function renderSecEquiposInvolucrados(data) {
 
   const selDev = data.lz_info?.dispositivos?.find(d => d.seleccionado)
               || data.lz_info?.dispositivos?.[0];
-  const troncal = (selDev?.viable !== false) ? (selDev?.equipos_troncal || []) : [];
+  const troncal = ((selDev?.viable !== false) ? (selDev?.equipos_troncal || []) : [])
+                  .filter(_esTroncalRelevante);
   const eqTsp   = data.equipos_traspasados || [];
   const camTopo = (data._extras?.cambio_topologico || "").trim();
 
@@ -1994,6 +2027,21 @@ function renderPanelLZ(lz, nombreOrig, nombreDest) {
     titulo = "Límite de zona disponible";
   }
 
+  const _brSim = state.ultimaSimulacion?.body_request || {};
+  const _eqAbre = (_brSim.tipo_isla === "equipo" && _brSim.equipo_nombre)
+    ? _brSim.equipo_nombre.toUpperCase().trim() : null;
+
+  const _islaB = d => {
+    if (!_eqAbre) return "";
+    if (!d.equipos_troncal_orig?.length) {
+      return ` <span class="badge bg-secondary text-white" title="Sin datos de troncal origen — verificar manualmente si este LZ pertenece a la isla">Verificar</span>`;
+    }
+    const enIsla = d.equipos_troncal_orig.some(eq => eq.toUpperCase().trim() === _eqAbre);
+    return enIsla
+      ? ` <span class="badge bg-info text-dark" title="LZ encontrado en camino troncal aguas abajo del equipo que abre">En isla ✓</span>`
+      : ` <span class="badge bg-warning text-dark" title="No encontrado en camino troncal — verificar si pertenece a la isla">Verificar</span>`;
+  };
+
   const filas = lz.dispositivos.map(d => {
     const tipoLabel = TIPO_LABEL[d.tipo] || d.tipo;
     const devColor  = d.viable === false ? "secondary" : (d.tipo === "subterraneo_3ramas" ? "warning" : "success");
@@ -2025,7 +2073,7 @@ function renderPanelLZ(lz, nombreOrig, nombreDest) {
       <div>
         <div class="d-flex align-items-center gap-1">
           <code class="${selStyle}">${d.numpos_lz}</code>${selIcon}
-          <span class="badge bg-${devColor} text-${devColor === "warning" ? "dark" : "white"}">${tipoLabel}</span>${exceLabel}${viableHtml}
+          <span class="badge bg-${devColor} text-${devColor === "warning" ? "dark" : "white"}">${tipoLabel}</span>${exceLabel}${_islaB(d)}${viableHtml}
         </div>
         ${extra}${troncalHtml}
       </div>
@@ -2128,6 +2176,17 @@ async function ejecutarSimulacion() {
   if (tipoDest === "excel" && isNaN(body.numalim_dest)) return mostrarErrorSim("Selecciona el alimentador destino.");
   if (tipoDest === "nuevo" && !body.feeder_nuevo_nombre) return mostrarErrorSim("Selecciona o crea un alimentador en comisionamiento.");
 
+  // P2: en corrimiento adjuntar delta acumulado del caso anterior como baseline del origen
+  if (state.esCorrimiento && state.cadenaSimulaciones.length > 0) {
+    const prevSim    = state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1];
+    const prevDeltas = prevSim?.delta?.serie_deltas;
+    if (prevDeltas && Object.keys(prevDeltas).length > 0) {
+      body.delta_acum_orig = prevDeltas;
+    }
+    // Indicar si caso anterior era misma barra (para omitir delta en trafo del origen)
+    body.delta_acum_orig_misma_barra = prevSim?.misma_barra_se ?? false;
+  }
+
   dbg(`  body: numalim_orig=${body.numalim_orig} tipo_isla=${body.tipo_isla} equipo="${body.equipo_nombre}" numalim_dest=${body.numalim_dest}`);
   spinner(true, "Calculando traspaso...");
   try {
@@ -2150,14 +2209,279 @@ async function ejecutarSimulacion() {
       cambio_topologico: document.getElementById("inp-cambio-topo")?.value.trim() || "",
       equipo_cierra:     body.equipo_cierra || "",
     };
+
+    // Cadena de corrimiento
+    if (!state.esCorrimiento && !state.esRecalculo) {
+      limpiarCadena();
+      state.numeroCaso = 1;
+    }
+    // Si esCorrimiento: colapsarCasoActual() y numeroCaso++ ya se hicieron en precargarCorrimiento
+    // Si esRecalculo: numeroCaso y cadena ya fueron preparados por recalcularConAjuste()
+    state.esCorrimiento  = false;
+    state.esRecalculo    = false;
+    data._numero_caso    = state.numeroCaso;
+    state.cadenaSimulaciones.push({ ...data, body_request: body });
+
     state.ultimaSimulacion = { ...data, body_request: body };
     mostrarResultados(data);
+
+    // Banner caso actual
+    const _banner = document.getElementById("caso-banner");
+    if (_banner) {
+      const _bc = _CASO_COLORS[(state.numeroCaso - 1) % _CASO_COLORS.length];
+      _banner.innerHTML = `<div style="background:${_bc};color:#fff;padding:10px 18px;border-radius:6px;font-weight:700;font-size:1.05em">
+        Caso ${state.numeroCaso}: ${data.nombre_orig} → ${data.nombre_dest}
+      </div>`;
+      _banner.style.display = "";
+    }
+
+    // Restablecer origen al terminar cada simulación
+    if (ts.origen) ts.origen.enable();
+    const _oN = document.getElementById("corrimiento-origen-notice");
+    if (_oN) { _oN.innerHTML = ""; _oN.style.display = "none"; }
+    const _iN = document.getElementById("corrimiento-isla-notice");
+    if (_iN) { _iN.innerHTML = ""; _iN.style.display = "none"; }
   } catch (e) {
     dbg(`✗ Excepción fetch: ${e.message}`, "error");
     mostrarErrorSim("Error de conexión: " + e.message);
   } finally {
     spinner(false);
   }
+}
+
+// ── CORRIMIENTOS DE CARGA ─────────────────────────────────────────────────
+const _CASO_COLORS = ["#1565c0", "#e65100", "#1b5e20"];
+
+async function renderPanelCorrimiento(numalimDest, nombreDest) {
+  const el = document.getElementById("panel-corrimiento");
+  if (!el || numalimDest == null) { if (el) el.style.display = "none"; return; }
+
+  if (state.numeroCaso >= 3) { el.style.display = "none"; return; }
+
+  const candidatos = await apiFetch(`/api/corrimiento_candidatos/${numalimDest}`);
+  if (!candidatos?.length) { el.style.display = "none"; return; }
+
+  const filas = candidatos.map(c => {
+    const rem    = c.remanente_A;
+    const pct    = c.remanente_pct;
+    const remTxt = rem != null ? `${rem.toFixed(1)} A` : "—";
+    const pctTxt = pct != null ? `${pct.toFixed(1)}%` : "—";
+    const colorBg = pct == null ? "secondary" : pct >= 20 ? "success" : pct >= 5 ? "warning" : "danger";
+    const cxBadge = c.tiene_vecinos_lz
+      ? `<span class="badge bg-info text-dark ms-1" title="${c.n_vecinos_lz} vecino(s) disponibles para corrimiento posterior">→ C→X</span>`
+      : "";
+    return `<tr style="cursor:pointer" title="Clic para precargar corrimiento hacia ${c.nombre}"
+              onclick="precargarCorrimiento(${numalimDest}, ${c.numalim}, ${c.remanente_pct ?? null}, ${c.remanente_A ?? null})">
+      <td><span class="fw-semibold">${c.nombre}</span>${cxBadge}</td>
+      <td class="text-end"><span class="badge bg-${colorBg} text-${colorBg === 'warning' ? 'dark' : 'white'}">${remTxt}</span></td>
+      <td class="text-end text-muted small">${pctTxt}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `<div class="card step-card">
+    <div class="step-header">
+      <i class="bi bi-arrow-repeat me-1" style="color:#1565c0"></i>
+      <span class="fw-semibold">Corrimiento de carga — candidatos desde ${nombreDest}</span>
+    </div>
+    <div class="step-body p-2">
+      <p class="small text-muted mb-2">Selecciona un alimentador destino para continuar la cadena de corrimiento:</p>
+      <table class="table table-sm table-hover mb-0" style="font-size:.85rem">
+        <thead><tr><th>Alimentador</th><th class="text-end">Remanente</th><th class="text-end">%</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+  </div>`;
+  el.style.display = "";
+}
+
+async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) {
+  state.pendingPreselectDest = numalimC;
+  state.esCorrimiento        = true;
+
+  if (state.cadenaSimulaciones.length > 0) {
+    colapsarCasoActual();
+    state.numeroCaso++;
+  }
+
+  const feederB = state.feedersData.find(f => f.numalim == numalimB);
+  const nombreB = feederB?.nombre || String(numalimB);
+  const nombreC = state.feedersData.find(f => f.numalim == numalimC)?.nombre || String(numalimC);
+  const nCaso   = state.numeroCaso;
+  const bc      = _CASO_COLORS[(nCaso - 1) % _CASO_COLORS.length];
+
+  const origNotice = document.getElementById("corrimiento-origen-notice");
+  if (origNotice) {
+    origNotice.innerHTML = `<div class="alert py-2 px-3 mb-0 mt-2 small" style="background:${bc}18;border-left:4px solid ${bc};border-radius:4px">
+      <i class="bi bi-arrow-repeat me-1" style="color:${bc}"></i>
+      <strong style="color:${bc}">Caso ${nCaso} — Corrimiento de carga</strong><br>
+      <span class="text-muted">Origen fijado en <strong>${nombreB}</strong>. No se puede cambiar durante el corrimiento.</span>
+    </div>`;
+    origNotice.style.display = "";
+  }
+
+  // Mostrar aviso de isla inmediatamente con spinner de sugerencia
+  const islaNotice = document.getElementById("corrimiento-isla-notice");
+  if (islaNotice) {
+    islaNotice.innerHTML = `<div class="alert py-2 px-3 mb-0 small" style="background:${bc}18;border-left:4px solid ${bc};border-radius:4px">
+      <i class="bi bi-arrow-right me-1" style="color:${bc}"></i>
+      <strong style="color:${bc}">Corrimiento:</strong>
+      <span class="text-muted"> ${nombreB} → <strong>${nombreC}</strong></span>
+      ${remanenteC != null
+        ? `<div id="corrimiento-equipo-sugerido" class="mt-1 text-muted">
+             <i class="bi bi-hourglass-split me-1"></i>Calculando equipo sugerido...
+           </div>`
+        : ""}
+    </div>`;
+    islaNotice.style.display = "";
+  }
+
+  if (ts.origen) {
+    ts.origen.setValue(String(numalimB));
+    ts.origen.disable();
+  }
+
+  const tabSimular = document.getElementById("tab-simular");
+  if (tabSimular) bootstrap.Tab.getOrCreateInstance(tabSimular).show();
+
+  // Fetch async de equipos de B para calcular sugerencia
+  const nomAlimB = feederB?.nom_alim || feederB?.nombre;
+  if (remanenteC != null && nomAlimB) {
+    try {
+      const equipos = await apiFetch(`/api/feeder/${encodeURIComponent(nomAlimB)}/equipos`);
+      // Demanda efectiva máx de B: si viene de un caso anterior, usar I_dest_despues de esa sim.
+      // Eso captura el delta acumulado de A→B ya incorporado en B.
+      const prevSim = state.cadenaSimulaciones.length > 0
+        ? state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1] : null;
+      let maxDemandB = null;
+      if (prevSim?.tabla?.length) {
+        const vals = prevSim.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
+        if (vals.length) maxDemandB = Math.max(...vals);
+      }
+      const sug = _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB);
+      const elSug = document.getElementById("corrimiento-equipo-sugerido");
+      if (elSug) {
+        if (sug) {
+          const prevSim2 = state.cadenaSimulaciones.length > 0
+            ? state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1] : null;
+          let maxDemB2 = null;
+          if (prevSim2?.tabla?.length) {
+            const vs = prevSim2.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
+            if (vs.length) maxDemB2 = Math.max(...vs);
+          }
+          const deltaEst = (maxDemB2 != null)
+            ? ` ≈ ${(maxDemB2 * sug.pct_feeder / 100).toFixed(1)} A estimado`
+            : "";
+          elSug.innerHTML = `<i class="bi bi-lightbulb-fill text-warning me-1"></i>
+            Sugerido abrir <strong><code>${sug.nombre}</code></strong>
+            <span class="badge bg-secondary ms-1">${sug.pct_feeder.toFixed(1)}% de ${nombreB}${deltaEst}</span>
+            <span class="text-muted ms-1">— remanente ${nombreC}: ${remanenteA != null ? remanenteA.toFixed(1)+' A' : remanenteC.toFixed(1)+'%'}</span>`;
+        } else {
+          elSug.innerHTML = `<span class="text-muted"><i class="bi bi-dash me-1"></i>Sin equipo sugerido para este rango de carga</span>`;
+        }
+      }
+    } catch (_) {
+      const elSug = document.getElementById("corrimiento-equipo-sugerido");
+      if (elSug) elSug.remove();
+    }
+  }
+}
+
+function _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) {
+  if (!equipos?.length || remanenteC == null) return null;
+
+  const validos = equipos.filter(e => e.pct_feeder != null && e.pct_feeder > 0);
+  if (!validos.length) return null;
+
+  let candidatos;
+  if (remanenteA != null && maxDemandB != null && maxDemandB > 0) {
+    // Comparación en amperes: delta_estimado = maxDemandB × p ≤ remanenteA
+    candidatos = validos.filter(e => (maxDemandB * e.pct_feeder / 100) <= remanenteA);
+  } else {
+    // Fallback: comparación porcentual (solo válida si CN_B ≈ CN_C)
+    candidatos = validos.filter(e => e.pct_feeder <= remanenteC);
+  }
+
+  if (!candidatos.length) return null;
+  return candidatos.reduce((best, e) => e.pct_feeder > best.pct_feeder ? e : best);
+}
+
+function limpiarCadena() {
+  state.cadenaSimulaciones = [];
+  state.numeroCaso = 0;
+  const el = document.getElementById("cadena-casos");
+  if (el) el.innerHTML = "";
+  const banner = document.getElementById("caso-banner");
+  if (banner) { banner.innerHTML = ""; banner.style.display = "none"; }
+  if (ts.origen) ts.origen.enable();
+  const origNotice = document.getElementById("corrimiento-origen-notice");
+  if (origNotice) { origNotice.innerHTML = ""; origNotice.style.display = "none"; }
+  const islaNotice = document.getElementById("corrimiento-isla-notice");
+  if (islaNotice) { islaNotice.innerHTML = ""; islaNotice.style.display = "none"; }
+}
+
+function colapsarCasoActual() {
+  const contenido = document.getElementById("resultado-contenido");
+  const sim       = state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1];
+  if (!contenido || contenido.style.display === "none" || !sim) return;
+
+  const n        = state.numeroCaso;
+  const pct      = sim.isla?.p_pct?.toFixed(1) ?? "—";
+  const estado   = sim.resumen?.peor_estado ?? "";
+  const colorEst = estado === "critico" ? "danger" : estado === "prealerta" ? "warning" : "success";
+  const labelEst = estado === "critico" ? "Crítico" : estado === "prealerta" ? "Prealerta" : "Viable";
+  const numpos   = sim.lz_info?.numpos_lz_sel ? ` · Equipo: <code>${sim.lz_info.numpos_lz_sel}</code>` : "";
+  const bc       = _CASO_COLORS[(n - 1) % _CASO_COLORS.length];
+
+  // Clonar DOM y convertir canvas a imágenes estáticas (innerHTML no preserva canvas pintado)
+  const clone = contenido.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.style.removeProperty("display");
+
+  const canvasesOrig  = contenido.querySelectorAll("canvas");
+  const canvasesClone = clone.querySelectorAll("canvas");
+  canvasesOrig.forEach((cv, idx) => {
+    const cloneCV = canvasesClone[idx];
+    if (!cloneCV) return;
+    try {
+      const img = document.createElement("img");
+      img.src   = cv.toDataURL("image/png");
+      img.style.maxWidth = "100%";
+      img.style.display  = "block";
+      cloneCV.replaceWith(img);
+    } catch (e) { cloneCV.remove(); }
+  });
+
+  // Renombrar IDs para evitar duplicados en el DOM
+  clone.querySelectorAll("[id]").forEach(el => { el.id = `_c${n}_${el.id}`; });
+
+  const details = document.createElement("details");
+  details.className = "card step-card mb-2";
+  details.style.borderLeft   = `4px solid ${bc}`;
+  details.style.borderRadius = "6px";
+
+  const summary = document.createElement("summary");
+  summary.className = "step-header d-flex align-items-center gap-2";
+  summary.style.cssText = `cursor:pointer;list-style:none;background:${bc}18;border-radius:6px`;
+  summary.innerHTML = `
+    <i class="bi bi-chevron-right" style="font-size:.75em;transition:transform .2s" id="_chev-c${n}"></i>
+    <span class="fw-semibold" style="color:${bc}">Caso ${n}: ${sim.nombre_orig} → ${sim.nombre_dest}</span>
+    <span class="badge bg-${colorEst} text-${colorEst === 'warning' ? 'dark' : 'white'}">${labelEst}</span>
+    <span class="small text-muted">${pct}% traspasado${numpos}</span>`;
+
+  const bodyDiv = document.createElement("div");
+  bodyDiv.className = "step-body p-0";
+  bodyDiv.appendChild(clone);
+
+  details.appendChild(summary);
+  details.appendChild(bodyDiv);
+
+  details.addEventListener("toggle", () => {
+    const chev = details.querySelector(`#_chev-c${n}`);
+    if (chev) chev.style.transform = details.open ? "rotate(90deg)" : "";
+  });
+
+  document.getElementById("cadena-casos").appendChild(details);
+  contenido.style.display = "none";
 }
 
 // ── RESULTADOS ────────────────────────────────────────────────────────────
@@ -2259,6 +2583,9 @@ function mostrarResultados(data) {
 
   // Panel Límite de Zona
   renderPanelLZ(data.lz_info, data.nombre_orig, data.nombre_dest);
+
+  // Panel Corrimiento
+  renderPanelCorrimiento(data.numalim_dest, data.nombre_dest);
 
   // Peor caso (escenario conservador Δ fijo)
   renderPeorCaso(data);
@@ -2669,7 +2996,7 @@ function renderMamSection(data) {
   document.getElementById("lbl-estados-mam").textContent = `FU (%) ${nomDest} — mes a mes`;
 
   renderMamCharts(data);
-  renderMamTrafos(data.trafo_orig_mam, data.trafo_dest_mam, data.nombre_orig, data.nombre_dest, data.ajustes_activos);
+  renderMamTrafos(data.trafo_orig_mam, data.trafo_dest_mam, data.nombre_orig, data.nombre_dest, data.ajustes_activos, data.misma_barra_se ?? false);
   renderMamTable(data);
 }
 
@@ -2825,13 +3152,25 @@ function renderMamCharts(data) {
   });
 }
 
-function renderMamTrafos(trafoOrig, trafoDest, nomOrig="Origen", nomDest="Destino", ajActivos={}) {
+function renderMamTrafos(trafoOrig, trafoDest, nomOrig="Origen", nomDest="Destino", ajActivos={}, mismaBarra=false) {
   const sec     = document.getElementById("sec-trafos-mam");
   const secOrig = document.getElementById("trafo-orig-mam-section");
   const secDest = document.getElementById("trafo-dest-mam-section");
+  const notaEl  = document.getElementById("misma-barra-nota");
   _destroyCharts("canvas-trafo-orig-mam", "canvas-trafo-dest-mam");
 
-  if (!trafoOrig && !trafoDest) { sec.style.display = "none"; return; }
+  if (notaEl) notaEl.style.display = "none";
+  if (!trafoOrig && !trafoDest) {
+    if (mismaBarra) {
+      sec.style.display = "";
+      if (secOrig) secOrig.style.display = "none";
+      if (secDest) secDest.style.display = "none";
+      if (notaEl)  notaEl.style.display  = "";
+    } else {
+      sec.style.display = "none";
+    }
+    return;
+  }
   sec.style.display = "";
 
   const ajOrig = new Set(Object.keys(ajActivos?.trafo_orig || {}));
@@ -2976,40 +3315,58 @@ async function guardarTransferencia() {
 }
 
 // ── DESCARGAR HTML ────────────────────────────────────────────────────────
+function _mapCasoDescarga(s, numeroCaso) {
+  return {
+    numero_caso:          numeroCaso,
+    nombre_orig:          s.nombre_orig,
+    nombre_dest:          s.nombre_dest,
+    cn_orig:              s.cn_orig,
+    cn_dest:              s.cn_dest,
+    delta_max:            s.delta.delta_max,
+    isla:                 s.isla,
+    resumen:              s.resumen,
+    tabla:                s.tabla,
+    descripcion:          s._extras?.descripcion           || "",
+    trafo_orig:           s.trafo_orig                     || null,
+    trafo_dest:           s.trafo_dest                     || null,
+    detalle_tds:          s.detalle_tds                    || [],
+    equipo_abre:          s.body_request?.equipo_nombre    || "",
+    escenario:            s.body_request?.escenario        || "normal",
+    equipo_cierra:        s._extras?.equipo_cierra || s.lz_info?.numpos_lz_sel || "",
+    n_td_equipo_total:    s.isla?.n_td_equipo_total        ?? null,
+    tabla_mam:            s.tabla_mam                      || [],
+    trafo_orig_mam:       s.trafo_orig_mam                 || null,
+    trafo_dest_mam:       s.trafo_dest_mam                 || null,
+    cambio_topologico:    s._extras?.cambio_topologico     || "",
+    equipos_traspasados:  s.equipos_traspasados            || [],
+    ajustes_activos:      s.ajustes_activos                || {},
+    serie_raw_orig:       s.serie_raw_orig                 || {},
+    serie_raw_dest:       s.serie_raw_dest                 || {},
+    serie_raw_trafo_orig: s.serie_raw_trafo_orig           || {},
+    serie_raw_trafo_dest: s.serie_raw_trafo_dest           || {},
+    lz_info:              s.lz_info                        || null,
+  };
+}
+
 async function descargarHTML() {
-  const sim = state.ultimaSimulacion;
+  const sim    = state.ultimaSimulacion;
+  const cadena = state.cadenaSimulaciones;
   if (!sim) return mostrarError("Primero ejecuta una simulación.");
 
-  const body = {
-    nombre_orig: sim.nombre_orig,
-    nombre_dest: sim.nombre_dest,
-    cn_orig:     sim.cn_orig,
-    cn_dest:     sim.cn_dest,
-    delta_max:   sim.delta.delta_max,
-    isla:        sim.isla,
-    resumen:     sim.resumen,
-    tabla:       sim.tabla,
-    feeder_nuevo:  sim.feeder_nuevo,
-    descripcion:      sim._extras?.descripcion      || "",
-    trafo_orig:    sim.trafo_orig,
-    trafo_dest:    sim.trafo_dest,
-    detalle_tds:   sim.detalle_tds  || [],
-    equipo_abre:       sim.body_request?.equipo_nombre  || "",
-    escenario:         sim.body_request?.escenario      || "normal",
-    equipo_cierra:     sim._extras?.equipo_cierra || sim.lz_info?.numpos_lz_sel || "",
-    n_td_equipo_total: sim.isla?.n_td_equipo_total      ?? null,
-    tabla_mam:           sim.tabla_mam          || [],
-    trafo_orig_mam:      sim.trafo_orig_mam     || null,
-    trafo_dest_mam:      sim.trafo_dest_mam     || null,
-    cambio_topologico:   sim._extras?.cambio_topologico || "",
-    equipos_traspasados: sim.equipos_traspasados || [],
-    ajustes_activos:     sim.ajustes_activos      || {},
-    serie_raw_orig:      sim.serie_raw_orig        || {},
-    serie_raw_dest:      sim.serie_raw_dest        || {},
-    serie_raw_trafo_orig: sim.serie_raw_trafo_orig || {},
-    serie_raw_trafo_dest: sim.serie_raw_trafo_dest || {},
-    lz_info:             sim.lz_info              || null,
-  };
+  let body;
+  const fecha = new Date().toISOString().slice(0, 10);
+  let nombreArchivo;
+
+  if (cadena.length > 1) {
+    // Multi-caso: enviar todos los casos para reporte de cadena
+    body = { casos: cadena.map(s => _mapCasoDescarga(s, s._numero_caso ?? 1)) };
+    nombreArchivo = `corrimiento_${cadena.length}casos_${fecha}.html`;
+  } else {
+    // Caso único
+    body = _mapCasoDescarga(sim, sim._numero_caso ?? 1);
+    body.feeder_nuevo = sim.feeder_nuevo || null;
+    nombreArchivo = `traspaso_${fecha}.html`;
+  }
 
   spinner(true, "Generando informe...");
   try {
@@ -3022,8 +3379,8 @@ async function descargarHTML() {
     const blob = await r.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
-    a.href = url;
-    a.download = `traspaso_${new Date().toISOString().slice(0,10)}.html`;
+    a.href     = url;
+    a.download = nombreArchivo;
     a.click();
     URL.revokeObjectURL(url);
   } finally {
@@ -5098,7 +5455,7 @@ function renderAjustePanel(data) {
     entidades.push({
       tipo: "alim", numalim: data.numalim_orig,
       label: "Alimentador Origen", nombre: data.nombre_orig || "",
-      rawSerie: data.serie_raw_orig,
+      rawSerie: filtrarMeses(data.serie_raw_orig),
       ajustes: data.ajustes_activos?.alim_orig || {},
       prefix: "alim-orig"
     });
@@ -5107,7 +5464,7 @@ function renderAjustePanel(data) {
     entidades.push({
       tipo: "alim", numalim: data.numalim_dest,
       label: "Alimentador Destino", nombre: data.nombre_dest || "",
-      rawSerie: data.serie_raw_dest,
+      rawSerie: filtrarMeses(data.serie_raw_dest),
       ajustes: data.ajustes_activos?.alim_dest || {},
       prefix: "alim-dest"
     });
@@ -5200,6 +5557,19 @@ function renderAjustePanel(data) {
   sec.style.display = "";
 }
 
+// Recalcula la simulación actual preservando la cadena de corrimiento.
+// Reemplaza el último caso en cadenaSimulaciones en lugar de reiniciar.
+async function recalcularConAjuste() {
+  state.esRecalculo = true;
+  if (state.cadenaSimulaciones.length > 0) {
+    state.cadenaSimulaciones.pop(); // quitar el caso actual (se va a reemplazar)
+  }
+  if (state.numeroCaso > 1) {
+    state.esCorrimiento = true; // restaurar delta acumulado del caso anterior
+  }
+  await ejecutarSimulacion();
+}
+
 async function guardarAjustesEntidad(tipo, numalim, prefix, evt) {
   evt?.stopPropagation();
   const cambios = {};
@@ -5220,7 +5590,7 @@ async function guardarAjustesEntidad(tipo, numalim, prefix, evt) {
     });
     const j = await r.json();
     if (j.error) { alert("Error: " + j.error); return; }
-    await ejecutarSimulacion();
+    await recalcularConAjuste();
   } catch (err) {
     alert("Error al guardar: " + err.message);
   }
@@ -5232,7 +5602,7 @@ async function eliminarAjuste(tipo, numalim, mes, evt) {
     const r = await fetch(`/api/ajustes/${tipo}/${numalim}/${mes}`, { method: "DELETE" });
     const j = await r.json();
     if (j.error) { alert("Error: " + j.error); return; }
-    await ejecutarSimulacion();
+    await recalcularConAjuste();
   } catch (err) {
     alert("Error al restablecer: " + err.message);
   }
