@@ -1609,7 +1609,7 @@ function _repSeccionVccHtml(
 ): string {
     $tablaAlimHtml = _repTablaMensualVcc($tablaAlim, $nombreAlim, $dtA, $dtPct);
     $equiposHtml   = _repTablaEquiposHtml($equipos, $deltaI);
-    $nEq = count(array_filter($equipos, fn($e) => isset($e['cn'])));
+    $nEq = count(array_filter($equipos, fn($e) => !empty($e['cn'])));
     $trafoSection  = '';
     if (!empty($trafoInfo) && !($trafoInfo['sin_datos'] ?? false)) {
         $trafoNombre = $trafoInfo['barra'] ?? $trafoInfo['barra_alim'] ?? 'Trafo AT/MT';

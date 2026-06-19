@@ -22,10 +22,8 @@ if (!file_exists(__DIR__ . '/config.php')) {
 // ── Crear carpetas de escritura si no existen ─────────────────────────────────
 foreach ([
     __DIR__ . '/data/cache',
-    __DIR__ . '/data/reportes',
     __DIR__ . '/feeders_nuevos',
     __DIR__ . '/vcc_evaluaciones',
-    __DIR__ . '/resultados',
 ] as $_dir) {
     if (!is_dir($_dir)) mkdir($_dir, 0755, true);
 }
@@ -355,7 +353,16 @@ if ($method === 'POST' && $a === 'isla' && $b0 === 'preview' && !$b1) {
     ['dfAb' => $dfAb] = gd();
     $tds = seleccionarTds($dfAb, $nomAlim, $b);
     if (empty($tds)) jsonErr('Sin TDs para el modo/equipo indicado');
-    jsonPy(infoIsla($tds, $nomAlim, $dfAb));
+    $previewIsla  = infoIsla($tds, $nomAlim, $dfAb);
+    $_eqAbreP     = $b['equipo_nombre'] ?? '';
+    $eqsTrsp      = ($_eqAbreP !== '' && ($b['tipo_isla'] ?? 'equipo') === 'equipo')
+        ? equiposEnIsla($dfAb, $tds, $_eqAbreP, $nomAlim)
+        : [];
+    $previewOut   = $previewIsla;
+    unset($previewOut['detalle_tds']);
+    $previewOut['equipos_traspasados'] = $eqsTrsp;
+    $previewOut['detalle_tds']         = $previewIsla['detalle_tds'] ?? [];
+    jsonPy($previewOut);
 }
 
 // ── GET /api/destinos/existentes ───────────────────────────────────────────────
@@ -465,23 +472,22 @@ if ($method === 'POST' && $a === 'guardar_transferencia' && !$b0) {
 // Genera el reporte HTML de un traspaso y lo retorna como descarga.
 if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
     $b   = bodyJson();
-    $dir = __DIR__ . '/data/reportes';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
 
     // ── Multi-caso (cadena de corrimiento) ─────────────────────────────────
     $casosRaw = $b['casos'] ?? null;
     if ($casosRaw && count($casosRaw) > 1) {
         $slug = 'corrimiento_' . date('Ymd_His');
-        $ruta = $dir . '/' . $slug . '.html';
+        $ruta = tempnam(sys_get_temp_dir(), 'rpt');
         generarReporteCadenaHtml($casosRaw, $ruta);
         header('Content-Type: text/html; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $slug . '.html"');
         readfile($ruta);
+        unlink($ruta);
         exit;
     }
 
     $slug = slugFeeder($b['nombre_orig'] ?? 'rep') . '_' . slugFeeder($b['nombre_dest'] ?? '') . '_' . date('Ymd_His');
-    $ruta = $dir . '/' . $slug . '.html';
+    $ruta = tempnam(sys_get_temp_dir(), 'rpt');
 
     // Construir ajustesInfo (tabla de ajustes de demanda para el reporte, igual que Python)
     $_ajActivos = $b['ajustes_activos'] ?? [];
@@ -541,6 +547,7 @@ if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $slug . '.html"');
     readfile($ruta);
+    unlink($ruta);
     exit;
 }
 
@@ -646,7 +653,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     if ($deltaAcumOrig) {
         foreach ($deltaAcumOrig as $_m => $_d) {
             if (array_key_exists($_m, $serieOrig)) {
-                $serieOrig[$_m] = round((float)$serieOrig[$_m] + (float)$_d, 2);
+                $serieOrig[$_m] = round((float)$serieOrig[$_m] - (float)$_d, 2);
             }
         }
     }
@@ -690,7 +697,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     if ($trafoOrigRow && $deltaAcumOrig && !$deltaAcumOrigMismaBarra) {
         foreach ($deltaAcumOrig as $_m => $_d) {
             if (array_key_exists($_m, $trafoOrigRow) && preg_match('/^\d{4}-\d{2}$/', $_m)) {
-                $trafoOrigRow[$_m] = round((float)$trafoOrigRow[$_m] + (float)$_d, 2);
+                $trafoOrigRow[$_m] = round((float)$trafoOrigRow[$_m] - (float)$_d, 2);
             }
         }
     }
@@ -720,7 +727,8 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $numalimTrafoDest = $numalimTN ?? null;
     }
 
-    // Misma barra: si ambos feeders cuelgan del mismo trafo, el impacto en SE es nulo → anular análisis
+    // Misma barra: si ambos feeders cuelgan del mismo trafo, el impacto en SE es nulo.
+    // Python: anula solo trafoDest y marca trafoOrig con mismo_trafo_destino=true.
     $mismaBarra = false;
     if (!empty($trafoOrigRowRaw) && !empty($trafoDestRowRaw)) {
         $_barraO = trim((string)($trafoOrigRowRaw['barra'] ?? ''));
@@ -728,7 +736,9 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $mismaBarra = $_barraO !== '' && $_barraO === $_barraD;
     }
     if ($mismaBarra) {
-        $trafoOrig = $trafoOrigMam = $trafoDest = $trafoDestMam = null;
+        if ($trafoOrig)    $trafoOrig['mismo_trafo_destino']    = true;
+        if ($trafoOrigMam) $trafoOrigMam['mismo_trafo_destino'] = true;
+        $trafoDest = $trafoDestMam = null;
     }
 
     // P1: propagar barra y subestacion a los objetos trafo para labels en reportes
@@ -750,30 +760,13 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     }
     $lzInfo['numpos_lz_sel'] = $numposLzSel;
 
-    // Generar reporte HTML
-    $dir  = __DIR__ . '/data/reportes';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $slug = slugFeeder($nomOrig) . '_' . slugFeeder($nomDest) . '_' . date('Ymd_His');
-    $ruta = $dir . '/' . $slug . '.html';
-    generarReporteHtml(
-        $dfSim, $isla, $nomOrig, $nomDest,
-        is_nan($cnOrig) ? 0.0 : $cnOrig,
-        is_nan($cnDest) ? 0.0 : $cnDest,
-        $deltaMax, $resumen, $ruta,
-        $b['descripcion']        ?? '',
-        null,
-        $trafoOrig, $trafoDest,
-        $isla['detalle_tds']     ?? [],
-        $equipoAbre,
-        $b['escenario']          ?? 'normal',
-        $b['equipo_cierra']      ?? '',
-        null,
-        $dfSimMam, $trafoOrigMam, $trafoDestMam,
-        $b['cambio_topologico']  ?? '',
-        $equiposTrasp,
-        null,
-        $lzInfo,
-    );
+    // Construir isla limpia: excluir detalle_tds (va top-level), agregar n_td_equipo_total
+    $islaOut = $isla;
+    unset($islaOut['detalle_tds']);
+    if ($equipoAbre !== '') {
+        $tdsTotalesEquipo = tdsDeEquipo($dfAb, $equipoAbre);
+        $islaOut['n_td_equipo_total'] = count($tdsTotalesEquipo);
+    }
 
     // Respuesta en formato Python plano
     jsonPy([
@@ -784,7 +777,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'nombre_dest'         => $nomDest,
         'cn_orig'             => is_nan($cnOrig) ? null : $cnOrig,
         'cn_dest'             => is_nan($cnDest) ? null : $cnDest,
-        'isla'                => $isla,
+        'isla'                => $islaOut,
         'detalle_tds'         => $isla['detalle_tds'] ?? [],
         'delta'               => [
             'delta_max'    => $deltaMax,
@@ -815,7 +808,6 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'serie_raw_dest'      => $serieDestRaw['serie'] ?? [],
         'serie_raw_trafo_orig'=> serieRawDeFila($trafoOrigRowRaw ?? null),
         'serie_raw_trafo_dest'=> serieRawDeFila($trafoDestRowRaw ?? null),
-        'reporte_url'         => '/data/reportes/' . $slug . '.html',
     ]);
 }
 
@@ -976,15 +968,14 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && $b1 === 'informe' && 
         }
     }
 
-    $dir  = __DIR__ . '/data/reportes';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
     $slug = slugFeeder($nombreFeeder) . '_' . date('Ymd_His');
-    $ruta = $dir . '/' . $slug . '.html';
+    $ruta = tempnam(sys_get_temp_dir(), 'rpt');
     generarReporteFeeder($feeder, $acum, $usoPct, $ruta, $trafoFinal, $trafoFinalMam);
 
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="feeder_' . $slug . '.html"');
     readfile($ruta);
+    unlink($ruta);
     exit;
 }
 
@@ -1222,6 +1213,7 @@ if ($method === 'GET' && $a === 'ajustes' && !$b0) {
                 $tRow   = $dfTrafo[$numalimInt] ?? null;
                 $nombre = $tRow ? (trim((string)($tRow['barra'] ?? '')) ?: $numalimStr) : $numalimStr;
             }
+            ksort($ajustes);
             $mesesAj = [];
             foreach ($ajustes as $mes => $valAj) {
                 $valSql = null;
@@ -1266,35 +1258,38 @@ if ($method === 'DELETE' && $a === 'ajustes' && $b0 && $b1 && $b2) {
 
 // ── GET /api/vcc/equipos/{nom_alim}?modo=equipos|tp ──────────────────────────
 // modo=equipos (default): lista de equipos upstream enriquecida para el cache del JS
-//   → {nombre, numpos, tipo, cn, cn_opcional, fraccion, kva_down, kva_total, tds_down, ...}
-// modo=tp: lista de TDs del feeder → {numpos, nombre, kva}
+//   → {numpos, nombre, tipo, cn, cn_opcional, fraccion, kva_down, kva_total, tds_down, ...}
+// modo=tp: lista de TDs del feeder → {numpos, nombre, kva, tipo}
 if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
     $nomAlim = urldecode($b1);
     $modo    = $_GET['modo'] ?? 'equipos';
     ['dfAb' => $dfAb] = gd();
+    $nomUp   = strtoupper(trim($nomAlim));
 
     if ($modo === 'tp') {
-        // Retorna TDs únicos del feeder con su kVA
-        $allTds = tdsDeFeeder($dfAb, $nomAlim);
+        // Retorna TDs únicos del feeder cuyo nombre empieza con "TP" (igual que Python)
         $seen   = [];
         $result = [];
-        foreach ($allTds as $td) {
-            $np = trim($td['numpos_td'] ?? '');
+        foreach ($dfAb as $row) {
+            if (strtoupper(trim($row['nom_alim'] ?? '')) !== $nomUp) continue;
+            $np = trim($row['numpos_td'] ?? '');
             if ($np === '' || isset($seen[$np])) continue;
+            $nombre = trim($row['nombre'] ?? '');
+            if (!str_starts_with(strtoupper($nombre), 'TP')) continue;
             $seen[$np] = true;
-            $result[] = [
-                'numpos' => $np,
-                'nombre' => trim($td['nombre'] ?? '') ?: $np,
-                'kva'    => isset($td['potencia']) && is_numeric($td['potencia'])
-                    ? (float)$td['potencia'] : null,
-            ];
+            $kva = isset($row['potencia']) && is_numeric($row['potencia'])
+                ? (float)$row['potencia'] : null;
+            $result[] = ['numpos' => $np, 'nombre' => $nombre, 'kva' => $kva, 'tipo' => 'tp'];
         }
-        usort($result, fn($a, $b) => strcmp($a['nombre'], $b['nombre']));
+        // Ordenar: kVA DESC, nombre ASC (igual que Python)
+        usort($result, function($a, $b) {
+            $ka = $a['kva'] ?? 0; $kb = $b['kva'] ?? 0;
+            return $ka !== $kb ? $kb <=> $ka : strcmp($a['nombre'], $b['nombre']);
+        });
         jsonPy($result);
     }
 
     // modo=equipos — obtiene todos los numpos_equip únicos, los clasifica y enriquece con fracción
-    $nomUp   = strtoupper(trim($nomAlim));
     $nombresEq = [];
     foreach ($dfAb as $row) {
         if (strtoupper(trim($row['nom_alim'] ?? '')) !== $nomUp) continue;
@@ -1308,8 +1303,11 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
             ? calcularFraccionReco($dfAb, $nomAlim, $eq['nombre'])
             : ['kva_down' => null, 'kva_total' => null, 'fraccion' => null,
                'tds_down' => null, 'tds_con_kva' => null, 'tds_sin_kva' => null];
-        $result[] = array_merge($eq, $frac);
+        // 'numpos' es el identificador de equipo; 'nombre' es el mismo valor (numpos_equip)
+        $result[] = array_merge($eq, $frac, ['numpos' => $eq['nombre']]);
     }
+    // Ordenar: fracción descendente (igual que Python)
+    usort($result, fn($a, $b) => ($b['fraccion'] ?? 0) <=> ($a['fraccion'] ?? 0));
     jsonPy($result);
 }
 
@@ -1381,9 +1379,9 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
         'cn_alim'             => is_nan($serieAlim['cn']) ? null : $serieAlim['cn'],
         'numalim'             => $numalim,
         'numpos'              => $numpos,
-        'nombre_ref'          => $b['nombre_ref'] ?? ($punto['nombre_ref'] ?? $numpos),
-        'tipo_ref'            => $b['tipo_ref']   ?? ($punto['tipo_ref'] ?? ''),
-        'n_tds_aguas_abajo'   => $b['n_tds_aguas_abajo'] ?? ($punto['n_tds_aguas_abajo'] ?? 0),
+        'nombre_ref'          => $b['nombre_ref'] ?? $numpos,
+        'tipo_ref'            => $b['tipo_ref']   ?? '',
+        'n_tds_aguas_abajo'   => $b['n_tds_aguas_abajo'] ?? 0,
         'meses_sel'           => $mesesSel,
         'equipos_eval'        => $equipos,
         'delta_I'             => $deltaI,
@@ -1413,7 +1411,7 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
         $kvaInst    = (float)$b['kva_instalado'];
         $dISens     = deltaICliente($kvaInst, $tensionKv);
         $vccSens    = calcularVcc($dfAlim, $numalim, $trafoRow, $dISens, $mesesSel, $dtA, $dtPct);
-        $eqSens = evaluarEquipos($upstream, $dISens, $serieAlim['cn'], $serieAlim['serie'], $mesesSel ?: null);
+        $eqSens = evaluarEquipos($upstream, $dISens, $serieAlim['cn'], $serieParaEquipos, $mesesSel ?: null);
         $pctMaxSens = null; $mesMaxSens = '';
         foreach ($vccSens['tabla_alim'] ?? [] as $r) {
             $pct = $r['uso_despues_pct'] ?? null;
@@ -1446,6 +1444,7 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'guardar' && !$b1) {
     $numalim = (int)($b['numalim'] ?? 0);
     $cnAlim  = (float)($b['cn_alim'] ?? 0);
     if (!$nomAlim) jsonErr('nom_alim requerido');
+    if (!isset($b['fecha'])) $b['fecha'] = date('Y-m-d');
     $idx = guardarEvaluacion($nomAlim, $numalim, $cnAlim, $b);
     jsonPy(['ok' => true, 'idx' => $idx]);
 }
@@ -1456,16 +1455,14 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'descargar_html' && !$b1) {
     $b       = bodyJson();
     $nomAlim = $b['nombre_alim'] ?? $b['nom_alim'] ?? '';
     if (!$nomAlim) jsonErr('nombre_alim requerido');
-    $dir  = __DIR__ . '/data/reportes';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
     $slug = slugFeeder($nomAlim) . '_vcc_' . date('Ymd_His');
-    $ruta = $dir . '/' . $slug . '.html';
-    // Normalizar campo para generarReporteVcc
+    $ruta = tempnam(sys_get_temp_dir(), 'rpt');
     if (!isset($b['nombre_alim'])) $b['nombre_alim'] = $nomAlim;
     generarReporteVcc($b, $ruta);
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $slug . '.html"');
     readfile($ruta);
+    unlink($ruta);
     exit;
 }
 
@@ -1475,10 +1472,10 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'historial_global' && !$b1) {
     $allEvs = [];
     foreach (listarAlimsConVcc() as $slug) {
         try {
-            $evs = cargarEvaluaciones($slug);
-            $nombre = $evs[0]['nombre_alim'] ?? $slug;
-            $cn     = $evs[0]['cn_alim']     ?? null;
-            foreach ($evs as $ev) {
+            $data   = cargarEvaluaciones($slug);
+            $nombre = $data['nombre'] ?? $slug;
+            $cn     = $data['cn']     ?? null;
+            foreach ($data['evaluaciones'] ?? [] as $ev) {
                 $allEvs[] = array_merge(['nombre_alim' => $nombre, 'cn_alim' => $cn], $ev);
             }
         } catch (Throwable) {}
@@ -1554,12 +1551,7 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'reporte' && !$b1) {
     $b = bodyJson();
     $nomAlim = $b['nombre_alim'] ?? '';
     if (!$nomAlim) jsonErr('nombre_alim requerido en el body');
-    $dir  = __DIR__ . '/data/reportes';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $slug = slugFeeder($nomAlim) . '_vcc_' . date('Ymd_His');
-    $ruta = $dir . '/' . $slug . '.html';
-    generarReporteVcc($b, $ruta);
-    jsonOk(['reporte_url' => '/data/reportes/' . $slug . '.html']);
+    jsonOk(['ok' => true]);
 }
 
 // ── GET /api/vcc ───────────────────────────────────────────────────────────────

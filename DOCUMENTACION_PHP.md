@@ -43,7 +43,7 @@ graficos_traspasos/
 │   └── ajustes_demanda.json    → data/ajustes_demanda.json (sin cambios)
 ├── feeders_nuevos/             → feeders_nuevos/ (sin cambios, JSON)
 ├── vcc_evaluaciones/           → vcc_evaluaciones/ (sin cambios, JSON)
-└── resultados/                 → resultados/ (HTMLs generados)
+└── resultados/                 → ELIMINADO (reportes se sirven como descarga directa vía tempnam)
 ```
 
 ---
@@ -1196,7 +1196,7 @@ function acumularTrafo(array $trafo, float $deltaAcumMes): array {
 Los reportes son archivos HTML autocontenidos con CSS embebido y tablas estáticas (sin Chart.js). Los caracteres especiales deben escaparse con `htmlspecialchars()`.
 
 ### 10.1 Reporte de traspaso individual
-Genera `resultados/traspaso_<slug>_<fecha>.html` con:
+Descarga directa vía `tempnam(sys_get_temp_dir(), 'rpt')` + `readfile()` + `unlink()`. No se almacena copia en el servidor. Contenido:
 - Cards resumen (Δ, %, TDs, clientes, kVA, mes peor)
 - Tarjeta peor caso (tabla 2 columnas: origen / destino)
 - Gráfico Chart.js autocontenido con datos inline en `<script>`
@@ -1207,7 +1207,7 @@ Genera `resultados/traspaso_<slug>_<fecha>.html` con:
 - Sección `<details class="equip-det isla">`: inversión de flujo + cambio topológico (si aplica)
 
 ### 10.2 Reporte VCC individual
-Genera `resultados/vcc_<slug>_<fecha>.html` con:
+Descarga directa vía `tempnam()` (igual que 10.1). Contenido:
 - Header: alimentador, tensión, punto de conexión, cliente
 - Bloque traspaso simultáneo (si aplica, `.traspaso-vcc`)
 - Por cada escenario (empalme / instalado):
@@ -1387,3 +1387,59 @@ readfile($ruta);
 11. **`equipo_nombre` vs `equipo_abre`**: el frontend JS siempre envía el equipo como `equipo_nombre` en el body de `/api/simular`. En `/api/guardar_transferencia` y `/api/descargar_html`, el JS lo mapea explícitamente a `equipo_abre` antes de enviar. El backend debe aceptar ambos: `$b['equipo_nombre'] ?? $b['equipo_abre'] ?? ''`.
 
 12. **`_extras` en el frontend**: al recibir la respuesta de `/api/simular`, el JS ensambla `data._extras = {descripcion, cambio_topologico, equipo_cierra}` del estado del DOM en ese momento, antes de llamar a `mostrarResultados()`. `guardarTransferencia()` y `descargarHTML()` usan `sim._extras` (no el DOM en vivo) para preservar los valores al momento de la simulación.
+
+13. **`delta_acum_orig` en corrimiento multi-caso**: el frontend envía `delta_acum_orig = prevSim.delta.serie_deltas` (positivos, en A). PHP los **resta** de `$serieOrig` y `$trafoOrigRow` para mostrar la carga actual del origen tras haber cedido esa corriente en el caso anterior. Signo siempre negativo: `$serieOrig[$m] -= $delta`.
+
+14. **`mismo_trafo_destino` en misma barra SE**: cuando origen y destino comparten trafo (misma barra), PHP anula solo `$trafoDest` y agrega `mismo_trafo_destino=true` al objeto `$trafoOrig`. El frontend muestra en el label del trafo origen: _"— mismo trafo que destino, sin cambio neto"_.
+
+15. **`isla` en respuesta de `/api/simular`**: el campo `detalle_tds` se excluye del objeto `isla` (va solo top-level). El campo `n_td_equipo_total` se calcula vía `tdsDeEquipo($dfAb, $equipoAbre)` y se agrega a `isla` cuando `tipo_isla=equipo`; el JS lo usa en reportes y body de descarga.
+
+16. **Descarga de reportes sin guardar en servidor**: todos los endpoints de descarga HTML (`/api/descargar_html`, `/api/vcc/descargar_html`, `/api/feeders_nuevos/.../descargar_html`) usan `tempnam(sys_get_temp_dir(), 'rpt')` + `readfile()` + `unlink()`. No se escribe nada permanente en disco del servidor.
+
+---
+
+## 16. Bugs corregidos en QA (sesiones 2026-06-18 y 2026-06-19)
+
+Registro de divergencias Python→PHP encontradas y corregidas en revisión post-traducción.
+
+### Corrimiento y simulación
+
+| # | Archivo | Descripción | Fix aplicado |
+|---|---------|-------------|--------------|
+| 1 | index.php | `recalcularConAjuste()` reiniciaba cadena | Wrapper que restaura contexto (`esCorrimiento`, `numeroCaso`) |
+| 2 | index.php | Sugerencias usaban `feederB.nombre` en vez de `feederB.nom_alim` | Corregido campo de key |
+| 3 | index.php | Comparación de remanente mezclaba unidades (kVA% vs A%) | Comparación en A absolutos |
+| 4 | index.php | `delta_acum_orig` se sumaba (origin más cargado) en vez de restarse | Cambio `+` → `-` en serieOrig y trafoOrigRow |
+| 5 | index.php | `mismaBarra` anulaba trafo origen y destino | Anula solo destino; marca origen con `mismo_trafo_destino=true` |
+| 6 | index.php | `isla/preview` no retornaba `equipos_traspasados` | Agrega llamada a `equiposEnIsla()` antes de responder |
+| 7 | index.php | `isla.n_td_equipo_total` nunca calculado | Calculado con `tdsDeEquipo()` y adjunto a `$islaOut` |
+| 8 | index.php | `isla.detalle_tds` duplicado dentro del objeto `isla` | `unset($islaOut['detalle_tds'])` antes de jsonPy |
+| 9 | index.php | `mes_peor` y `delta_max` usaban serie completa sin filtrar por período | `array_intersect_key` con `$mesesSel` antes de `calcularDelta` |
+| 10 | index.php | Panel de ajuste mostraba todos los meses disponibles | `filtrarMeses()` aplicado a `serie_raw_orig/dest` en respuesta |
+| 11 | index.php | `GET /api/ajustes` meses en orden de inserción | `ksort($ajustes)` antes del foreach |
+
+### LZ (Límites de Zona)
+
+| # | Archivo | Descripción | Fix aplicado |
+|---|---------|-------------|--------------|
+| 12 | index.php | Badge "En isla ✓" nunca aparecía | `equipos_troncal_orig` agregado a `_lzInfoEntre()` |
+| 13 | index.html | `renderPanelLZ` no computaba `_enIsla` | Calculado desde `state.ultimaSimulacion.body_request.equipo_nombre` |
+
+### VCC (Validación Conexión Cliente)
+
+| # | Archivo | Descripción | Fix aplicado |
+|---|---------|-------------|--------------|
+| 14 | index.php | Dropdown TomSelect vacío | `numpos` faltaba en respuesta de `/api/vcc/equipos` |
+| 15 | index.php | modo=tp filtraba solo cabecera | Iteración por `dfAb` con filtro `str_starts_with('TP')` |
+| 16 | index.php | Sort modo=equipos incorrecto | `fraccion DESC` |
+| 17 | index.php | Historial nunca mostraba evaluaciones | `historial_global` iteraba estructura JSON en vez de `evaluaciones[]` |
+| 18 | index.php | Fecha ausente en evaluaciones guardadas | `$b['fecha'] = date('Y-m-d')` antes de guardarEvaluacion |
+| 19 | index.php | `$punto` variable no asignada en evaluar | Referencias directas a `$b['nombre_ref']` etc. |
+| 20 | index.php | Escenario 2 sens usaba serie sin alivio | `$serieParaEquipos` (con alivio) en lugar de `$serieAlim['serie']` |
+| 21 | Reportes.php | Conteo equipos con CN incorrecto | `!empty($e['cn'])` en vez de `isset($e['cn'])` |
+
+### Descarga de reportes
+
+| # | Archivo | Descripción | Fix aplicado |
+|---|---------|-------------|--------------|
+| 22 | index.php | Reportes se guardaban en `resultados/` del servidor | `tempnam()` + `readfile()` + `unlink()` — sin copia permanente |
