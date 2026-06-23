@@ -1946,6 +1946,7 @@ function _htmlEquiposTroncal(equipos) {
 
 // ── EQUIPO QUE CIERRA (selector LZ) ───────────────────────────────────────
 function mostrarEquipoCierra(numalimDest) {
+  console.log("[TSP-B] mostrarEquipoCierra →", numalimDest, "lzVecinos:", state.lzVecinos?.length);
   const el = document.getElementById("lz-equipo-cierra");
   if (!el) return;
   if (!numalimDest || !state.lzVecinos?.length) {
@@ -4890,37 +4891,42 @@ async function vccGuardarConfigAlim() {
 
 async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
   const panel = document.getElementById("panel-equipos-b");
+  console.log("[TSP-B] tspCargarEquiposB →", { numalimDest, nomAlimB, nTroncal: equiposTroncal?.length });
   if (!numalimDest || !nomAlimB) {
     if (panel) panel.style.display = "none";
     state.troncalBNomAlim = null;
     return;
   }
   state.troncalBNomAlim = nomAlimB;
+  const cont = document.getElementById("equipos-b-tabla");
   try {
     let equipos;
     if (equiposTroncal?.length) {
-      // Enriquecer con fracciones la lista de troncal del LZ
+      console.log("[TSP-B] → POST /api/alim/troncal_enriquecido", equiposTroncal);
       const r = await apiFetch("/api/alim/troncal_enriquecido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
       });
+      console.log("[TSP-B] ← respuesta troncal_enriquecido:", r);
       equipos = r.data?.equipos ?? [];
     } else {
-      // Fallback: el LZ no tenía equipos_troncal → usar upstream completo del feeder
+      console.log("[TSP-B] → GET /api/vcc/equipos/ (fallback)");
       const r = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlimB)}?modo=equipos`);
+      console.log("[TSP-B] ← respuesta vcc/equipos:", r);
       equipos = Array.isArray(r) ? r : [];
     }
-    // Reusar el cache global de equipos_config (ya cargado al inicio)
     state.equiposConfigB = state.equiposConfig;
-    // Config de conductores intermedios del receptor (null si no existe)
     const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
     state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
 
+    console.log("[TSP-B] equipos a renderizar:", equipos.length);
     tspRenderEquiposBTabla(equipos);
     if (panel) panel.style.display = "";
   } catch(e) {
-    console.error("tspCargarEquiposB:", e);
+    console.error("[TSP-B] ERROR:", e);
+    if (cont) cont.innerHTML = `<p class="text-danger small"><i class="bi bi-x-circle me-1"></i>Error al cargar equipos: ${e.message}</p>`;
+    if (panel) panel.style.display = "";
   }
 }
 
