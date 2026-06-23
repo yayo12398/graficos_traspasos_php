@@ -156,8 +156,8 @@
       </button>
     </li>
     <li class="nav-item">
-      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ajustes-admin">
-        <i class="bi bi-pencil-square me-1"></i> Ajustes de Demanda
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-config">
+        <i class="bi bi-gear me-1"></i> Configuración
       </button>
     </li>
     <li class="nav-item">
@@ -334,6 +334,15 @@
                 <select id="sel-destino" placeholder="Buscar alimentador destino..."></select>
                 <div id="lz-dest-info" class="small text-muted mt-1" style="display:none"></div>
                 <div id="lz-equipo-cierra" class="small mt-1" style="display:none"></div>
+                <div id="panel-equipos-b" class="mt-2" style="display:none">
+                  <details id="det-equipos-b">
+                    <summary class="small fw-semibold" style="cursor:pointer;list-style:none">
+                      <i class="bi bi-diagram-3 me-1"></i>Configurar equipos del receptor
+                      <i class="bi bi-chevron-down ms-1" style="font-size:.8rem;transition:transform .2s" id="tsp-b-chevron"></i>
+                    </summary>
+                    <div id="equipos-b-tabla" class="mt-2"></div>
+                  </details>
+                </div>
               </div>
 
               <!-- Destino nuevo (comisionamiento) -->
@@ -622,19 +631,73 @@
     <!-- ══════════════════════════════════════════════════════════════════
          TAB 3: AJUSTES DE DEMANDA
     ═══════════════════════════════════════════════════════════════════ -->
-    <div class="tab-pane fade" id="tab-ajustes-admin">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-          <h5 class="mb-0 fw-semibold">Ajustes de demanda activos</h5>
-          <div class="text-muted small">Valores SQL reemplazados manualmente en el análisis.</div>
-        </div>
-        <button class="btn btn-sm btn-outline-secondary" onclick="cargarAjustesAdmin()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+    <div class="tab-pane fade" id="tab-config">
+
+      <!-- Pills de sección -->
+      <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-sm btn-primary cfg-pill" data-cfg="equipos" onclick="cfgMostrar('equipos')">
+          <i class="bi bi-tools me-1"></i>Equipos
+        </button>
+        <button class="btn btn-sm btn-outline-secondary cfg-pill" data-cfg="alimentadores" onclick="cfgMostrar('alimentadores')">
+          <i class="bi bi-diagram-3 me-1"></i>Alimentadores
+        </button>
+        <button class="btn btn-sm btn-outline-secondary cfg-pill" data-cfg="ajustes" onclick="cfgMostrar('ajustes')">
+          <i class="bi bi-pencil-square me-1"></i>Ajustes de Demanda
         </button>
       </div>
-      <div id="ajustes-admin-contenido">
-        <div class="text-muted small">Cargando...</div>
+
+      <!-- Sección: Equipos -->
+      <div id="cfg-equipos" class="cfg-section">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="mb-0 fw-semibold">Fichas de equipos</h5>
+            <div class="text-muted small">Corriente límite, tipo y notas por NUMPOS.</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="text" id="cfg-eq-buscar" class="form-control form-control-sm"
+                   style="width:180px" placeholder="Buscar NUMPOS..."
+                   oninput="filtrarEquiposGlobal()">
+            <button class="btn btn-sm btn-primary" onclick="fichaAbrirModal('', cargarEquiposGlobal)">
+              <i class="bi bi-plus-circle me-1"></i>Nueva ficha
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="cargarEquiposGlobal()" title="Actualizar">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+        </div>
+        <div id="cfg-eq-contenido"><div class="text-muted small">Cargando...</div></div>
       </div>
+
+      <!-- Sección: Alimentadores -->
+      <div id="cfg-alimentadores" class="cfg-section d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="mb-0 fw-semibold">Configuración de alimentadores</h5>
+            <div class="text-muted small">Conductores intermedios guardados desde VCC.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="cargarAlimentadoresConfig()" title="Actualizar">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+        <div id="cfg-alim-contenido"><div class="text-muted small">Cargando...</div></div>
+      </div>
+
+      <!-- Sección: Ajustes de Demanda -->
+      <div id="cfg-ajustes" class="cfg-section d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="mb-0 fw-semibold">Ajustes de demanda activos</h5>
+            <div class="text-muted small">Valores SQL reemplazados manualmente en el análisis.</div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="cargarAjustesAdmin()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+          </button>
+        </div>
+        <div id="ajustes-admin-contenido">
+          <div class="text-muted small">Cargando...</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════
@@ -803,6 +866,7 @@
                 <input type="number" id="vcc-traspaso-a-val" step="0.1" min="0"
                        class="form-control form-control-sm" placeholder="Ej: 45">
                 <div class="text-muted small mt-1">Offset fijo aplicado a todos los meses.</div>
+                <div class="mt-2" id="vcc-traspaso-dest-a"></div>
               </div>
 
               <!-- Panel % manual -->
@@ -811,31 +875,38 @@
                 <input type="number" id="vcc-traspaso-pct-val" step="0.1" min="0" max="99"
                        class="form-control form-control-sm" placeholder="Ej: 18.3">
                 <div class="text-muted small mt-1">I_alim[mes] × (1 − %) aplicado mes a mes.</div>
+                <div class="mt-2" id="vcc-traspaso-dest-pct"></div>
               </div>
 
               <!-- Panel topología -->
               <div id="vcc-traspaso-panel-topo" style="display:none">
-                <div class="row g-2 mb-2">
-                  <div class="col-6">
-                    <label class="form-label text-muted small mb-1">Equipo que abre</label>
-                    <select id="vcc-traspaso-eq-abre" class="form-select form-select-sm">
-                      <option value="">— Seleccionar —</option>
-                    </select>
-                  </div>
-                  <div class="col-6">
-                    <label class="form-label text-muted small mb-1">Equipo que cierra
-                      <span class="text-muted">(opcional)</span></label>
-                    <select id="vcc-traspaso-eq-cierra" class="form-select form-select-sm">
-                      <option value="">— Ninguno —</option>
-                    </select>
-                  </div>
+
+                <!-- Paso 1: equipo que abre -->
+                <div class="mb-2">
+                  <label class="form-label text-muted small mb-1">
+                    <span class="badge bg-secondary me-1">1</span>Equipo que abre (en este alimentador)
+                  </label>
+                  <select id="vcc-traspaso-eq-abre" class="form-select form-select-sm"
+                          onchange="vccTraspasoAbreChange(this.value)">
+                    <option value="">— Seleccionar equipo —</option>
+                  </select>
                 </div>
-                <button class="btn btn-sm btn-outline-secondary mb-2"
-                        onclick="vccCalcularIslaTraspaso()">
-                  <i class="bi bi-diagram-3 me-1"></i>Calcular isla
-                </button>
+
+                <!-- Paso 2: alimentador receptor (auto tras seleccionar equipo) -->
+                <div id="vcc-traspaso-dest-topo" style="display:none">
+                  <label class="form-label text-muted small mb-1">
+                    <span class="badge bg-secondary me-1">2</span>Alimentador receptor
+                  </label>
+                  <select id="vcc-traspaso-alim-dest" class="form-select form-select-sm"
+                          onchange="vccTraspasoDestinoChange(this.value)">
+                    <option value="">— Seleccionar alimentador —</option>
+                  </select>
+                  <div id="vcc-traspaso-dest-info" class="small text-muted mt-1"></div>
+                </div>
+
+                <!-- Resultado isla (auto) -->
                 <div id="vcc-traspaso-isla-result" style="display:none"
-                     class="alert alert-info py-2 small mb-0"></div>
+                     class="alert alert-info py-2 small mt-2 mb-0"></div>
               </div>
             </div>
           </div>
@@ -942,15 +1013,15 @@
               <!-- Resumen rápido -->
               <div id="vcc-resumen-emp" class="d-flex flex-wrap gap-2 my-2 ps-1"></div>
 
-              <!-- Equipos (principal — visible por defecto) -->
-              <div class="card step-card mb-2">
-                <div class="step-header py-2">
+              <!-- Equipos (colapsable, abierto por defecto) -->
+              <details class="bloque mb-1" open id="vcc-det-equip-emp">
+                <summary class="bloque-summary">
                   <i class="bi bi-diagram-3 me-1"></i>Equipos Aguas Arriba
-                </div>
-                <div class="step-body p-2" style="overflow-x:auto">
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
                   <div id="vcc-tabla-equip-emp"></div>
                 </div>
-              </div>
+              </details>
 
               <!-- Alimentador (colapsable) -->
               <details class="bloque mb-1">
@@ -986,15 +1057,15 @@
               <!-- Resumen rápido -->
               <div id="vcc-resumen-inst" class="d-flex flex-wrap gap-2 my-2 ps-1"></div>
 
-              <!-- Equipos -->
-              <div class="card step-card mb-2">
-                <div class="step-header py-2">
+              <!-- Equipos (colapsable, abierto por defecto) -->
+              <details class="bloque mb-1" open id="vcc-det-equip-inst">
+                <summary class="bloque-summary">
                   <i class="bi bi-diagram-3 me-1"></i>Equipos Aguas Arriba
-                </div>
-                <div class="step-body p-2" style="overflow-x:auto">
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
                   <div id="vcc-tabla-equip-inst"></div>
                 </div>
-              </div>
+              </details>
 
               <!-- Alimentador (colapsable) -->
               <details class="bloque mb-1">
@@ -1015,6 +1086,49 @@
                 </summary>
                 <div class="bloque-body" style="overflow-x:auto">
                   <div id="vcc-tabla-trafo-inst"></div>
+                </div>
+              </details>
+
+            </details>
+
+            <!-- Alimentador receptor (traspaso simultáneo) -->
+            <details id="vcc-details-destino" class="mb-2 d-none">
+              <summary class="fw-semibold ps-1" style="cursor:pointer;list-style:none;color:#f5a623">
+                <i class="bi bi-chevron-down me-1 vcc-chevron"></i>
+                Alimentador receptor
+                <span class="badge ms-1" id="vcc-badge-destino"
+                      style="background:#f5a623;color:#fff"></span>
+              </summary>
+
+              <div id="vcc-resumen-destino" class="d-flex flex-wrap gap-2 my-2 ps-1"></div>
+
+              <details class="bloque mb-1" open id="vcc-det-equip-destino">
+                <summary class="bloque-summary">
+                  <i class="bi bi-diagram-3 me-1"></i>
+                  Equipos troncal <span id="vcc-destino-titulo" class="text-muted fw-normal small ms-1"></span>
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-equip-destino"></div>
+                </div>
+              </details>
+
+              <details class="bloque mb-1">
+                <summary class="bloque-summary">
+                  <i class="bi bi-lightning me-1"></i>
+                  Alimentador receptor — detalle mensual
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-alim-destino"></div>
+                </div>
+              </details>
+
+              <details class="bloque mb-1 d-none" id="vcc-det-trafo-destino">
+                <summary class="bloque-summary">
+                  <i class="bi bi-box me-1"></i>
+                  Transformador AT/MT receptor
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-trafo-destino"></div>
                 </div>
               </details>
 
@@ -1101,14 +1215,25 @@ const state = {
   mesesDisponibles:[],   // lista YYYY-MM del Excel
   ultimaSimulacion: null,
   // VCC
-  vccAlimIdx:      null, // numalim del alimentador VCC
-  vccAlimNom:      null, // nom_alim VCC
-  vccEquipos:      [],   // lista upstream del punto de conexión (enriquecida)
-  vccEquiposCache: {},   // {numpos: equipo} — cargado una vez al elegir alimentador
-  vccPuntoRef:     null, // {nombre_ref, tipo_ref, n_tds_aguas_abajo} del punto buscado
-  vccUltimaEval:   null, // último resultado de /api/vcc/evaluar
-  equiposConfig:   {},   // {numpos: entry} — cache de equipos_config.json
-  alimConfig:      null, // config del alimentador activo (conductores intermedios)
+  vccAlimIdx:       null, // numalim del alimentador VCC
+  vccAlimNom:       null, // nom_alim VCC
+  vccEquipos:       [],   // lista upstream del punto de conexión (enriquecida)
+  vccEquiposCache:  {},   // {numpos: equipo} — cargado una vez al elegir alimentador
+  vccPuntoRef:      null, // {nombre_ref, tipo_ref, n_tds_aguas_abajo} del punto buscado
+  vccUltimaEval:    null, // último resultado de /api/vcc/evaluar
+  equiposConfig:    {},   // {numpos: entry} — cache de equipos_config.json
+  alimConfig:       null, // config del alimentador activo (conductores intermedios)
+  // traspaso simultáneo
+  vccLzVecinos:     [],   // resultado de /api/vecinos_lz/{numalimA}
+  vccAlimDestIdx:   null, // numalim del alimentador receptor (B)
+  vccAlimDestNom:   null, // nom_alim del receptor
+  vccNumposLz:      null, // NUMPOS_LZ seleccionado (equipo_cierra)
+  vccEquiposTroncalB: [], // equipos_troncal del receptor para el LZ elegido
+  vccKvaIsla:       null, // kVA isla calculada (de isla/preview)
+  // config equipos receptor (traspaso tab)
+  troncalBNomAlim:  null, // nom_alim del receptor activo en panel equipos B
+  equiposConfigB:   {},   // {numpos: entry} — cache de equipos_config para alim B
+  alimConfigB:      null, // config del receptor (conductores_intermedios)
 };
 
 // TomSelect instances
@@ -1234,7 +1359,7 @@ function registrarEventos() {
 
   // Tabs: cargar datos al activar
   document.querySelector('[data-bs-target="#tab-feeders"]').addEventListener("click", cargarFeedersNuevos);
-  document.querySelector('[data-bs-target="#tab-ajustes-admin"]').addEventListener("click", cargarAjustesAdmin);
+  document.querySelector('[data-bs-target="#tab-config"]').addEventListener("click", () => cfgMostrar("equipos"));
   document.querySelector('[data-bs-target="#tab-vcc"]').addEventListener("click", () => {
     vccInicializarSelect();
   });
@@ -1429,6 +1554,9 @@ async function seleccionarOrigen(numalimStr) {
   document.getElementById("card-isla").style.display = "";
   document.getElementById("card-destino").style.display = "none";
   document.getElementById("card-simular").style.display = "none";
+  const _panelB = document.getElementById("panel-equipos-b");
+  if (_panelB) _panelB.style.display = "none";
+  state.troncalBNomAlim = null; state.equiposConfigB = {}; state.alimConfigB = null;
   ocultarPreviewIsla();
   ocultarPanelTDsEquipo();
   state.tdsData = [];
@@ -1818,6 +1946,7 @@ function mostrarEquipoCierra(numalimDest) {
   if (!numalimDest || !state.lzVecinos?.length) {
     el.style.display = "none";
     state.selectedNumposLZ = null;
+    tspCargarEquiposB(null, null, []);
     return;
   }
 
@@ -1940,6 +2069,12 @@ function mostrarEquipoCierra(numalimDest) {
     ${selDev ? _htmlEquiposTroncal(selDev._equipos_troncal) : ""}`;
   }
   el.style.display = "";
+
+  // Cargar panel de configuración de equipos del receptor
+  const feederB   = state.destinosData.find(d => d.numalim === numalimDest);
+  const nomAlimB  = feederB?.nom_alim || feederB?.nombre || '';
+  const troncalB  = primerOk?._equipos_troncal ?? [];
+  tspCargarEquiposB(numalimDest, nomAlimB, troncalB);
 }
 
 // ── RESULTADOS LZ: TABLAS Y PANELES ───────────────────────────────────────
@@ -2028,6 +2163,32 @@ function renderSecEquiposInvolucrados(data) {
         <span class="badge bg-warning text-dark ms-1">${nItems}</span>
       </summary>
       <div class="step-body p-2">${invHtml}${topoHtml}</div>
+    </details>`);
+  }
+
+  // Evaluación VCC equipos troncales del receptor (si se configuraron CNs)
+  if (data.vcc_alim_b_equipos?.length) {
+    const evalHtml  = vccTablaEquipos(data.vcc_alim_b_equipos, null);
+    const estadoGlobal = data.vcc_alim_b_equipos.reduce((worst, e) => {
+      const ord = { critico: 3, prealerta: 2, viable: 1, sin_cn: 0 };
+      return (ord[e.estado] ?? 0) > (ord[worst] ?? 0) ? e.estado : worst;
+    }, "sin_cn");
+    const BADGE_CLS = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico", sin_cn: "bg-secondary" };
+    const BADGE_LBL = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_cn: "Sin ajuste" };
+    partes.push(`<details class="card step-card mb-2" open>
+      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
+        <i class="bi bi-diagram-3 text-warning"></i>
+        <span>Evaluación equipos troncales del receptor</span>
+        <span class="badge ${BADGE_CLS[estadoGlobal] || 'bg-secondary'} ms-1">${BADGE_LBL[estadoGlobal] || estadoGlobal}</span>
+      </summary>
+      <div class="step-body p-2">
+        <p class="small text-muted mb-2">
+          <i class="bi bi-info-circle me-1"></i>
+          Carga adicional por mes: <strong>I_eq[mes] = I_alim_B[mes] × fracción + isla[mes]</strong>.
+          La isla entra íntegra por todos los equipos troncales (sin ponderar).
+        </p>
+        ${evalHtml}
+      </div>
     </details>`);
   }
 
@@ -2198,6 +2359,8 @@ async function ejecutarSimulacion() {
 
   if (tipoDest === "excel") {
     body.numalim_dest = parseInt(ts.destino?.getValue());
+    const equiposB = tspLeerEquiposB();
+    if (equiposB.length) body.equipos_b = equiposB;
   } else {
     const selNuevo    = ts.feederNuevo?.getValue();
     const formVisible = document.getElementById("form-crear-feeder").style.display !== "none";
@@ -4368,6 +4531,9 @@ function vccInicializarSelect() {
       vccActualizarUIModo("equipos");
       await vccCargarEquipos(state.vccAlimNom, "equipos");
       await cargarConfigAlim(state.vccAlimNom);
+      apiFetch(`/api/vecinos_lz/${state.vccAlimIdx}`).then(d => {
+        state.vccLzVecinos = Array.isArray(d) ? d : [];
+      }).catch(() => { state.vccLzVecinos = []; });
       // Mostrar paso 2 (tensión) y paso 3 (punto) al seleccionar alimentador
       document.getElementById("vcc-card-tension").classList.remove("d-none");
       document.getElementById("vcc-card-paso2").classList.remove("d-none");
@@ -4481,9 +4647,19 @@ async function vccCargarEquipos(nomAlim, modo = "equipos") {
 
 // ─── limpiar estado del punto ──────────────────────────────────────────────
 function vccLimpiarPunto() {
-  state.vccEquipos    = [];
-  state.vccPuntoRef   = null;
-  state.vccUltimaEval = null;
+  state.vccEquipos       = [];
+  state.vccPuntoRef      = null;
+  state.vccUltimaEval    = null;
+  state.vccAlimDestIdx   = null;
+  state.vccAlimDestNom   = null;
+  state.vccNumposLz      = null;
+  state.vccEquiposTroncalB = [];
+  state.vccKvaIsla       = null;
+  // reset traspaso UI
+  const tmNinguno = document.getElementById("vcc-tm-ninguno");
+  if (tmNinguno) { tmNinguno.checked = true; vccTraspasoModo("ninguno"); }
+  const badge = document.getElementById("vcc-traspaso-badge");
+  if (badge) { badge.style.display = "none"; badge.textContent = ""; }
   document.getElementById("vcc-punto-info").classList.add("d-none");
   ["vcc-card-equipos","vcc-card-potencia","vcc-card-traspaso","vcc-card-datos","vcc-card-periodo","vcc-card-evaluar"]
     .forEach(id => document.getElementById(id).classList.add("d-none"));
@@ -4680,103 +4856,408 @@ async function vccGuardarConfigAlim() {
   finally { spinner(false); }
 }
 
+// ─── Equipos receptor (alim B) — configuración desde tab Traspasos ───────────
+
+async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
+  const panel = document.getElementById("panel-equipos-b");
+  if (!numalimDest || !nomAlimB || !equiposTroncal?.length) {
+    if (panel) panel.style.display = "none";
+    state.troncalBNomAlim = null;
+    return;
+  }
+  state.troncalBNomAlim = nomAlimB;
+  try {
+    // Fracciones de cada equipo troncal en alim B
+    const r = await apiFetch("/api/alim/troncal_enriquecido", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
+    });
+    // Reusar el cache global de equipos_config (ya cargado al inicio)
+    state.equiposConfigB = state.equiposConfig;
+    // Config de conductores intermedios del receptor (null si no existe)
+    const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
+    state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
+
+    tspRenderEquiposBTabla(r.data?.equipos ?? []);
+    if (panel) panel.style.display = "";
+  } catch(e) {
+    console.error("tspCargarEquiposB:", e);
+  }
+}
+
+function tspRenderEquiposBTabla(equipos) {
+  const cont = document.getElementById("equipos-b-tabla");
+  if (!cont) return;
+  if (!equipos.length) {
+    cont.innerHTML = `<p class='text-muted small'>Sin equipos troncales identificados.</p>`;
+    return;
+  }
+  const sorted     = [...equipos].sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
+  const savedConds = state.alimConfigB?.conductores_intermedios ?? [];
+  const rows = [];
+  sorted.forEach((eq, i) => {
+    rows.push(_tspEqBRow(eq));
+    if (i < sorted.length - 1) {
+      const next  = sorted[i + 1];
+      const saved = savedConds.find(c => c.entre_b === eq.nombre && c.entre_a === next.nombre);
+      rows.push(_vccCondBtnRow(eq.nombre, next.nombre, eq.fraccion ?? null));
+      if (saved) rows.push(_vccCondRow(eq.nombre, next.nombre, eq.fraccion ?? null, saved.corriente_a));
+    }
+  });
+  cont.innerHTML =
+    `<div style="overflow-x:auto">` +
+    `<table class="table table-sm tabla-vcc mb-1" style="font-size:.82rem">` +
+    `<thead><tr><th>Tipo</th><th>NUMPOS</th>` +
+    `<th class="text-end">Fracc.</th><th class="text-end">kVA↓</th>` +
+    `<th class="text-end">CN (A)</th><th></th></tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table></div>` +
+    `<button class="btn btn-sm btn-outline-secondary mt-1" onclick="tspGuardarConfigAlimB()">` +
+    `<i class="bi bi-floppy me-1"></i>Guardar configuración del receptor</button>`;
+  initTooltips(cont);
+}
+
+function _tspEqBRow(eq) {
+  const TIPO_BADGE = {
+    reconectador: `<span class="badge bg-danger">REC</span>`,
+    equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
+  };
+  const badge    = TIPO_BADGE[eq.tipo] || `<span class="badge bg-secondary">${eq.tipo||'?'}</span>`;
+  const fracHtml = eq.fraccion != null
+    ? `${(eq.fraccion * 100).toFixed(1)}%` : `<span class="text-muted">—</span>`;
+  const kvaHtml  = eq.kva_down != null
+    ? Math.round(eq.kva_down).toLocaleString("es-CL") : `<span class="text-muted">—</span>`;
+  const warnHtml = (eq.tds_sin_kva > 0)
+    ? ` <span class="text-warning" title="${eq.tds_sin_kva} TDs sin kVA">⚠</span>` : "";
+  const cfg        = state.equiposConfigB[eq.nombre];
+  const cnPrefill  = cfg?.corriente_a ?? "";
+  const tipoBadge  = cfg?.corriente_a
+    ? ` <span class="text-info" style="font-size:.72rem">(${
+        cfg.tipo_limite === "setpoint" ? "SP" : cfg.tipo_limite === "fusible" ? "Fus" : "Cond"})</span>` : "";
+  const cnHtml = `<input type="number" class="form-control form-control-sm d-inline-block" style="width:68px"` +
+    ` id="b-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">${tipoBadge}`;
+  return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}">` +
+    `<td>${badge}</td><td class="font-monospace">${eq.nombre}</td>` +
+    `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
+    `<td class="text-end">${cnHtml}</td>` +
+    `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
+      `onclick="fichaAbrirModal('${eq.nombre}', () => tspRefrescarCNsB())" title="Configurar equipo">⚙</button></td></tr>`;
+}
+
+async function tspGuardarConfigAlimB() {
+  const nom = state.troncalBNomAlim;
+  if (!nom) return mostrarError("Sin alimentador receptor seleccionado.");
+  const conductores = [];
+  document.querySelectorAll("#equipos-b-tabla tr.vcc-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vcc-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
+  });
+  spinner(true, "Guardando...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores }),
+    });
+    state.alimConfigB = { conductores_intermedios: conductores };
+    const btn = document.querySelector("#equipos-b-tabla button[onclick='tspGuardarConfigAlimB()']");
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = `<i class="bi bi-check-circle me-1 text-success"></i>Guardado`;
+      setTimeout(() => { btn.innerHTML = orig; }, 2000);
+    }
+  } catch(e) { mostrarError("Error al guardar: " + e.message); }
+  finally { spinner(false); }
+}
+
+function tspLeerEquiposB() {
+  const result = [];
+  const tabla  = document.getElementById("equipos-b-tabla");
+  if (!tabla) return result;
+  tabla.querySelectorAll("tr.vcc-eq-row, tr.vcc-cond-row").forEach(tr => {
+    if (tr.classList.contains("vcc-eq-row")) {
+      const nombre   = tr.dataset.nombre;
+      const fraccion = tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null;
+      const el       = document.getElementById(`b-cn-${nombre}`);
+      const cn       = el ? (parseFloat(el.value) || null) : null;
+      result.push({ nombre, fraccion, cn });
+    } else {
+      const entreB   = tr.dataset.entreB;
+      const fraccion = tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null;
+      const el       = tr.querySelector(".vcc-cond-cn-input");
+      const cn       = el ? (parseFloat(el.value) || null) : null;
+      if (!cn) return;
+      result.push({ nombre: `conductor_intermedio→${entreB}`, tipo: "conductor_intermedio",
+                    entre_b: entreB, entre_a: tr.dataset.entreA, fraccion, cn });
+    }
+  });
+  return result;
+}
+
+async function tspRefrescarCNsB() {
+  await cargarEquiposConfig();
+  state.equiposConfigB = state.equiposConfig;
+  document.querySelectorAll("#equipos-b-tabla tr.vcc-eq-row").forEach(tr => {
+    const nombre = tr.dataset.nombre;
+    const cfg    = state.equiposConfigB[nombre];
+    const el     = document.getElementById(`b-cn-${nombre}`);
+    if (!el || !cfg?.corriente_a) return;
+    el.value = cfg.corriente_a;
+  });
+}
+
 // ─── traspaso simultáneo ──────────────────────────────────────────────────
 function vccToggleTraspaso() {
   const body    = document.getElementById("vcc-traspaso-body");
   const chevron = document.getElementById("vcc-traspaso-chevron");
   const open    = body.style.display === "";
-  body.style.display    = open ? "none" : "";
+  body.style.display      = open ? "none" : "";
   chevron.style.transform = open ? "" : "rotate(180deg)";
 }
 
 function vccTraspasoModo(modo) {
-  ["a", "pct", "topo"].forEach(m =>
-    document.getElementById(`vcc-traspaso-panel-${m}`).style.display =
-      m === modo ? "" : "none"
+  ["a","pct","topo"].forEach(m =>
+    document.getElementById(`vcc-traspaso-panel-${m}`).style.display = m === modo ? "" : "none"
   );
-  // Limpiar isla result si cambia de modo
   if (modo !== "topo") {
     const el = document.getElementById("vcc-traspaso-isla-result");
-    el.style.display = "none";
-    el.innerHTML = "";
+    if (el) { el.style.display = "none"; el.innerHTML = ""; }
   }
-  // Poblar dropdown si cambia a topo y el alim ya está seleccionado
-  if (modo === "topo" && state.vccAlimNom) vccCargarEquiposTraspaso();
+  // Al entrar al modo topo, poblar dropdown equipo_abre desde vccEquipos
+  if (modo === "topo") _vccPoblarAbreDropdown();
+  // En modos a/pct renderizar selector de destino manual
+  if (modo === "a"   ) _vccRenderDestinoManual("vcc-traspaso-dest-a");
+  if (modo === "pct" ) _vccRenderDestinoManual("vcc-traspaso-dest-pct");
 }
 
-async function vccCargarEquiposTraspaso() {
-  const nomAlim = state.vccAlimNom;
-  if (!nomAlim) return;
-  try {
-    const lista = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlim)}`);
-    const optsAbre = lista.map(e =>
-      `<option value="${e.nombre}">${e.nombre.toUpperCase()}</option>`
-    ).join("");
-    const optsCierra = `<option value="">— Ninguno —</option>` + optsAbre;
-    document.getElementById("vcc-traspaso-eq-abre").innerHTML =
-      `<option value="">— Seleccionar —</option>` + optsAbre;
-    document.getElementById("vcc-traspaso-eq-cierra").innerHTML = optsCierra;
-  } catch(e) { /* silencioso */ }
+function _vccPoblarAbreDropdown() {
+  const sel = document.getElementById("vcc-traspaso-eq-abre");
+  if (!sel) return;
+  const TIPO_ICON = { reconectador: "🔴", equipo_sub: "🔵" };
+  // Mismo orden que la tabla: mayor fraccion primero (más cercano a SE)
+  const equipos = [...state.vccEquipos.filter(e => e.nombre)]
+    .sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
+  sel.innerHTML = `<option value="">— Seleccionar equipo —</option>` +
+    equipos.map(e => {
+      const icon   = TIPO_ICON[e.tipo] || "⚫";
+      const pctStr = e.fraccion != null ? ` (${(e.fraccion * 100).toFixed(1)}%)` : "";
+      const kvaStr = e.kva_down != null
+        ? ` — ${Math.round(e.kva_down).toLocaleString("es-CL")} kVA↓` : "";
+      return `<option value="${e.nombre}">${icon} ${e.nombre}${pctStr}${kvaStr}</option>`;
+    }).join("");
+  if (equipos.length === 1) {
+    sel.value = equipos[0].nombre;
+    vccTraspasoAbreChange(equipos[0].nombre);
+  }
 }
 
-async function vccCalcularIslaTraspaso() {
-  const equipoAbre = document.getElementById("vcc-traspaso-eq-abre").value;
-  const resEl = document.getElementById("vcc-traspaso-isla-result");
-  if (!equipoAbre) { resEl.style.display = "none"; return mostrarError("Selecciona el equipo que abre."); }
-  if (!state.vccAlimIdx || !state.vccAlimNom) return mostrarError("Selecciona el alimentador primero.");
+// Llamado al cambiar equipo_abre en modo topo
+function vccTraspasoAbreChange(equipoAbre) {
+  const destPanel  = document.getElementById("vcc-traspaso-dest-topo");
+  const destSel    = document.getElementById("vcc-traspaso-alim-dest");
+  const islaEl     = document.getElementById("vcc-traspaso-isla-result");
+  const infoEl     = document.getElementById("vcc-traspaso-dest-info");
+  if (!destPanel || !destSel) return;
 
-  spinner(true, "Calculando isla...");
-  try {
-    const r = await apiFetch("/api/isla/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        numalim_orig: state.vccAlimIdx,
-        nom_alim_orig: state.vccAlimNom,
-        tipo_isla: "equipo",
-        equipo_nombre: equipoAbre,
-        tds_excluidos: [],
-      }),
+  // Reset destino
+  state.vccAlimDestIdx = null; state.vccAlimDestNom = null;
+  state.vccNumposLz = null; state.vccEquiposTroncalB = []; state.vccKvaIsla = null;
+  if (islaEl) { islaEl.style.display = "none"; islaEl.innerHTML = ""; }
+  if (infoEl) infoEl.textContent = "";
+
+  if (!equipoAbre) { destPanel.style.display = "none"; return; }
+
+  // Filtrar LZ devices donde equipo_abre ∈ equipos_troncal_orig
+  const eqUp = equipoAbre.toUpperCase().trim();
+  const lzValidos = state.vccLzVecinos.filter(lz =>
+    lz.equipos_troncal_orig?.some(e => e.toUpperCase().trim() === eqUp)
+  );
+
+  if (!lzValidos.length) {
+    destPanel.style.display = "none";
+    if (infoEl) {
+      infoEl.textContent = "Sin dispositivos LZ aguas abajo de este equipo.";
+      infoEl.className = "small text-warning mt-1";
+    }
+    destPanel.style.display = "";
+    destSel.innerHTML = `<option value="">— Sin opciones —</option>`;
+    return;
+  }
+
+  // Recopilar alimentadores B únicos y viables
+  const destMap = new Map(); // numalim → {nom_alim, lzList}
+  lzValidos.forEach(lz => {
+    lz.vecinos?.forEach(v => {
+      if (!v.viable) return;
+      if (!destMap.has(v.numalim)) destMap.set(v.numalim, { nom_alim: v.nom_alim, lzList: [] });
+      destMap.get(v.numalim).lzList.push({ numpos_lz: lz.numpos_lz, equipos_troncal: v.equipos_troncal });
     });
-    if (r.error) { resEl.style.display = "none"; mostrarError(r.error); return; }
+  });
 
-    const pPct  = r.p_pct?.toFixed(2) ?? "—";
-    const nTd   = r.n_td  ?? "—";
-    const kvaI  = r.kva_isla   != null ? Math.round(r.kva_isla).toLocaleString("es-CL")   : "—";
-    const kvaF  = r.kva_feeder != null ? Math.round(r.kva_feeder).toLocaleString("es-CL") : "—";
+  if (!destMap.size) {
+    destSel.innerHTML = `<option value="">— Sin destinos viables —</option>`;
+    destPanel.style.display = "";
+    return;
+  }
 
-    resEl.innerHTML = `<i class="bi bi-check-circle me-1"></i>
-      <strong>${nTd} TDs</strong> · <strong>${kvaI} kVA</strong> de ${kvaF} kVA ·
-      <strong>${pPct}% del alimentador</strong> se traspasa`;
-    resEl.style.display = "";
+  destSel.innerHTML = `<option value="">— Seleccionar alimentador —</option>` +
+    [...destMap.entries()].map(([nm, d]) =>
+      `<option value="${nm}" data-nom="${d.nom_alim}">${d.nom_alim}</option>`
+    ).join("");
 
-    // Guardar p_pct calculado para usarlo al evaluar
-    resEl.dataset.pPct = r.p_pct ?? 0;
+  // Guardar mapa en dataset para usarlo al seleccionar
+  destSel.dataset.destMap = JSON.stringify(Object.fromEntries(
+    [...destMap.entries()].map(([k,v]) => [k, v])
+  ));
+  destPanel.style.display = "";
 
-    // Actualizar badge del card
-    const badge = document.getElementById("vcc-traspaso-badge");
-    badge.textContent = `${pPct}%`;
-    badge.style.display = "";
-  } catch(e) {
-    mostrarError("Error al calcular isla: " + e.message);
-  } finally { spinner(false); }
+  if (infoEl) {
+    infoEl.textContent = `${destMap.size} alimentador(es) disponible(s) con LZ aguas abajo`;
+    infoEl.className = "small text-success mt-1";
+  }
+}
+
+// Llamado al seleccionar alimentador receptor en modo topo
+async function vccTraspasoDestinoChange(numalimDestStr) {
+  const islaEl = document.getElementById("vcc-traspaso-isla-result");
+  const infoEl = document.getElementById("vcc-traspaso-dest-info");
+  state.vccAlimDestIdx = null; state.vccAlimDestNom = null;
+  state.vccNumposLz = null; state.vccEquiposTroncalB = []; state.vccKvaIsla = null;
+  if (islaEl) { islaEl.style.display = "none"; islaEl.innerHTML = ""; }
+  if (!numalimDestStr) return;
+
+  const numalimDest = parseInt(numalimDestStr);
+  const destSel  = document.getElementById("vcc-traspaso-alim-dest");
+  const destMap  = JSON.parse(destSel?.dataset.destMap || "{}");
+  const entry    = destMap[String(numalimDest)];
+  if (!entry) return;
+
+  // Tomar primer LZ (generalmente hay uno por par para un equipo_abre dado)
+  const lz = entry.lzList?.[0];
+  if (!lz) return;
+
+  state.vccAlimDestIdx      = numalimDest;
+  state.vccAlimDestNom      = entry.nom_alim;
+  state.vccNumposLz         = lz.numpos_lz;
+  state.vccEquiposTroncalB  = lz.equipos_troncal ?? [];
+
+  // Mostrar equipos troncal de B
+  if (infoEl) {
+    const html = _htmlEquiposTroncal(state.vccEquiposTroncalB);
+    infoEl.innerHTML =
+      `<span class="text-muted">LZ: <code>${lz.numpos_lz || "cabecera"}</code></span>` + html;
+    infoEl.className = "small mt-1";
+  }
+
+  // Calcular isla automáticamente
+  const equipoAbre = document.getElementById("vcc-traspaso-eq-abre")?.value;
+  if (equipoAbre && state.vccAlimIdx) {
+    spinner(true, "Calculando isla...");
+    try {
+      const r = await apiFetch("/api/isla/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numalim_orig:  state.vccAlimIdx,
+          nom_alim_orig: state.vccAlimNom,
+          tipo_isla:     "equipo",
+          equipo_nombre: equipoAbre,
+          tds_excluidos: [],
+        }),
+      });
+      if (!r.error) {
+        state.vccKvaIsla = r.kva_isla ?? 0;
+        const pPct = r.p_pct?.toFixed(2) ?? "—";
+        const nTd  = r.n_td  ?? "—";
+        const kvaI = r.kva_isla != null ? Math.round(r.kva_isla).toLocaleString("es-CL") : "—";
+        if (islaEl) {
+          islaEl.innerHTML =
+            `<i class="bi bi-check-circle me-1"></i>` +
+            `<strong>${nTd} TDs</strong> · <strong>${kvaI} kVA</strong> · ` +
+            `<strong>${pPct}% del alimentador</strong> se traspasa hacia ${entry.nom_alim}`;
+          islaEl.dataset.pPct = r.p_pct ?? 0;
+          islaEl.style.display = "";
+        }
+        const badge = document.getElementById("vcc-traspaso-badge");
+        if (badge) { badge.textContent = `${pPct}% → ${entry.nom_alim}`; badge.style.display = ""; }
+      }
+    } catch(e) { /* silencioso */ }
+    finally { spinner(false); }
+  }
+}
+
+// Selector de destino para modos ΔI/% (sin validación topológica)
+function _vccRenderDestinoManual(containerId) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  // Recopilar todos los vecinos viables
+  const destinos = [];
+  state.vccLzVecinos.forEach(lz => {
+    lz.vecinos?.forEach(v => {
+      if (!v.viable) return;
+      if (!destinos.find(d => d.numalim === v.numalim)) {
+        destinos.push({ numalim: v.numalim, nom_alim: v.nom_alim,
+                        equipos_troncal: v.equipos_troncal, numpos_lz: lz.numpos_lz });
+      }
+    });
+  });
+  if (!destinos.length) { cont.innerHTML = ""; return; }
+
+  cont.innerHTML = `
+    <label class="form-label text-muted small mb-1">Alimentador receptor <span class="text-muted">(opcional)</span></label>
+    <select class="form-select form-select-sm" onchange="vccDestinoManualChange(this)">
+      <option value="">— Sin receptor —</option>
+      ${destinos.map((d,i) => `<option value="${i}">${d.nom_alim}</option>`).join("")}
+    </select>
+    <div class="small text-muted mt-1">
+      <i class="bi bi-info-circle me-1"></i>Sin validación topológica — referencial.
+    </div>
+    <div id="${containerId}-info" class="small mt-1"></div>`;
+  cont.dataset.destinos = JSON.stringify(destinos);
+}
+
+function vccDestinoManualChange(sel) {
+  const contId = sel.closest("[id]")?.id;
+  const infoId = contId + "-info";
+  const infoEl = document.getElementById(infoId);
+  state.vccAlimDestIdx = null; state.vccAlimDestNom = null;
+  state.vccNumposLz = null; state.vccEquiposTroncalB = [];
+  if (infoEl) infoEl.innerHTML = "";
+  if (!sel.value) return;
+
+  const destinos = JSON.parse(sel.closest("[data-destinos]")?.dataset.destinos || "[]");
+  const d = destinos[parseInt(sel.value)];
+  if (!d) return;
+  state.vccAlimDestIdx     = d.numalim;
+  state.vccAlimDestNom     = d.nom_alim;
+  state.vccNumposLz        = d.numpos_lz;
+  state.vccEquiposTroncalB = d.equipos_troncal ?? [];
+  if (infoEl) infoEl.innerHTML = _htmlEquiposTroncal(state.vccEquiposTroncalB);
 }
 
 function vccGetTraspasoParams() {
   const modo = document.querySelector('input[name="vcc-traspaso-modo"]:checked')?.value || "ninguno";
   if (modo === "ninguno") return { delta_traspaso_a: 0, delta_traspaso_pct: 0, delta_traspaso_modo: "" };
+  const dest = {
+    nom_alim_dest:     state.vccAlimDestNom  || null,
+    numalim_dest:      state.vccAlimDestIdx  || null,
+    equipo_lz:         state.vccNumposLz     || null,
+    equipos_troncal_b: state.vccEquiposTroncalB,
+    kva_isla:          state.vccKvaIsla      || null,
+  };
   if (modo === "a") {
     const v = parseFloat(document.getElementById("vcc-traspaso-a-val").value) || 0;
-    return { delta_traspaso_a: v, delta_traspaso_pct: 0, delta_traspaso_modo: "a" };
+    return { delta_traspaso_a: v, delta_traspaso_pct: 0, delta_traspaso_modo: "a", ...dest };
   }
   if (modo === "pct") {
     const v = parseFloat(document.getElementById("vcc-traspaso-pct-val").value) || 0;
-    return { delta_traspaso_a: 0, delta_traspaso_pct: v, delta_traspaso_modo: "pct" };
+    return { delta_traspaso_a: 0, delta_traspaso_pct: v, delta_traspaso_modo: "pct", ...dest };
   }
   if (modo === "topo") {
     const resEl = document.getElementById("vcc-traspaso-isla-result");
-    const pPct  = parseFloat(resEl.dataset.pPct || 0);
-    return { delta_traspaso_a: 0, delta_traspaso_pct: pPct, delta_traspaso_modo: "topo" };
+    const pPct  = parseFloat(resEl?.dataset.pPct || 0);
+    return { delta_traspaso_a: 0, delta_traspaso_pct: pPct, delta_traspaso_modo: "topo", ...dest };
   }
   return { delta_traspaso_a: 0, delta_traspaso_pct: 0, delta_traspaso_modo: "" };
 }
@@ -4822,18 +5303,27 @@ function vccLeerCNsEquipos() {
 }
 
 // ─── Ficha Equipo (modal compartido) ─────────────────────────────────────
-let _fichaNumpos = null;
-let _fichaModal  = null;
+let _fichaNumpos    = null;
+let _fichaModal     = null;
+let _fichaCallback  = null;
 
-function fichaAbrirModal(numpos) {
-  _fichaNumpos = numpos;
+function fichaAbrirModal(numpos, callback = null) {
+  _fichaNumpos   = numpos;
+  _fichaCallback = callback;
   if (!_fichaModal) _fichaModal = new bootstrap.Modal(document.getElementById("modalFichaEquipo"));
 
   const entry = state.equiposConfig[numpos] || null;
   const esPPF = /^PPF/i.test(numpos);
 
+  // Modo nueva ficha: mostrar campo NUMPOS editable
+  const numposRow   = document.getElementById("ficha-numpos-row");
+  const numposInput = document.getElementById("ficha-numpos-input");
+  const esNuevo     = !numpos;
+  if (numposRow)   numposRow.classList.toggle("d-none", !esNuevo);
+  if (numposInput) numposInput.value = "";
+
   // Título
-  document.getElementById("fichaEquipoTitle").textContent = numpos;
+  document.getElementById("fichaEquipoTitle").textContent = esNuevo ? "Nueva ficha" : numpos;
 
   // Rellenar campos
   document.getElementById("ficha-corriente-a").value         = entry?.corriente_a ?? "";
@@ -4887,8 +5377,11 @@ function _fichaDefaultTipo(numpos) {
 }
 
 async function fichaGuardar() {
-  const numpos = _fichaNumpos;
-  if (!numpos) return;
+  let numpos = _fichaNumpos;
+  if (!numpos) {
+    numpos = (document.getElementById("ficha-numpos-input")?.value ?? "").trim().toUpperCase();
+    if (!numpos) { alert("Ingresa el NUMPOS del equipo."); return; }
+  }
   const corrienteA = parseFloat(document.getElementById("ficha-corriente-a").value);
   if (!corrienteA || corrienteA <= 0) {
     alert("Ingresa una corriente límite válida.");
@@ -4913,7 +5406,8 @@ async function fichaGuardar() {
     if (r.error) { alert("Error: " + r.error); return; }
     state.equiposConfig[numpos] = r.entry;
     _fichaModal.hide();
-    vccRenderEquiposInputs(state.vccEquipos); // refrescar tabla
+    if (_fichaCallback) _fichaCallback();
+    else if (state.vccEquipos.length) vccRenderEquiposInputs(state.vccEquipos);
   } catch(e) { alert("Error al guardar: " + e.message); }
 }
 
@@ -4924,7 +5418,8 @@ async function fichaEliminar() {
     await apiFetch(`/api/equipos/config/${encodeURIComponent(numpos)}`, { method: "DELETE" });
     delete state.equiposConfig[numpos];
     _fichaModal.hide();
-    vccRenderEquiposInputs(state.vccEquipos);
+    if (_fichaCallback) _fichaCallback();
+    else if (state.vccEquipos.length) vccRenderEquiposInputs(state.vccEquipos);
   } catch(e) { alert("Error al eliminar: " + e.message); }
 }
 
@@ -5110,7 +5605,7 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
   if (r.tabla_trafo?.tabla) {
     const nom = r.tabla_trafo.barra || r.tabla_trafo.barra_alim || "Trafo AT/MT";
     document.getElementById("vcc-trafo-titulo-emp").textContent = nom;
-    document.getElementById("vcc-tabla-trafo-emp").innerHTML    = vccTablaFU(r.tabla_trafo.tabla, null);
+    document.getElementById("vcc-tabla-trafo-emp").innerHTML    = vccTablaFU(r.tabla_trafo.tabla, r);
     detT.classList.remove("d-none");
   } else { detT.classList.add("d-none"); }
 
@@ -5131,7 +5626,7 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
     if (r.tabla_trafo_sens?.tabla) {
       const nom = r.tabla_trafo_sens.barra || r.tabla_trafo_sens.barra_alim || "Trafo AT/MT";
       document.getElementById("vcc-trafo-titulo-inst").textContent = nom;
-      document.getElementById("vcc-tabla-trafo-inst").innerHTML    = vccTablaFU(r.tabla_trafo_sens.tabla, null);
+      document.getElementById("vcc-tabla-trafo-inst").innerHTML    = vccTablaFU(r.tabla_trafo_sens.tabla, r);
       detTI.classList.remove("d-none");
     } else { detTI.classList.add("d-none"); }
 
@@ -5141,6 +5636,55 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
 
     detSens.classList.remove("d-none");
   } else { detSens.classList.add("d-none"); }
+
+  // ── Alimentador receptor ─────────────────────────────────────────────────
+  const detDest = document.getElementById("vcc-details-destino");
+  const dest    = r.analisis_destino;
+  if (dest && detDest) {
+    const nomB = dest.nom_alim || "Receptor";
+    const dI   = dest.delta_I?.toFixed(2) ?? "—";
+    const cnB  = dest.cn_alim?.toFixed(0)  ?? "—";
+    document.getElementById("vcc-badge-destino").textContent =
+      `${nomB}  ·  ΔI = ${dI} A  |  CN = ${cnB} A`;
+    document.getElementById("vcc-destino-titulo").textContent =
+      nomB + (dest.equipo_lz ? ` (LZ: ${dest.equipo_lz})` : "");
+
+    document.getElementById("vcc-tabla-equip-destino").innerHTML =
+      vccTablaEquipos(dest.equipos_eval, dest.delta_I);
+    document.getElementById("vcc-tabla-alim-destino").innerHTML =
+      vccTablaFU(dest.tabla_alim, dest);
+
+    const detTD = document.getElementById("vcc-det-trafo-destino");
+    if (dest.tabla_trafo?.tabla) {
+      document.getElementById("vcc-tabla-trafo-destino").innerHTML =
+        vccTablaFU(dest.tabla_trafo.tabla, null);
+      detTD.classList.remove("d-none");
+    } else { detTD.classList.add("d-none"); }
+
+    const resumenDestEl = document.getElementById("vcc-resumen-destino");
+    resumenDestEl.innerHTML =
+      _vccResumenHTML(dest.pct_max_alim, dest.tabla_trafo,
+                      dest.tabla_trafo?.barra || "Trafo", dest.equipos_eval);
+
+    // Eliminar alertas previas antes de añadir nueva
+    resumenDestEl.nextElementSibling?.classList.contains("alert") &&
+      resumenDestEl.nextElementSibling.remove();
+
+    // Advertencia si receptor supera capacidad
+    const pctB = dest.pct_max_alim;
+    if (pctB != null && pctB > 100) {
+      resumenDestEl.insertAdjacentHTML("afterend",
+        `<div class="alert alert-warning py-2 mt-1 small mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>Advertencia:</strong> ${nomB} supera su capacidad
+          (${pctB.toFixed(1)}%) al recibir ${dI} A.
+          Considerar maniobras adicionales o reducir la carga traspasada.
+        </div>`);
+    }
+    detDest.classList.remove("d-none");
+  } else if (detDest) {
+    detDest.classList.add("d-none");
+  }
 
   document.getElementById("vcc-resultados").classList.remove("d-none");
   initTooltips(document.getElementById("vcc-resultados"));
@@ -5211,12 +5755,14 @@ function vccTablaFU(tabla, vccResult) {
       return `<td class="text-center" style="${wst}">${txt}</td>`;
     }
     if (key === "_i_sql") {
-      const v = iSQL(r.I_antes);
-      return `<td class="text-center" style="${wst}">${v != null ? v.toFixed(1) : "—"}</td>`;
+      // Si la fila tiene I_antes_orig (trafo con reducción absoluta), usarlo directo.
+      // Si no, reconstruir via iSQL (alim con reducción porcentual propia).
+      const v = r.I_antes_orig != null ? r.I_antes_orig : iSQL(r.I_antes);
+      return `<td class="text-center" style="${wst}">${v != null ? (+v).toFixed(1) : "—"}</td>`;
     }
     if (key === "_i_traspaso") {
-      const v = iTraspasoDelta(r.I_antes);
-      const txt = v != null ? (v > 0 ? "+" : "") + v.toFixed(1) : "—";
+      const v = r.I_traspasada != null ? r.I_traspasada : iTraspasoDelta(r.I_antes);
+      const txt = v != null ? (v > 0 ? "+" : "") + (+v).toFixed(1) : "—";
       return `<td class="text-center" style="color:#c07000;${wst}">${txt}</td>`;
     }
     const v    = r[key];
@@ -5256,6 +5802,18 @@ function vccTablaEquipos(equipos, deltaI) {
   if (!equipos?.length)
     return "<p class='text-muted small mt-1'>Sin equipos upstream con ajuste relevante.</p>";
 
+  // Solo mostrar equipos con CN configurado (evaluados)
+  const equiposEval = equipos.filter(e => e.cn != null);
+  const nTotal      = equipos.length;
+  const nOmitidos   = nTotal - equiposEval.length;
+  const omitidosTxt = nOmitidos > 0
+    ? `<p class="text-muted small mb-1">
+        <i class="bi bi-info-circle me-1"></i>${nOmitidos} equipo(s) sin ajuste configurado omitido(s).
+       </p>`
+    : "";
+  if (!equiposEval.length)
+    return omitidosTxt + "<p class='text-muted small'>Ningún equipo tiene ajuste vigente configurado.</p>";
+
   const TIPO_LBL  = { reconectador: "Reconectador", equipo_sub: "Equipo sub.", otro: "Otro", conductor_intermedio: "Conductor" };
   const BADGE_CLS = {
     viable: "badge-viable", prealerta: "badge-prealerta",
@@ -5269,11 +5827,11 @@ function vccTablaEquipos(equipos, deltaI) {
     ? `<br><span class="badge bg-warning text-dark" style="font-size:.65rem">Conductor</span>`
     : `<br><span class="badge bg-info text-white"   style="font-size:.65rem">Equipo</span>`;
 
-  const hasEnfoques = equipos.some(e => e.enfoque_a || e.enfoque_b);
+  const hasEnfoques = equiposEval.some(e => e.enfoque_a || e.enfoque_b);
 
   // ── tabla legacy ──────────────────────────────────────────────────────────
   if (!hasEnfoques) {
-    const rows = equipos.map(eq => {
+    const rows = equiposEval.map(eq => {
       const fuente  = eq.fuente_ajuste || "equipo";
       const cnStr   = eq.cn != null
         ? `${Number(eq.cn).toFixed(0)} A${_fuenteBadge(fuente)}` : "—";
@@ -5290,7 +5848,7 @@ function vccTablaEquipos(equipos, deltaI) {
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
     }).join("");
-    return `<div style="overflow-x:auto"><table class="table table-sm tabla-sim tabla-vcc mb-0" style="font-size:.78rem">
+    return omitidosTxt + `<div style="overflow-x:auto"><table class="table table-sm tabla-sim tabla-vcc mb-0" style="font-size:.78rem">
       <thead><tr>
         <th>Equipo</th><th>Tipo</th>
         <th class="r">Ajuste</th><th class="r">ΔI</th>
@@ -5330,7 +5888,7 @@ function vccTablaEquipos(equipos, deltaI) {
       <th class="r">% Ajuste</th>
     </tr>`;
 
-  const rows = equipos.flatMap(eq => {
+  const rows = equiposEval.flatMap(eq => {
     const fuente = eq.fuente_ajuste || "equipo";
     const cn     = eq.cn != null
       ? `${Number(eq.cn).toFixed(0)}${_fuenteBadge(fuente)}` : "—";
@@ -5348,15 +5906,33 @@ function vccTablaEquipos(equipos, deltaI) {
       return `<td class="r" style="${bg ? `background:${bg}` : ''}">${Number(pct).toFixed(1)}%</td>`;
     };
 
+    // base: 'CN' → reducción sobre CN máx | 'real' → sobre demanda histórica
+    const _alivioTag = (alivio, iBaseOrig, base = null) => {
+      if (alivio == null || alivio >= -0.05) return "";
+      const baseLabel = base === 'CN'   ? 'sobre CN máx'
+                      : base === 'real' ? 'sobre demanda real'
+                      : '';
+      const tip = iBaseOrig != null
+        ? `Sin traspaso (${baseLabel}): ${(+iBaseOrig).toFixed(1)} A → Con traspaso: ${(+iBaseOrig + alivio).toFixed(1)} A`
+        : `Alivio por traspaso (${baseLabel}): −${Math.abs(alivio).toFixed(1)} A`;
+      const suffix = base
+        ? ` <span style="font-size:.6rem;opacity:.65">(${base})</span>`
+        : '';
+      return `<br><small style="color:#c07000;font-size:.68rem" title="${tip}">▼ ${Math.abs(alivio).toFixed(1)} A${suffix}</small>`;
+    };
+
+    const iBaseAOrig = enf_a?.I_alivio != null ? enf_a.I_base - enf_a.I_alivio : null;
+    const iBaseBOrig = enf_b?.I_alivio != null ? enf_b.I_base_max - enf_b.I_alivio : null;
+
     const cellsA = enf_a
-      ? `<td class="r" style="${SEP}">${Number(enf_a.I_base ).toFixed(1)}</td>
+      ? `<td class="r" style="${SEP}">${Number(enf_a.I_base).toFixed(1)}${_alivioTag(enf_a.I_alivio, iBaseAOrig, 'CN')}</td>
          <td class="r">${Number(enf_a.I_total).toFixed(1)}</td>
          ${pctCell(enf_a.pct, enf_a.estado)}`
       : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td>`;
 
     const cellsB = enf_b
-      ? `<td class="r" style="${SEP}">${Number(enf_b.I_base_max).toFixed(1)}
-           <small class="text-muted">(${_mesLabel(enf_b.mes_max)})</small></td>
+      ? `<td class="r" style="${SEP}">${Number(enf_b.I_base_max).toFixed(1)}${_alivioTag(enf_b.I_alivio, iBaseBOrig, 'real')}
+           <br><small class="text-muted" style="font-size:.68rem">(${_mesLabel(enf_b.mes_max)})</small></td>
          <td class="r">${Number(enf_b.I_total).toFixed(1)}</td>
          ${pctCell(enf_b.pct, enf_b.estado)}`
       : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td>`;
@@ -5398,7 +5974,18 @@ function vccTablaEquipos(equipos, deltaI) {
     return [mainRow, serieRow].filter(Boolean);
   }).join("");
 
-  return `<div style="overflow-x:auto">
+  const hayAlivioEq = equiposEval.some(e =>
+    (e.enfoque_a?.I_alivio != null && e.enfoque_a.I_alivio < 0) ||
+    (e.enfoque_b?.I_alivio != null && e.enfoque_b.I_alivio < 0)
+  );
+  const alivioNote = hayAlivioEq
+    ? `<p class="small mb-1" style="color:#c07000">
+        <i class="bi bi-arrow-down-circle me-1"></i>
+        <strong>Traspaso aplicado:</strong> las I_base (▼) están reducidas por la carga traspasada al alimentador receptor.
+       </p>`
+    : "";
+
+  return omitidosTxt + alivioNote + `<div style="overflow-x:auto">
     <table class="table table-sm tabla-sim tabla-vcc mb-0" style="font-size:.78rem">
       <thead>${head}</thead><tbody>${rows}</tbody>
     </table></div>`;
@@ -5523,6 +6110,197 @@ async function vccDescargarHTML() {
     a.click();
     URL.revokeObjectURL(url);
   } finally { spinner(false); }
+}
+
+// ── TAB CONFIGURACIÓN ─────────────────────────────────────────────────────
+
+function cfgMostrar(seccion) {
+  document.querySelectorAll(".cfg-section").forEach(el => el.classList.add("d-none"));
+  document.querySelectorAll(".cfg-pill").forEach(el => {
+    el.classList.remove("btn-primary");
+    el.classList.add("btn-outline-secondary");
+  });
+  const active = document.getElementById(`cfg-${seccion}`);
+  if (active) active.classList.remove("d-none");
+  const pill = document.querySelector(`.cfg-pill[data-cfg="${seccion}"]`);
+  if (pill) { pill.classList.remove("btn-outline-secondary"); pill.classList.add("btn-primary"); }
+
+  if (seccion === "equipos")       cargarEquiposGlobal();
+  if (seccion === "alimentadores") cargarAlimentadoresConfig();
+  if (seccion === "ajustes")       cargarAjustesAdmin();
+}
+
+// ── Equipos globales ──────────────────────────────────────────────────────
+
+async function cargarEquiposGlobal() {
+  const cont = document.getElementById("cfg-eq-contenido");
+  if (!cont) return;
+  try {
+    const data = await apiFetch("/api/equipos/config");
+    state.equiposConfig = (data && !Array.isArray(data)) ? data : {};
+    renderEquiposGlobal(state.equiposConfig);
+  } catch(e) {
+    cont.innerHTML = `<div class="text-danger small">Error al cargar: ${e.message}</div>`;
+  }
+}
+
+function filtrarEquiposGlobal() {
+  const q = (document.getElementById("cfg-eq-buscar")?.value ?? "").trim().toUpperCase();
+  document.querySelectorAll("#cfg-eq-contenido tr.cfg-eq-row").forEach(tr => {
+    const numpos = (tr.dataset.numpos ?? "").toUpperCase();
+    tr.style.display = (!q || numpos.includes(q)) ? "" : "none";
+  });
+}
+
+function renderEquiposGlobal(data) {
+  const cont = document.getElementById("cfg-eq-contenido");
+  if (!cont) return;
+  const entries = Object.entries(data ?? {});
+  if (!entries.length) {
+    cont.innerHTML = `<p class="text-muted small">Sin fichas configuradas. Usa ⚙ en VCC o "Nueva ficha".</p>`;
+    return;
+  }
+  const TIPO_LBL = { setpoint:"Setpoint", conductor:"Conductor", fusible:"Fusible" };
+  const rows = entries.map(([numpos, e]) => {
+    const tipo   = TIPO_LBL[e.tipo_limite] ?? e.tipo_limite ?? "—";
+    const cn     = e.corriente_a != null ? `${e.corriente_a} A` : "—";
+    const esPPF  = /^PPF/i.test(numpos);
+    const hdlb   = esPPF
+      ? (e.es_hdlb === true
+          ? `<span class="badge bg-success" style="font-size:.7rem">Sí</span>`
+          : e.es_hdlb === false
+            ? `<span class="badge bg-warning text-dark" style="font-size:.7rem">No</span>`
+            : `<span class="text-muted">—</span>`)
+      : `<span class="text-muted">—</span>`;
+    const notas  = e.notas ? `<span title="${e.notas.replace(/"/g,"&quot;")}">📝</span>` : "";
+    const fecha  = e.fecha_registro ?? "—";
+    const np     = numpos.replace(/'/g, "\\'");
+    return `<tr class="cfg-eq-row" data-numpos="${numpos}">
+      <td class="font-monospace">${numpos}</td>
+      <td>${tipo}</td>
+      <td class="text-end">${cn}</td>
+      <td class="text-center">${hdlb}</td>
+      <td class="text-center">${notas}</td>
+      <td class="text-muted small">${fecha}</td>
+      <td class="text-nowrap">
+        <button class="btn btn-link btn-sm p-0 me-2 text-secondary"
+          onclick="fichaAbrirModal('${np}', cargarEquiposGlobal)" title="Editar">⚙</button>
+        <button class="btn btn-link btn-sm p-0 text-danger"
+          onclick="cfgEliminarEquipo('${np}')" title="Eliminar">✕</button>
+      </td>
+    </tr>`;
+  }).join("");
+  cont.innerHTML = `<div style="overflow-x:auto"><table class="table table-sm tabla-vcc" style="font-size:.84rem">
+    <thead><tr>
+      <th>NUMPOS</th><th>Tipo</th><th class="text-end">CN</th>
+      <th class="text-center">HDLB</th><th></th><th>Fecha</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function cfgEliminarEquipo(numpos) {
+  if (!confirm(`¿Eliminar la ficha de ${numpos}?`)) return;
+  try {
+    await apiFetch(`/api/equipos/config/${encodeURIComponent(numpos)}`, { method: "DELETE" });
+    delete state.equiposConfig[numpos];
+    renderEquiposGlobal(state.equiposConfig);
+    if (state.vccEquipos.length) vccRenderEquiposInputs(state.vccEquipos);
+  } catch(e) { alert("Error: " + e.message); }
+}
+
+// ── Alimentadores globales ────────────────────────────────────────────────
+
+async function cargarAlimentadoresConfig() {
+  const cont = document.getElementById("cfg-alim-contenido");
+  if (!cont) return;
+  try {
+    const data = await apiFetch("/api/alimentadores/config");
+    renderAlimentadoresConfig(data);
+  } catch(e) {
+    cont.innerHTML = `<div class="text-danger small">Error al cargar: ${e.message}</div>`;
+  }
+}
+
+function renderAlimentadoresConfig(data) {
+  const cont = document.getElementById("cfg-alim-contenido");
+  if (!cont) return;
+  const entries = Object.entries(data ?? {});
+  if (!entries.length) {
+    cont.innerHTML = `<p class="text-muted small">Sin alimentadores configurados. Los conductores intermedios se guardan desde la pestaña VCC.</p>`;
+    return;
+  }
+  const rows = entries.map(([nom, cfg]) => {
+    const conds  = cfg.conductores_intermedios ?? [];
+    const nConds = conds.length;
+    const id     = "cfg-alim-d-" + nom.replace(/[^a-zA-Z0-9]/g, "_");
+    const nomE   = nom.replace(/'/g, "\\'");
+    const condRows = conds.map((c, i) =>
+      `<tr>
+        <td class="ps-4 font-monospace small">${c.entre_a}</td>
+        <td class="small">→ ${c.entre_b}</td>
+        <td class="text-end small">${c.corriente_a} A</td>
+        <td class="text-muted small">${c.fecha_registro ?? "—"}</td>
+        <td>
+          <button class="btn btn-link btn-sm p-0 text-danger"
+            onclick="cfgEliminarConductorAlim('${nomE}',${i})" title="Eliminar">✕</button>
+        </td>
+      </tr>`
+    ).join("");
+    return `
+      <tr style="cursor:pointer" onclick="cfgToggleAlim('${id}')">
+        <td class="fw-semibold font-monospace">${nom}</td>
+        <td class="text-muted small">${nConds} conductor${nConds !== 1 ? "es" : ""}</td>
+        <td></td><td></td>
+        <td>
+          <button class="btn btn-link btn-sm p-0 text-danger"
+            onclick="event.stopPropagation();cfgEliminarAlim('${nomE}')" title="Eliminar alimentador">✕</button>
+        </td>
+      </tr>
+      <tr class="d-none" id="${id}">
+        <td colspan="5" class="p-0">
+          <table class="table table-sm mb-0" style="font-size:.82rem;background:#f8f9fa">
+            <thead><tr>
+              <th class="ps-4">Desde</th><th>Hasta</th>
+              <th class="text-end">CN (A)</th><th>Fecha</th><th></th>
+            </tr></thead>
+            <tbody>${condRows}</tbody>
+          </table>
+        </td>
+      </tr>`;
+  }).join("");
+  cont.innerHTML = `<div style="overflow-x:auto"><table class="table table-sm tabla-vcc" style="font-size:.84rem">
+    <thead><tr>
+      <th>Alimentador</th><th>Conductores</th><th></th><th></th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function cfgToggleAlim(id) {
+  const row = document.getElementById(id);
+  if (row) row.classList.toggle("d-none");
+}
+
+async function cfgEliminarAlim(nom) {
+  if (!confirm(`¿Eliminar toda la configuración de ${nom}?`)) return;
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, { method: "DELETE" });
+    await cargarAlimentadoresConfig();
+  } catch(e) { alert("Error: " + e.message); }
+}
+
+async function cfgEliminarConductorAlim(nom, idx) {
+  try {
+    const r     = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`);
+    const conds = (r.conductores_intermedios ?? []).filter((_, i) => i !== idx);
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conds }),
+    });
+    await cargarAlimentadoresConfig();
+  } catch(e) { alert("Error: " + e.message); }
 }
 
 // ── AJUSTES ADMIN ─────────────────────────────────────────────────────────
@@ -5947,6 +6725,13 @@ async function eliminarAjuste(tipo, numalim, mes, evt) {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body py-3">
+
+        <!-- Solo al crear nueva ficha desde Configuración -->
+        <div class="mb-2 d-none" id="ficha-numpos-row">
+          <label class="form-label text-muted small mb-1">NUMPOS del equipo</label>
+          <input type="text" id="ficha-numpos-input" class="form-control form-control-sm"
+                 placeholder="Ej: REC102921">
+        </div>
 
         <div class="mb-2">
           <label class="form-label text-muted small mb-1">Corriente límite (A)</label>

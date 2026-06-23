@@ -358,7 +358,8 @@ function calcularVcc(
         throw new RuntimeException("NUMALIM $numalim no encontrado en dfAlim");
     }
 
-    $alimRow = $dfAlim[$numalim];   // PHP copia por valor → seguro modificar
+    $alimRow    = $dfAlim[$numalim];   // PHP copia por valor → seguro modificar
+    $alimRowOrig = $alimRow;            // guardar serie original antes de modificar
 
     // Aplicar alivio por traspaso simultáneo sobre la serie histórica del alim
     if ($deltaTraspasoPct > 0.0 || $deltaTraspasoA > 0.0) {
@@ -376,7 +377,36 @@ function calcularVcc(
 
     $trafoResult = null;
     if ($trafoRow !== null) {
-        $trafoResult                = analizarTrafo($trafoRow, $deltaI, modo: 'carga', mesesFiltro: $mesesFiltro);
+        // La reducción del trafo es proporcional a la demanda del ALIMENTADOR A,
+        // no a la del trafo (que puede alimentar otros feeders además de este).
+        // reducción[mes] = I_feeder_A_orig[mes] × pct%  ó  = ΔA fijo
+        $trafoRowAdj = $trafoRow;
+        if ($deltaTraspasoPct > 0.0 || $deltaTraspasoA > 0.0) {
+            foreach ($trafoRowAdj as $col => $val) {
+                if (!is_string($col) || !preg_match('/^\d{4}-\d{2}$/', $col)) continue;
+                if ($val === null || !is_numeric($val)) continue;
+                $feederOrig = $alimRowOrig[$col] ?? null;
+                if ($feederOrig === null || !is_numeric($feederOrig)) continue;
+                $reduc = $deltaTraspasoPct > 0.0
+                    ? (float)$feederOrig * ($deltaTraspasoPct / 100.0)
+                    : $deltaTraspasoA;
+                $trafoRowAdj[$col] = max(0.0, (float)$val - $reduc);
+            }
+        }
+        $trafoResult = analizarTrafo($trafoRowAdj, $deltaI, modo: 'carga', mesesFiltro: $mesesFiltro);
+        // Añadir I_antes_orig e I_traspasada por mes: la reducción es absoluta
+        // (basada en la demanda del feeder, no del trafo) → no reconstruible con %.
+        if ($deltaTraspasoPct > 0.0 || $deltaTraspasoA > 0.0) {
+            foreach ($trafoResult['tabla'] as &$row) {
+                $mes  = $row['mes'];
+                $orig = isset($trafoRow[$mes]) && is_numeric($trafoRow[$mes])
+                    ? round((float)$trafoRow[$mes], 1) : null;
+                $row['I_antes_orig']  = $orig;
+                $row['I_traspasada']  = ($orig !== null && $row['I_antes'] !== null)
+                    ? round((float)$row['I_antes'] - $orig, 1) : null; // negativo
+            }
+            unset($row);
+        }
         $trafoResult['subestacion'] = trim((string)($trafoRow['subestacion'] ?? '')) ?: null;
         $trafoResult['barra']       = trim((string)($trafoRow['barra']       ?? '')) ?: null;
     }
@@ -403,19 +433,28 @@ function calcularVcc(
  * El estado final cuando hay fracción es el max(_orden) entre enfoque_a y enfoque_b.
  * Equivalente a evaluar_equipos() de Python.
  *
- * @param array      $equipos     Lista de arrays {nombre, tipo, cn_opcional, cn, fraccion?, ...}
- * @param float      $deltaI      Corriente adicional [A]
- * @param float|null $cnAlim      CN del alimentador [A] (requerido para Enfoque A)
- * @param array|null $serieAlim   ['YYYY-MM' => float|null] (requerido para Enfoque B)
- * @param array|null $mesesFiltro Meses a incluir en Enfoque B
+ * @param array      $equipos      Lista de arrays {nombre, tipo, cn_opcional, cn, fraccion?, ...}
+ * @param float      $deltaI       Corriente adicional [A]
+ * @param float|null $cnAlim       CN del alimentador [A] (requerido para Enfoque A)
+ * @param array|null $serieAlim    ['YYYY-MM' => float|null] serie ORIGINAL del alim (Enfoque B)
+ * @param array|null $mesesFiltro  Meses a incluir en Enfoque B
+ * @param array|null $serieAlivio  ['YYYY-MM' => float] reducción absoluta por mes [A] debida al traspaso
+ *                                 Para modo %: I_alim[mes] × p_pct.  Para modo ΔA: constante.
+ *                                 Se resta directamente del I_reco del equipo (no proporcional a fraccion).
+ * @param float|null $alivioA_abs  Reducción absoluta [A] para Enfoque A (CN × p_pct o ΔA fijo).
+ * @param array|null $serieAdicion ['YYYY-MM' => float] carga adicional absoluta por mes [A] (isla entrante en alim B).
+ *                                 Simétrico a serieAlivio pero sumado en vez de restado.
  * @return array
  */
 function evaluarEquipos(
     array  $equipos,
     float  $deltaI,
-    ?float $cnAlim      = null,
-    ?array $serieAlim   = null,
-    ?array $mesesFiltro = null,
+    ?float $cnAlim       = null,
+    ?array $serieAlim    = null,
+    ?array $mesesFiltro  = null,
+    ?array $serieAlivio  = null,  // reducción absoluta/mes debida a traspaso
+    ?float $alivioA_abs  = null,  // reducción absoluta CN-scenario (Enfoque A)
+    ?array $serieAdicion = null,  // carga adicional absoluta/mes (isla entrante en receptor)
 ): array {
     // Orden de criticidad para max() entre estados
     $orden = ['critico' => 2, 'prealerta' => 1, 'viable' => 0, 'sin_cn' => -1];
@@ -442,14 +481,19 @@ function evaluarEquipos(
         // ── Enfoque A: cota conservadora ────────────────────────────────────
         $enfA = null;
         if ($hasFrac && $cnAlim !== null && $cnAlim > 0.0) {
-            $iBaseA  = $cnAlim * $fraccion;
+            $iBaseAOrig = $cnAlim * $fraccion;          // sin traspaso
+            // La isla completa (alivioA_abs [A]) fluía por este equipo → se resta entera
+            $iBaseA     = $alivioA_abs !== null
+                ? max(0.0, $iBaseAOrig - $alivioA_abs)
+                : $iBaseAOrig;
             $iTotalA = $iBaseA + $deltaI;
             $pctA    = round($iTotalA / $cn * 100.0, 1);
             $enfA    = [
-                'I_base'  => round($iBaseA,  2),
-                'I_total' => round($iTotalA, 2),
-                'pct'     => $pctA,
-                'estado'  => _vccClasif($pctA),
+                'I_base'    => round($iBaseA,  2),
+                'I_total'   => round($iTotalA, 2),
+                'pct'       => $pctA,
+                'estado'    => _vccClasif($pctA),
+                'I_alivio'  => $alivioA_abs !== null ? round($iBaseA - $iBaseAOrig, 2) : null,
             ];
         }
 
@@ -457,15 +501,18 @@ function evaluarEquipos(
         $enfB = null;
         if ($hasFrac && $serieAlim) {
             $meses     = $mesesFiltro ?? array_keys($serieAlim);
-            $serieReco = [];
+            $serieReco    = [];  // con traspaso
+            $serieRecoOrig = []; // sin traspaso (para I_alivio)
             foreach ($meses as $mes) {
                 $v = $serieAlim[$mes] ?? null;
-                // Excluir null y NaN (equivalente a np.isnan check)
-                if ($v === null) continue;
-                if (!is_numeric($v)) continue;
+                if ($v === null || !is_numeric($v)) continue;
                 $vf = (float)$v;
                 if (is_nan($vf)) continue;
-                $serieReco[$mes] = round($vf * $fraccion, 2);
+                $recoOrig = $vf * $fraccion;
+                $serieRecoOrig[$mes] = round($recoOrig, 2);
+                $delta   = $serieAlivio  ? ($serieAlivio[$mes]  ?? 0.0) : 0.0;
+                $adicion = $serieAdicion ? ($serieAdicion[$mes] ?? 0.0) : 0.0;
+                $serieReco[$mes] = round(max(0.0, $recoOrig - $delta + $adicion), 2);
             }
 
             if ($serieReco) {
@@ -489,6 +536,7 @@ function evaluarEquipos(
                     ];
                 }
 
+                $maxOrig = $serieRecoOrig ? max($serieRecoOrig) : null;
                 $enfB = [
                     'I_base_max' => $iBaseB,
                     'mes_max'    => $mesMaxB,
@@ -496,6 +544,8 @@ function evaluarEquipos(
                     'pct'        => $pctB,
                     'estado'     => _vccClasif($pctB),
                     'serie'      => $serieDet,
+                    'I_alivio'   => ($maxOrig !== null && abs($maxOrig - $maxVal) > 0.001)
+                                    ? round($maxVal - $maxOrig, 2) : null,
                 ];
             }
         }

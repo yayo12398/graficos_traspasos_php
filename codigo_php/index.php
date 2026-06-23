@@ -762,6 +762,49 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     }
     $lzInfo['numpos_lz_sel'] = $numposLzSel;
 
+    // ── Evaluación VCC equipos troncales del receptor ─────────────────────────
+    // serie_deltas[mes] = I_alim_A_orig[mes] × p  →  corriente isla que entra en alim B
+    $vccAlimBEquipos = null;
+    if ($tipoDest === 'excel' && $nDest && !empty($b['equipos_b'])) {
+        $serieAdicionB = $deltaInfo['serie_deltas'] ?? [];
+        $serieBFilt    = $mesesSel
+            ? array_intersect_key($serieDest, array_flip($mesesSel))
+            : $serieDest;
+
+        $equiposBEval = [];
+        foreach ($b['equipos_b'] as $eqB) {
+            $nombre = $eqB['nombre'] ?? '';
+            if (!$nombre) continue;
+            $tipo = $eqB['tipo'] ?? tipoEquipo($nombre);
+            if ($tipo === 'conductor_intermedio') {
+                $equiposBEval[] = [
+                    'nombre'   => "Conductor({$eqB['entre_b']})",
+                    'tipo'     => 'conductor_intermedio',
+                    'cn'       => isset($eqB['cn']) && is_numeric($eqB['cn']) ? (float)$eqB['cn'] : null,
+                    'fraccion' => isset($eqB['fraccion']) && is_numeric($eqB['fraccion']) ? (float)$eqB['fraccion'] : null,
+                    'kva_down' => null,
+                ];
+            } else {
+                $frac = calcularFraccionReco($dfAb, $nomDest, $nombre);
+                $equiposBEval[] = array_merge($frac, [
+                    'nombre' => $nombre,
+                    'tipo'   => tipoEquipo($nombre),
+                    'cn'     => isset($eqB['cn']) && is_numeric($eqB['cn']) ? (float)$eqB['cn'] : null,
+                ]);
+            }
+        }
+        if ($equiposBEval) {
+            $vccAlimBEquipos = evaluarEquipos(
+                equipos:      $equiposBEval,
+                deltaI:       0.0,
+                cnAlim:       null,
+                serieAlim:    $serieBFilt,
+                mesesFiltro:  $mesesSel ?: null,
+                serieAdicion: $serieAdicionB,
+            );
+        }
+    }
+
     // Construir isla limpia: excluir detalle_tds (va top-level), agregar n_td_equipo_total
     $islaOut = $isla;
     unset($islaOut['detalle_tds']);
@@ -810,6 +853,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'serie_raw_dest'      => $serieDestRaw['serie'] ?? [],
         'serie_raw_trafo_orig'=> serieRawDeFila($trafoOrigRowRaw ?? null),
         'serie_raw_trafo_dest'=> serieRawDeFila($trafoDestRowRaw ?? null),
+        'vcc_alim_b_equipos'  => $vccAlimBEquipos,
     ]);
 }
 
@@ -1295,6 +1339,11 @@ if ($method === 'DELETE' && $a === 'equipos' && $b0 === 'config' && $b1 && !$b2)
 // Alimentadores Config — Configuración persistente por alimentador (nom_alim)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── GET /api/alimentadores/config ── todos los alimentadores configurados ─────
+if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'config' && !$b1) {
+    jsonPy(acGetTodos());
+}
+
 // ── GET /api/alimentadores/config/{nom_alim} ──────────────────────────────────
 if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'config' && $b1 && !$b2) {
     $nom   = urldecode($b1);
@@ -1320,6 +1369,26 @@ if ($method === 'DELETE' && $a === 'alimentadores' && $b0 === 'config' && $b1 &&
     $nom = urldecode($b1);
     acDeleteAlim($nom);
     jsonPy(['ok' => true]);
+}
+
+// ── POST /api/alim/troncal_enriquecido ── equipos troncal de alim B con fracciones
+if ($method === 'POST' && $a === 'alim' && $b0 === 'troncal_enriquecido') {
+    $b   = bodyJson();
+    $nom = trim($b['nom_alim'] ?? '');
+    $eqs = $b['equipos']   ?? [];
+    if (!$nom) jsonErr('nom_alim requerido');
+
+    ['dfAb' => $dfAb] = gd();
+
+    $upstream = array_map(fn($e) => [
+        'nombre'      => (string)$e,
+        'tipo'        => tipoEquipo((string)$e),
+        'cn_opcional' => true,
+        'cn'          => null,
+    ], $eqs);
+
+    $enriched = enriquecerUpstreamConFraccion($dfAb, $nom, $upstream);
+    jsonOk(['equipos' => $enriched]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1424,14 +1493,27 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
     $trafoRow  = trafoDeFeeder($dfTrafo, $numalim);
     $trafoRow  = $trafoRow ? aplicarAjustesFila($trafoRow, 'trafo', $numalim) : null;
     $serieAlim = obtenerSerieAlim($dfAlim, $numalim);
-    // Aplicar alivio del traspaso a la serie antes de evaluar equipos (Enfoque B)
-    $serieParaEquipos = $serieAlim['serie'];
+    // Alivio por traspaso: la isla completa fluía por los equipos upstream → se resta entera.
+    // NO se aplica proporcional a fraccion: todos los equipos aguas arriba del equipo_abre
+    // llevaban los mismos 64.7 A de la isla, sin importar su fraccion individual.
+    $cnRaw      = $serieAlim['cn'];
+    $cnAlim     = is_finite($cnRaw) ? $cnRaw : null;
+    $serieAlivio  = null;   // [mes => ΔI_isla [A]] por mes
+    $alivioA_abs  = null;   // reducción absoluta en escenario CN (Enfoque A)
     if ($dtPct > 0) {
-        $serieParaEquipos = array_map(fn($v) => $v !== null ? round($v * (1 - $dtPct / 100), 2) : null, $serieParaEquipos);
+        $serieAlivio = [];
+        foreach ($serieAlim['serie'] as $mes => $val) {
+            $serieAlivio[$mes] = is_numeric($val) ? round((float)$val * ($dtPct / 100.0), 2) : 0.0;
+        }
+        $alivioA_abs = $cnAlim !== null ? round($cnAlim * ($dtPct / 100.0), 2) : null;
     } elseif ($dtA > 0) {
-        $serieParaEquipos = array_map(fn($v) => $v !== null ? max(0.0, round($v - $dtA, 2)) : null, $serieParaEquipos);
+        $serieAlivio = array_fill_keys(array_keys($serieAlim['serie']), (float)$dtA);
+        $alivioA_abs = (float)$dtA;
     }
-    $equipos   = evaluarEquipos($upstream, $deltaI, $serieAlim['cn'], $serieParaEquipos, $mesesSel ?: null);
+    $equipos = evaluarEquipos(
+        $upstream, $deltaI, $cnAlim, $serieAlim['serie'], $mesesSel ?: null,
+        $serieAlivio, $alivioA_abs
+    );
     $vcc       = calcularVcc($dfAlim, $numalim, $trafoRow, $deltaI, $mesesSel, $dtA, $dtPct);
 
     // Calcular pct_max_alim y mes_max_alim desde tabla_alim
@@ -1481,7 +1563,10 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
         $kvaInst    = (float)$b['kva_instalado'];
         $dISens     = deltaICliente($kvaInst, $tensionKv);
         $vccSens    = calcularVcc($dfAlim, $numalim, $trafoRow, $dISens, $mesesSel, $dtA, $dtPct);
-        $eqSens = evaluarEquipos($upstream, $dISens, $serieAlim['cn'], $serieParaEquipos, $mesesSel ?: null);
+        $eqSens = evaluarEquipos(
+            $upstream, $dISens, $cnAlim, $serieAlim['serie'], $mesesSel ?: null,
+            $serieAlivio, $alivioA_abs
+        );
         $pctMaxSens = null; $mesMaxSens = '';
         foreach ($vccSens['tabla_alim'] ?? [] as $r) {
             $pct = $r['uso_despues_pct'] ?? null;
@@ -1502,6 +1587,71 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
     // El receptor es siempre $numalim; el origen es opcional en el body.
     $numalimOrig = isset($b['numalim_orig']) ? (int)$b['numalim_orig'] : null;
     $result['lz_info'] = _lzInfoEntre($numalimOrig, $numalim);
+
+    // ── Análisis del alimentador receptor (traspaso simultáneo) ──────────────
+    $nomAlimDest   = trim((string)($b['nom_alim_dest']      ?? ''));
+    $numalimDest   = (int)($b['numalim_dest']               ?? 0);
+    $equipoLzB     = trim((string)($b['equipo_lz']          ?? ''));
+    $eqTroncalB    = $b['equipos_troncal_b']                ?? [];
+    $alivioAPeor   = (float)($result['alivio_A_peor']       ?? 0.0);
+
+    if ($nomAlimDest && is_array($eqTroncalB) && count($eqTroncalB) > 0 && $alivioAPeor > 0.0) {
+        $nmDest = $numalimDest ?: (numalimDeNomAlim($dfAb, $nomAlimDest) ?? 0);
+        if ($nmDest) {
+            // Enriquecer equipos troncal B: clasificar → fracción → CN desde config
+            $clasificadosB = _vccClasificarUpstream($eqTroncalB);
+            $equiposBEnrich = [];
+            $nullFrac = ['kva_down'=>null,'kva_total'=>null,'fraccion'=>null,
+                         'tds_down'=>null,'tds_con_kva'=>null,'tds_sin_kva'=>null];
+            foreach ($clasificadosB as $eq) {
+                $frac  = in_array($eq['tipo'], ['reconectador','equipo_sub'], true)
+                       ? calcularFraccionReco($dfAb, $nomAlimDest, $eq['nombre'])
+                       : $nullFrac;
+                $cfg   = ecGetEquipo($eq['nombre']);
+                $eq['cn']           = $cfg ? ((float)($cfg['corriente_a'] ?? 0) ?: null) : null;
+                $eq['tipo_limite']  = $cfg['tipo_limite'] ?? null;
+                $eq['fuente_ajuste']= $cfg ? 'config' : 'sin_config';
+                $equiposBEnrich[] = array_merge($eq, $frac, ['numpos' => $eq['nombre']]);
+            }
+
+            // Serie y trafo de B
+            $serieBData = obtenerSerieAlim($dfAlim, $nmDest);
+            $trafoB     = trafoDeFeeder($dfTrafo, $nmDest);
+            if ($trafoB !== null) $trafoB = aplicarAjustesFila($trafoB, 'trafo', $nmDest);
+
+            // evaluarEquipos para B (ΔI = alivio_A_peor)
+            $cnB         = is_finite($serieBData['cn']) ? $serieBData['cn'] : null;
+            $equiposEvalB = evaluarEquipos(
+                $equiposBEnrich, $alivioAPeor,
+                $cnB,
+                $serieBData['serie'], $mesesSel ?: null
+            );
+
+            // calcularVcc para B: FU% alimentador + trafo
+            $vccB       = calcularVcc($dfAlim, $nmDest, $trafoB, $alivioAPeor, $mesesSel);
+            $pctMaxB    = null; $mesMaxB = '';
+            foreach ($vccB['tabla_alim'] ?? [] as $rB) {
+                $pB = $rB['uso_despues_pct'] ?? null;
+                if ($pB !== null && ($pctMaxB === null || $pB > $pctMaxB)) {
+                    $pctMaxB = $pB; $mesMaxB = $rB['mes'] ?? '';
+                }
+            }
+
+            $result['analisis_destino'] = [
+                'nom_alim'     => $nomAlimDest,
+                'numalim'      => $nmDest,
+                'equipo_lz'    => $equipoLzB ?: null,
+                'delta_I'      => round($alivioAPeor, 2),
+                'cn_alim'      => $cnB,
+                'equipos_eval' => $equiposEvalB,
+                'tabla_alim'   => $vccB['tabla_alim']  ?? null,
+                'tabla_trafo'  => $vccB['tabla_trafo'] ?? null,
+                'pct_max_alim' => $pctMaxB,
+                'mes_max_alim' => $mesMaxB,
+                'resumen_alim' => resumenEstados($vccB['tabla_alim'] ?? []),
+            ];
+        }
+    }
 
     jsonPy($result);
 }
