@@ -1511,7 +1511,7 @@ function _repTablaMensualVcc(array $tabla, string $nombre, float $dtA = 0.0, flo
 
 function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
     if (empty($equipos)) return '<p>Sin equipos upstream detectados.</p>';
-    $tipoMap = ['reconectador'=>'Reconectador','equipo_sub'=>'Equipo sub.','otro'=>'Otro'];
+    $tipoMap = ['reconectador'=>'Reconectador','equipo_sub'=>'Equipo sub.','otro'=>'Otro','conductor_intermedio'=>'Conductor'];
     $hasEnfoques = (bool)array_filter($equipos, fn($eq) => !empty($eq['enfoque_a']) || !empty($eq['enfoque_b']));
     $fuenteBadge = fn(string $f): string => $f === 'conductor'
         ? "<br><span class='badge badge-conductor'>Conductor</span>"
@@ -1526,7 +1526,10 @@ function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
             $cnStr     = isset($eq['cn']) ? number_format((float)$eq['cn'],0).' A'.$fuenteBadge($fuente) : '&#8212;';
             $dpctStr   = isset($eq['delta_pct']) ? number_format((float)$eq['delta_pct'],1).'%' : '&#8212;';
             $tipoLbl   = $tipoMap[$eq['tipo'] ?? ''] ?? ($eq['tipo'] ?? '');
-            $filas .= "<tr><td>" . _h($eq['nombre']) . "</td><td>" . _h($tipoLbl) . "</td><td class='r'>$cnStr</td>"
+            $nombreHtml = ($eq['tipo'] ?? '') === 'conductor_intermedio'
+                ? 'tramo ' . _h(str_replace(['Conductor(', ')'], ['→', ''], $eq['nombre']))
+                : '<code>' . _h($eq['nombre']) . '</code>';
+            $filas .= "<tr><td>$nombreHtml</td><td>" . _h($tipoLbl) . "</td><td class='r'>$cnStr</td>"
                 . "<td class='r'>" . number_format($deltaI,2) . " A</td><td class='r'>$dpctStr</td><td>$badgeHtml</td></tr>";
         }
         return "<table class='tabla-sim' style='font-size:.82rem'><thead><tr>"
@@ -1571,7 +1574,10 @@ function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
         } else {
             $cellsB = "<td class='r text-muted' style='$SEP'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='r text-muted'>&#8212;</td>";
         }
-        $filas[] = "<tr><td><code>" . _h($eq['nombre']) . "</code></td><td>" . _h($tipoLbl) . "</td>"
+        $nombreHtml2 = ($eq['tipo'] ?? '') === 'conductor_intermedio'
+            ? 'tramo ' . _h(str_replace(['Conductor(', ')'], ['→', ''], $eq['nombre']))
+            : '<code>' . _h($eq['nombre']) . '</code>';
+        $filas[] = "<tr><td>$nombreHtml2</td><td>" . _h($tipoLbl) . "</td>"
             . "<td class='r'>$cnStr</td><td class='r'>" . number_format($deltaI,2) . "</td>"
             . "$cellsA$cellsB<td>$badgeHtml</td></tr>";
         if ($enfB && !empty($enfB['serie'])) {
