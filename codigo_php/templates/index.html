@@ -662,10 +662,28 @@
             </div>
           </div>
 
-          <!-- Paso 2: Punto de conexion -->
-          <div class="card step-card" id="vcc-card-paso2">
+          <!-- Paso 2: Tension -->
+          <div class="card step-card d-none" id="vcc-card-tension">
             <div class="step-header">
               <span class="step-badge">2</span>
+              <span class="fw-semibold">Tensión de Conexión</span>
+            </div>
+            <div class="step-body">
+              <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="vcc-tension" id="vcc-t12"
+                       value="12" checked>
+                <label class="btn btn-outline-primary" for="vcc-t12">12 kV</label>
+                <input type="radio" class="btn-check" name="vcc-tension" id="vcc-t23"
+                       value="23">
+                <label class="btn btn-outline-primary" for="vcc-t23">23 kV</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Paso 3: Punto de conexion -->
+          <div class="card step-card d-none" id="vcc-card-paso2">
+            <div class="step-header">
+              <span class="step-badge">3</span>
               <span class="fw-semibold">Punto de Conexión</span>
             </div>
             <div class="step-body">
@@ -706,40 +724,19 @@
             </div>
           </div>
 
-          <!-- Paso 3: Equipos upstream (CN opcional) -->
+          <!-- Paso 4: Equipos upstream -->
           <div class="card step-card d-none" id="vcc-card-equipos">
             <div class="step-header">
-              <span class="step-badge">3</span>
+              <span class="step-badge">4</span>
               <span class="fw-semibold">Equipos Aguas Arriba</span>
             </div>
             <div class="step-body">
-              <p class="text-muted small mb-2">
-                Ingresa la CN de los equipos que la tienen. Déjala en blanco si no aplica.
-              </p>
-              <div id="vcc-equipos-inputs"></div>
-            </div>
-          </div>
-
-          <!-- Paso 4: Tension -->
-          <div class="card step-card">
-            <div class="step-header">
-              <span class="step-badge">4</span>
-              <span class="fw-semibold">Tensión de Conexión</span>
-            </div>
-            <div class="step-body">
-              <div class="btn-group w-100" role="group">
-                <input type="radio" class="btn-check" name="vcc-tension" id="vcc-t12"
-                       value="12" checked>
-                <label class="btn btn-outline-primary" for="vcc-t12">12 kV</label>
-                <input type="radio" class="btn-check" name="vcc-tension" id="vcc-t23"
-                       value="23">
-                <label class="btn btn-outline-primary" for="vcc-t23">23 kV</label>
-              </div>
+              <div id="vcc-equipos-tabla"></div>
             </div>
           </div>
 
           <!-- Paso 5: Potencias -->
-          <div class="card step-card">
+          <div class="card step-card d-none" id="vcc-card-potencia">
             <div class="step-header">
               <span class="step-badge">5</span>
               <span class="fw-semibold">Potencia del Cliente</span>
@@ -757,7 +754,7 @@
           </div>
 
           <!-- Paso 6: Traspaso simultáneo -->
-          <div class="card step-card" id="vcc-card-traspaso">
+          <div class="card step-card d-none" id="vcc-card-traspaso">
             <div class="step-header d-flex align-items-center"
                  style="cursor:pointer;user-select:none" onclick="vccToggleTraspaso()">
               <span class="step-badge" style="background:#f5a623">6</span>
@@ -844,7 +841,7 @@
           </div>
 
           <!-- Datos del cliente -->
-          <div class="card step-card">
+          <div class="card step-card d-none" id="vcc-card-datos">
             <div class="step-header">
               <i class="bi bi-person-badge me-1"></i>
               <span class="fw-semibold">Datos del Cliente</span>
@@ -876,8 +873,35 @@
             </div>
           </div>
 
+          <!-- Período de análisis -->
+          <div class="card step-card d-none" id="vcc-card-periodo">
+            <div class="step-header">
+              <i class="bi bi-calendar-range me-1"></i>
+              <span class="fw-semibold">Período de análisis</span>
+              <span class="ms-auto text-white-50 small" id="vcc-lbl-n-meses"></span>
+            </div>
+            <div class="step-body">
+              <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                <button class="btn btn-sm btn-secondary py-0 px-2" onclick="vccSelMeses(true)">
+                  <i class="bi bi-check2-all me-1"></i>Todos</button>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="vccSelMeses(false)">
+                  <i class="bi bi-x me-1"></i>Limpiar</button>
+                <div class="form-check form-switch ms-auto mb-0" style="white-space:nowrap">
+                  <input class="form-check-input" type="checkbox" id="vcc-toggle-historico"
+                         onchange="vccToggleHistorico(this.checked)">
+                  <label class="form-check-label text-muted small" for="vcc-toggle-historico">
+                    Histórico completo
+                  </label>
+                </div>
+              </div>
+              <div id="vcc-meses-checklist"
+                   style="max-height:180px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:4px">
+              </div>
+            </div>
+          </div>
+
           <!-- Botones de accion -->
-          <div class="d-grid gap-2">
+          <div class="d-grid gap-2 d-none" id="vcc-card-evaluar">
             <button class="btn btn-primary" onclick="vccEvaluar()">
               <i class="bi bi-calculator me-1"></i> Evaluar VCC
             </button>
@@ -1083,6 +1107,8 @@ const state = {
   vccEquiposCache: {},   // {numpos: equipo} — cargado una vez al elegir alimentador
   vccPuntoRef:     null, // {nombre_ref, tipo_ref, n_tds_aguas_abajo} del punto buscado
   vccUltimaEval:   null, // último resultado de /api/vcc/evaluar
+  equiposConfig:   {},   // {numpos: entry} — cache de equipos_config.json
+  alimConfig:      null, // config del alimentador activo (conductores intermedios)
 };
 
 // TomSelect instances
@@ -1104,6 +1130,7 @@ document.addEventListener("DOMContentLoaded", () => {
   cargarDestinos();
   cargarFeedersNuevos();
   cargarMeses();
+  cargarEquiposConfig();
   cargarEstadoCache();
   try {
     registrarEventos();
@@ -1237,6 +1264,22 @@ function _limiteAnioCorrido(meses) {
   if (!meses.length) return null;
   const max = meses[meses.length - 1];
   return `${parseInt(max.slice(0, 4)) - 1}-${max.slice(5, 7)}`;
+}
+
+async function cargarEquiposConfig() {
+  try {
+    const data = await apiFetch("/api/equipos/config");
+    state.equiposConfig = (data && !Array.isArray(data)) ? data : {};
+  } catch(e) { console.warn("[equiposConfig] No se pudo cargar:", e); }
+}
+
+async function cargarConfigAlim(nom) {
+  state.alimConfig = null;
+  if (!nom) return;
+  try {
+    const r = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`);
+    if (!r.error) state.alimConfig = r;
+  } catch(e) { /* sin config guardada — normal */ }
 }
 
 async function cargarMeses() {
@@ -4324,6 +4367,10 @@ function vccInicializarSelect() {
       document.getElementById("vcc-modo-equipo").checked = true;
       vccActualizarUIModo("equipos");
       await vccCargarEquipos(state.vccAlimNom, "equipos");
+      await cargarConfigAlim(state.vccAlimNom);
+      // Mostrar paso 2 (tensión) y paso 3 (punto) al seleccionar alimentador
+      document.getElementById("vcc-card-tension").classList.remove("d-none");
+      document.getElementById("vcc-card-paso2").classList.remove("d-none");
     }
   }
 
@@ -4438,8 +4485,9 @@ function vccLimpiarPunto() {
   state.vccPuntoRef   = null;
   state.vccUltimaEval = null;
   document.getElementById("vcc-punto-info").classList.add("d-none");
-  document.getElementById("vcc-card-equipos").classList.add("d-none");
-  document.getElementById("vcc-equipos-inputs").innerHTML = "";
+  ["vcc-card-equipos","vcc-card-potencia","vcc-card-traspaso","vcc-card-datos","vcc-card-periodo","vcc-card-evaluar"]
+    .forEach(id => document.getElementById(id).classList.add("d-none"));
+  document.getElementById("vcc-equipos-tabla").innerHTML = "";
   document.getElementById("vcc-resultados").classList.add("d-none");
 }
 
@@ -4485,75 +4533,150 @@ async function vccBuscarPunto(numposArg) {
       `<strong>${tipoLabel}:</strong> ${r.nombre_ref} (${r.numpos_ref})${tdsMsg}`;
     document.getElementById("vcc-punto-info").classList.remove("d-none");
 
-    vccRenderEquiposInputs(upstream);
-    if (upstream.length > 0)
-      document.getElementById("vcc-card-equipos").classList.remove("d-none");
+    try { vccRenderEquiposInputs(upstream); } catch(e) { console.error("vccRenderEquiposInputs:", e); }
+    // Mostrar paso 4 siempre que haya un punto válido (aunque upstream esté vacío)
+    document.getElementById("vcc-card-equipos").classList.remove("d-none");
+    // Mostrar pasos 5-8 y botón
+    ["vcc-card-potencia","vcc-card-traspaso","vcc-card-datos","vcc-card-periodo","vcc-card-evaluar"]
+      .forEach(id => document.getElementById(id).classList.remove("d-none"));
+    vccRenderMeses();
   } finally { spinner(false); }
 }
 
-// ─── render de inputs CN para equipos ─────────────────────────────────────
+// ─── tabla unificada upstream: info + CN inputs + conductores intermedios ──────
 function vccRenderEquiposInputs(equipos) {
-  const cont = document.getElementById("vcc-equipos-inputs");
-  cont.innerHTML = "";
-  const relevantes = equipos
-    .filter(e => e.cn_opcional)
-    .sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
-  if (!relevantes.length) {
-    cont.innerHTML = "<p class='text-muted small'>Sin equipos con ajuste relevante detectados.</p>";
+  const cont = document.getElementById("vcc-equipos-tabla");
+  if (!equipos.length) {
+    cont.innerHTML = `<p class='text-muted small'>Sin equipos aguas arriba identificados.</p>`;
     return;
   }
-  const ajusteTooltip = "Corriente máxima admisible en este punto del alimentador. " +
-    "Puede ser la corriente nominal (CN) del equipo según su placa, " +
-    "o la capacidad del conductor si este es el cuello de botella.";
-  relevantes.forEach(eq => {
-    const icon = eq.tipo === "reconectador"
-      ? `<span class="badge bg-danger me-1">REC</span>`
-      : `<span class="badge bg-primary me-1">Sub</span>`;
-    const opt = eq.tipo !== "reconectador"
-      ? ` <em class='text-muted small'>(opcional)</em>` : "";
-
-    // Info de fracción de potencia
-    let fracHtml = "";
-    if (eq.fraccion != null) {
-      const pct  = (eq.fraccion * 100).toFixed(1);
-      const kvaD = eq.kva_down  != null ? Math.round(eq.kva_down ).toLocaleString("es-CL") : "?";
-      const kvaT = eq.kva_total != null ? Math.round(eq.kva_total).toLocaleString("es-CL") : "?";
-      const warnHtml = eq.tds_sin_kva > 0
-        ? ` <span class="text-warning" title="${eq.tds_sin_kva} TDs sin potencia registrada">` +
-          `⚠ ${eq.tds_sin_kva} TD(s) sin kVA</span>` : "";
-      fracHtml = `<div class="text-muted small mt-1">` +
-        `${kvaD} / ${kvaT} kVA → <strong>${pct}%</strong> del alim.${warnHtml}</div>`;
+  const sorted     = [...equipos].sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
+  const savedConds = state.alimConfig?.conductores_intermedios ?? [];
+  const rows = [];
+  sorted.forEach((eq, i) => {
+    rows.push(_vccEqRow(eq));
+    if (i < sorted.length - 1) {
+      const next  = sorted[i + 1];
+      const saved = savedConds.find(c => c.entre_b === eq.nombre && c.entre_a === next.nombre);
+      rows.push(_vccCondBtnRow(eq.nombre, next.nombre, eq.fraccion ?? null));
+      if (saved) rows.push(_vccCondRow(eq.nombre, next.nombre, eq.fraccion ?? null, saved.corriente_a));
     }
-
-    const div = document.createElement("div");
-    div.className = "vcc-equipo-row";
-    div.innerHTML =
-      `<label>${icon}${eq.nombre}${opt}</label>` +
-      `<div class="text-muted small mb-1">` +
-        `Ajuste (A) ` +
-        `<span style="cursor:help" data-bs-toggle="tooltip" data-bs-placement="top" ` +
-             `title="${ajusteTooltip}">(?)</span>` +
-      `</div>` +
-      `<div class="d-flex align-items-center gap-2">` +
-        `<input type="number" class="form-control form-control-sm" style="width:80px"` +
-          ` id="vcc-cn-${eq.nombre}" placeholder="A" min="1">` +
-        `<div class="btn-group" role="group">` +
-          `<input type="radio" class="btn-check" name="vcc-fuente-${eq.nombre}" ` +
-               `id="vcc-fuente-eq-${eq.nombre}" value="equipo" checked>` +
-          `<label class="btn btn-outline-secondary" ` +
-               `style="font-size:.72rem;padding:2px 7px;line-height:1.4" ` +
-               `for="vcc-fuente-eq-${eq.nombre}">Equipo</label>` +
-          `<input type="radio" class="btn-check" name="vcc-fuente-${eq.nombre}" ` +
-               `id="vcc-fuente-cd-${eq.nombre}" value="conductor">` +
-          `<label class="btn btn-outline-secondary" ` +
-               `style="font-size:.72rem;padding:2px 7px;line-height:1.4" ` +
-               `for="vcc-fuente-cd-${eq.nombre}">Conductor</label>` +
-        `</div>` +
-      `</div>` +
-      fracHtml;
-    cont.appendChild(div);
   });
+  cont.innerHTML =
+    `<table class="table table-sm tabla-vcc mb-1" style="font-size:.82rem">` +
+    `<thead><tr><th>Tipo</th><th>NUMPOS</th>` +
+    `<th class="text-end">Fracc.</th><th class="text-end">kVA↓</th>` +
+    `<th class="text-end">CN (A)</th><th></th></tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table>` +
+    `<button class="btn btn-sm btn-outline-secondary mt-1" onclick="vccGuardarConfigAlim()">` +
+    `<i class="bi bi-floppy me-1"></i>Guardar configuración del alimentador</button>`;
   initTooltips(cont);
+}
+
+function _vccEqRow(eq) {
+  const TIPO_BADGE = {
+    reconectador: `<span class="badge bg-danger">REC</span>`,
+    equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
+  };
+  const badge    = TIPO_BADGE[eq.tipo] || `<span class="badge bg-secondary">${eq.tipo||'?'}</span>`;
+  const fracHtml = eq.fraccion != null
+    ? `${(eq.fraccion * 100).toFixed(1)}%` : `<span class="text-muted">—</span>`;
+  const kvaHtml  = eq.kva_down != null
+    ? Math.round(eq.kva_down).toLocaleString("es-CL") : `<span class="text-muted">—</span>`;
+  const warnHtml = (eq.tds_sin_kva > 0)
+    ? ` <span class="text-warning" title="${eq.tds_sin_kva} TDs sin kVA">⚠</span>` : "";
+  const cfg   = state.equiposConfig[eq.nombre];
+  const esPPF = /^PPF/i.test(eq.nombre);
+  let cnHtml;
+  if (esPPF) {
+    cnHtml = cfg?.es_hdlb === true
+      ? `<span class="badge bg-success" style="font-size:.7rem">HDLB</span>`
+      : cfg?.es_hdlb === false
+        ? `<span class="badge bg-warning text-dark" style="font-size:.7rem">No HDLB</span>`
+        : `<span class="text-warning" style="font-size:.8rem" title="Configurar si está en troncal">⚠ ¿HDLB?</span>`;
+  } else {
+    const cnPrefill = cfg?.corriente_a ?? "";
+    const tipoBadge = cfg?.corriente_a
+      ? ` <span class="text-info" style="font-size:.72rem">(${
+          cfg.tipo_limite === "setpoint" ? "SP" : cfg.tipo_limite === "fusible" ? "Fus" : "Cond"})</span>` : "";
+    cnHtml = `<input type="number" class="form-control form-control-sm d-inline-block" style="width:68px"` +
+      ` id="vcc-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">${tipoBadge}`;
+  }
+  return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}">` +
+    `<td>${badge}</td><td class="font-monospace">${eq.nombre}</td>` +
+    `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
+    `<td class="text-end">${cnHtml}</td>` +
+    `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
+      `onclick="fichaAbrirModal('${eq.nombre}')" title="Configurar equipo">⚙</button></td></tr>`;
+}
+
+function _vccCondBtnRow(entreB, entreA, fraccion) {
+  return `<tr class="vcc-cond-btn-row" ` +
+    `data-entre-b="${entreB}" data-entre-a="${entreA}" data-fraccion="${fraccion ?? ''}">` +
+    `<td colspan="6" class="p-0 text-center" style="border:none">` +
+    `<button class="btn btn-link btn-sm text-muted py-0 w-100 vcc-cond-btn" ` +
+    `style="font-size:.7rem;opacity:.45" onclick="vccInsertarConductor(this)" ` +
+    `title="Agregar conductor intermedio entre ${entreA} y ${entreB}">` +
+    `<i class="bi bi-plus-circle me-1"></i>conductor</button></td></tr>`;
+}
+
+function _vccCondRow(entreB, entreA, fraccion, cn) {
+  return `<tr class="vcc-cond-row" ` +
+    `data-entre-b="${entreB}" data-entre-a="${entreA}" data-fraccion="${fraccion ?? ''}">` +
+    `<td colspan="2"><span class="badge bg-secondary" style="font-size:.7rem">Cond</span>` +
+    ` <span class="text-muted" style="font-size:.75rem">tramo</span></td>` +
+    `<td colspan="2" class="text-muted" style="font-size:.75rem">→ ${entreB}</td>` +
+    `<td class="text-end"><input type="number" ` +
+    `class="form-control form-control-sm d-inline-block vcc-cond-cn-input" ` +
+    `style="width:68px" placeholder="A" min="1" value="${cn ?? ''}"></td>` +
+    `<td><button class="btn btn-link btn-sm p-0 text-danger" ` +
+    `onclick="vccEliminarConductor(this)" title="Eliminar conductor">×</button></td></tr>`;
+}
+
+function vccInsertarConductor(btn) {
+  const btnRow = btn.closest("tr.vcc-cond-btn-row");
+  btnRow.insertAdjacentHTML("afterend",
+    _vccCondRow(btnRow.dataset.entreB, btnRow.dataset.entreA,
+      parseFloat(btnRow.dataset.fraccion) || null, null));
+  btn.disabled      = true;
+  btn.style.opacity = "0.2";
+}
+
+function vccEliminarConductor(btn) {
+  const condRow = btn.closest("tr.vcc-cond-row");
+  const tbody   = condRow.closest("tbody");
+  const condBtn = tbody.querySelector(
+    `tr.vcc-cond-btn-row[data-entre-b="${condRow.dataset.entreB}"]` +
+    `[data-entre-a="${condRow.dataset.entreA}"] .vcc-cond-btn`);
+  if (condBtn) { condBtn.disabled = false; condBtn.style.opacity = ".45"; }
+  condRow.remove();
+}
+
+async function vccGuardarConfigAlim() {
+  const nom = state.vccAlimNom;
+  if (!nom) return mostrarError("Sin alimentador seleccionado.");
+  const conductores = [];
+  document.querySelectorAll("tr.vcc-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vcc-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
+  });
+  spinner(true, "Guardando...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores }),
+    });
+    state.alimConfig = { conductores_intermedios: conductores };
+    const saveBtn = document.querySelector("#vcc-card-equipos button[onclick='vccGuardarConfigAlim()']");
+    if (saveBtn) {
+      const orig = saveBtn.innerHTML;
+      saveBtn.innerHTML = `<i class="bi bi-check-circle me-1 text-success"></i>Guardado`;
+      setTimeout(() => { saveBtn.innerHTML = orig; }, 2000);
+    }
+  } catch(e) { mostrarError("Error al guardar: " + e.message); }
+  finally { spinner(false); }
 }
 
 // ─── traspaso simultáneo ──────────────────────────────────────────────────
@@ -4659,13 +4782,211 @@ function vccGetTraspasoParams() {
 
 // ─── leer ajustes ingresados ──────────────────────────────────────────────
 function vccLeerCNsEquipos() {
-  return state.vccEquipos.map(eq => {
-    const el     = document.getElementById(`vcc-cn-${eq.nombre}`);
-    const cn     = el ? parseFloat(el.value) || null : null;
-    const rdCond = document.getElementById(`vcc-fuente-cd-${eq.nombre}`);
-    const fuente_ajuste = (rdCond && rdCond.checked) ? "conductor" : "equipo";
-    return { ...eq, cn, fuente_ajuste };
+  const result = [];
+  const tabla  = document.getElementById("vcc-equipos-tabla");
+  if (!tabla) return result;
+
+  tabla.querySelectorAll("tr.vcc-eq-row, tr.vcc-cond-row").forEach(tr => {
+    if (tr.classList.contains("vcc-eq-row")) {
+      const nombre   = tr.dataset.nombre;
+      const fraccion = tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null;
+      const el       = document.getElementById(`vcc-cn-${nombre}`);
+      const cn       = el ? (parseFloat(el.value) || null) : null;
+      const eq       = state.vccEquipos.find(e => e.nombre === nombre);
+      if (!eq) return;
+      const cfg    = state.equiposConfig[nombre];
+      const fuente = (cfg?.tipo_limite === "conductor" || cfg?.tipo_limite === "fusible")
+                     ? "conductor" : "equipo";
+      result.push({ ...eq, cn, fuente_ajuste: fuente });
+    } else {
+      // conductor_intermedio posicionado entre dos equipos
+      const entreB   = tr.dataset.entreB;
+      const fraccion = tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null;
+      const el       = tr.querySelector(".vcc-cond-cn-input");
+      const cn       = el ? (parseFloat(el.value) || null) : null;
+      if (!cn) return;
+      result.push({
+        nombre:        `Conductor(→${entreB})`,
+        tipo:          "conductor_intermedio",
+        cn,
+        cn_opcional:   true,
+        fuente_ajuste: "conductor",
+        fraccion,
+        kva_down:      null,
+        entre_b:       entreB,
+      });
+    }
   });
+  return result;
+}
+
+// ─── Ficha Equipo (modal compartido) ─────────────────────────────────────
+let _fichaNumpos = null;
+let _fichaModal  = null;
+
+function fichaAbrirModal(numpos) {
+  _fichaNumpos = numpos;
+  if (!_fichaModal) _fichaModal = new bootstrap.Modal(document.getElementById("modalFichaEquipo"));
+
+  const entry = state.equiposConfig[numpos] || null;
+  const esPPF = /^PPF/i.test(numpos);
+
+  // Título
+  document.getElementById("fichaEquipoTitle").textContent = numpos;
+
+  // Rellenar campos
+  document.getElementById("ficha-corriente-a").value         = entry?.corriente_a ?? "";
+  document.getElementById("ficha-tipo-limite").value         = entry?.tipo_limite  ?? _fichaDefaultTipo(numpos);
+  document.getElementById("ficha-corriente-conductor").value = entry?.corriente_conductor_a ?? "";
+  document.getElementById("ficha-es-hdlb").checked           = entry?.es_hdlb ?? false;
+  document.getElementById("ficha-notas").value               = entry?.notas ?? "";
+  document.getElementById("ficha-notas-historial").value     = "";
+
+  // Mostrar/ocultar campos condicionales
+  fichaToggleCampos();
+  document.getElementById("ficha-hdlb-row").classList.toggle("d-none", !esPPF);
+
+  // Motivo de cambio solo si ya tiene corriente_a guardada
+  document.getElementById("ficha-historial-nota-row").classList.toggle("d-none", !entry?.corriente_a);
+
+  // Botón eliminar solo si existe
+  document.getElementById("ficha-btn-delete").classList.toggle("d-none", !entry);
+
+  // Historial
+  const hist = entry?.historial ?? [];
+  const histSec = document.getElementById("ficha-historial-section");
+  if (hist.length) {
+    const items = hist.slice().reverse().map(h =>
+      `<div class="mb-1 text-muted">
+        <span class="text-white-50">${h.fecha}</span>
+        ${h.valor_anterior} → <strong>${h.valor_nuevo}</strong> A
+        ${h.notas ? `<br><em>${h.notas}</em>` : ""}
+      </div>`
+    ).join("");
+    document.getElementById("ficha-historial-list").innerHTML = items;
+    histSec.classList.remove("d-none");
+  } else {
+    histSec.classList.add("d-none");
+  }
+
+  _fichaModal.show();
+}
+
+function fichaToggleCampos() {
+  const tipo = document.getElementById("ficha-tipo-limite").value;
+  document.getElementById("ficha-conductor-row").classList.toggle("d-none", tipo !== "fusible");
+}
+
+function _fichaDefaultTipo(numpos) {
+  const pref = numpos.replace(/[^A-Za-z].*/,"").toUpperCase();
+  if (["REC","RTS"].includes(pref))                              return "setpoint";
+  if (["PPF"].includes(pref))                                    return "fusible";
+  if (["ORM","SCH","ABB","GMT","CGP"].includes(pref))            return "conductor";
+  return "conductor";
+}
+
+async function fichaGuardar() {
+  const numpos = _fichaNumpos;
+  if (!numpos) return;
+  const corrienteA = parseFloat(document.getElementById("ficha-corriente-a").value);
+  if (!corrienteA || corrienteA <= 0) {
+    alert("Ingresa una corriente límite válida.");
+    return;
+  }
+  const esPPF = /^PPF/i.test(numpos);
+  const tipo  = document.getElementById("ficha-tipo-limite").value;
+  const body  = {
+    corriente_a:           corrienteA,
+    tipo_limite:           tipo,
+    corriente_conductor_a: tipo === "fusible"
+      ? (parseFloat(document.getElementById("ficha-corriente-conductor").value) || null)
+      : null,
+    es_hdlb:               esPPF ? document.getElementById("ficha-es-hdlb").checked : null,
+    notas:                 document.getElementById("ficha-notas").value.trim(),
+    notas_historial:       document.getElementById("ficha-notas-historial").value.trim(),
+  };
+  try {
+    const r = await apiFetch(`/api/equipos/config/${encodeURIComponent(numpos)}`, {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body),
+    });
+    if (r.error) { alert("Error: " + r.error); return; }
+    state.equiposConfig[numpos] = r.entry;
+    _fichaModal.hide();
+    vccRenderEquiposInputs(state.vccEquipos); // refrescar tabla
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+async function fichaEliminar() {
+  const numpos = _fichaNumpos;
+  if (!numpos || !confirm(`¿Eliminar configuración de ${numpos}?`)) return;
+  try {
+    await apiFetch(`/api/equipos/config/${encodeURIComponent(numpos)}`, { method: "DELETE" });
+    delete state.equiposConfig[numpos];
+    _fichaModal.hide();
+    vccRenderEquiposInputs(state.vccEquipos);
+  } catch(e) { alert("Error al eliminar: " + e.message); }
+}
+
+// ─── período VCC ───────────────────────────────────────────────────────────
+function vccRenderMeses(historico = false) {
+  const meses  = state.mesesDisponibles;
+  const limite = _limiteAnioCorrido(meses);
+  const cont   = document.getElementById("vcc-meses-checklist");
+  if (!cont) return;
+  const tog = document.getElementById("vcc-toggle-historico");
+  if (tog) tog.checked = false;
+  cont.innerHTML = meses.map(m => {
+    const ac      = !limite || m >= limite;
+    const bg      = ac ? "#6c757d" : "white";
+    const color   = ac ? "#fff"    : "#6c757d";
+    const disp    = (!ac && !historico) ? "none" : "flex";
+    return `<label class="badge vcc-mes-label"
+                   style="display:${disp};align-items:center;gap:4px;cursor:pointer;font-weight:normal;padding:4px 8px;background:${bg};color:${color};border:1px solid #dee2e6"
+                   data-ac="${ac ? "1" : "0"}">
+      <input type="checkbox" class="vcc-mes-chk" value="${m}" style="display:none"
+             ${ac ? "checked" : ""} onchange="vccMesToggle(this)">
+      <span>${fmtMes(m)}</span>
+    </label>`;
+  }).join("");
+  vccActualizarLblMeses();
+}
+function vccMesToggle(chk) {
+  const lbl = chk.closest(".vcc-mes-label");
+  if (lbl) {
+    lbl.style.background = chk.checked ? "#6c757d" : "white";
+    lbl.style.color      = chk.checked ? "#fff"    : "#6c757d";
+  }
+  vccActualizarLblMeses();
+}
+function vccMesesSeleccionados() {
+  return [...document.querySelectorAll(".vcc-mes-chk:checked")].map(c => c.value);
+}
+function vccActualizarLblMeses() {
+  const n = vccMesesSeleccionados().length;
+  const el = document.getElementById("vcc-lbl-n-meses");
+  if (el) el.textContent = `${n} mes${n !== 1 ? "es" : ""} seleccionado${n !== 1 ? "s" : ""}`;
+}
+function vccToggleHistorico(activo) {
+  document.querySelectorAll(".vcc-mes-label[data-ac='0']").forEach(lbl => {
+    lbl.style.display = activo ? "flex" : "none";
+    if (!activo) {
+      const chk = lbl.querySelector(".vcc-mes-chk");
+      chk.checked = false;
+      lbl.style.background = "white";
+      lbl.style.color = "#6c757d";
+    }
+  });
+  vccActualizarLblMeses();
+}
+function vccSelMeses(checked) {
+  document.querySelectorAll(".vcc-mes-label").forEach(lbl => {
+    if (lbl.style.display !== "none") {
+      lbl.querySelector(".vcc-mes-chk").checked = checked;
+      lbl.style.background = checked ? "#6c757d" : "white";
+      lbl.style.color      = checked ? "#fff"    : "#6c757d";
+    }
+  });
+  vccActualizarLblMeses();
 }
 
 // ─── evaluar VCC ───────────────────────────────────────────────────────────
@@ -4698,6 +5019,7 @@ async function vccEvaluar() {
         kva_empalme:       kvaEmp,
         kva_instalado:     kvaInst,
         equipos_cn:        equipos,
+        meses_sel:         vccMesesSeleccionados(),
         ...traspaso,
       }),
     });
@@ -4933,7 +5255,7 @@ function vccTablaEquipos(equipos, deltaI) {
   if (!equipos?.length)
     return "<p class='text-muted small mt-1'>Sin equipos upstream con ajuste relevante.</p>";
 
-  const TIPO_LBL  = { reconectador: "Reconectador", equipo_sub: "Equipo sub.", otro: "Otro" };
+  const TIPO_LBL  = { reconectador: "Reconectador", equipo_sub: "Equipo sub.", otro: "Otro", conductor_intermedio: "Conductor" };
   const BADGE_CLS = {
     viable: "badge-viable", prealerta: "badge-prealerta",
     critico: "badge-critico", sin_cn: "bg-secondary"
@@ -4958,8 +5280,11 @@ function vccTablaEquipos(equipos, deltaI) {
       const dI      = deltaI != null ? Number(deltaI).toFixed(2) : "—";
       const bcls    = BADGE_CLS[eq.estado] || "bg-secondary";
       const blbl    = BADGE_LBL[eq.estado] || eq.estado;
+      const nombreDisplay = eq.tipo === "conductor_intermedio"
+        ? `<span class="text-muted">tramo</span> <code>${eq.nombre.replace("Conductor(","").replace(")","")}</code>`
+        : `<code>${eq.nombre}</code>`;
       return `<tr>
-        <td><code>${eq.nombre}</code></td><td>${TIPO_LBL[eq.tipo]||eq.tipo}</td>
+        <td>${nombreDisplay}</td><td>${TIPO_LBL[eq.tipo]||eq.tipo}</td>
         <td class="r">${cnStr}</td><td class="r">${dI} A</td>
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
@@ -5035,8 +5360,11 @@ function vccTablaEquipos(equipos, deltaI) {
          ${pctCell(enf_b.pct, enf_b.estado)}`
       : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td>`;
 
+    const nombreDisplay2 = eq.tipo === "conductor_intermedio"
+      ? `<span class="text-muted">tramo</span> <code>${eq.nombre.replace("Conductor(","").replace(")","")}</code>`
+      : `<code>${eq.nombre}</code>`;
     const mainRow = `<tr>
-      <td><code>${eq.nombre}</code></td><td>${tipo}</td>
+      <td>${nombreDisplay2}</td><td>${tipo}</td>
       <td class="r">${cn}</td><td class="r">${dI}</td>
       ${cellsA}${cellsB}
       <td><span class="badge ${bcls}">${blbl}</span></td>
@@ -5608,5 +5936,79 @@ async function eliminarAjuste(tipo, numalim, mes, evt) {
   }
 }
 </script>
+
+<!-- ── Modal Ficha Equipo ─────────────────────────────────────────────── -->
+<div class="modal fade" id="modalFichaEquipo" tabindex="-1" aria-labelledby="fichaEquipoTitle" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark text-white border-secondary">
+      <div class="modal-header border-secondary py-2">
+        <h6 class="modal-title mb-0" id="fichaEquipoTitle">Ficha equipo</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+
+        <div class="mb-2">
+          <label class="form-label text-muted small mb-1">Corriente límite (A)</label>
+          <input type="number" id="ficha-corriente-a" class="form-control form-control-sm"
+                 min="0" step="1" placeholder="Ej: 200">
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label text-muted small mb-1">Fuente del límite</label>
+          <select id="ficha-tipo-limite" class="form-select form-select-sm"
+                  onchange="fichaToggleCampos()">
+            <option value="setpoint">Setpoint sobrecorriente</option>
+            <option value="conductor">Conductor / Cable</option>
+            <option value="fusible">Fusible</option>
+          </select>
+        </div>
+
+        <!-- Solo subterráneos con fusible -->
+        <div class="mb-2 d-none" id="ficha-conductor-row">
+          <label class="form-label text-muted small mb-1">Corriente conductor (A)</label>
+          <input type="number" id="ficha-corriente-conductor" class="form-control form-control-sm"
+                 min="0" step="1" placeholder="Ej: 280">
+        </div>
+
+        <!-- Solo PPF -->
+        <div class="mb-2 d-none" id="ficha-hdlb-row">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="ficha-es-hdlb">
+            <label class="form-check-label small" for="ficha-es-hdlb">Es HDLB</label>
+          </div>
+          <div class="text-muted" style="font-size:.75rem">
+            Sin marcar → advertencia de corriente en evaluaciones.
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label text-muted small mb-1">Notas</label>
+          <textarea id="ficha-notas" class="form-control form-control-sm" rows="2"
+                    placeholder="Observaciones del equipo..."></textarea>
+        </div>
+
+        <!-- Motivo de cambio (solo si ya existe corriente_a guardada) -->
+        <div class="mb-2 d-none" id="ficha-historial-nota-row">
+          <label class="form-label text-muted small mb-1">Motivo del cambio</label>
+          <input type="text" id="ficha-notas-historial" class="form-control form-control-sm"
+                 placeholder="Ej: Ajuste tras campaña de medición">
+        </div>
+
+        <!-- Historial (read-only) -->
+        <div class="d-none" id="ficha-historial-section">
+          <hr class="border-secondary my-2">
+          <p class="text-muted small mb-1">Historial de cambios</p>
+          <div id="ficha-historial-list" style="font-size:.78rem"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer border-secondary py-2 gap-2">
+        <button class="btn btn-sm btn-outline-danger d-none" id="ficha-btn-delete"
+                onclick="fichaEliminar()">Eliminar</button>
+        <button class="btn btn-sm btn-primary ms-auto" onclick="fichaGuardar()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

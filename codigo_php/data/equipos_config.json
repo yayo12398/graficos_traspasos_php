@@ -1,0 +1,11 @@
+{
+    "REC102921": {
+        "corriente_a": 300,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-23",
+        "historial": []
+    }
+}

@@ -132,7 +132,8 @@ function buscarPuntoConexion(array $dfAb, string $nomAlim, string $numpos): arra
         // Intersección: numpos_equip comunes a TODOS los TDs que pasan por este equipo
         // Se usa array_intersect_key con array_flip para simular el &= de Python sets
         $interseccion = null;
-        foreach (array_keys($tdsViaEq) as $td) {
+        foreach (array_keys($tdsViaEq) as $tdKey) {
+            $td = (string)$tdKey; // PHP convierte claves numéricas a int; forzar string
             $equiposDeTd = [];
             foreach ($dfAb as $row) {
                 if (strtoupper(trim($row['nom_alim'] ?? '')) !== $nomUp) continue;

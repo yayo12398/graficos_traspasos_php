@@ -33,6 +33,8 @@ require_once __DIR__ . '/src/Simulacion.php';
 require_once __DIR__ . '/src/Matching.php';
 require_once __DIR__ . '/src/Memoria.php';
 require_once __DIR__ . '/src/Ajustes.php';
+require_once __DIR__ . '/src/EquiposConfig.php';
+require_once __DIR__ . '/src/AlimentadoresConfig.php';
 require_once __DIR__ . '/src/Vcc.php';
 require_once __DIR__ . '/src/Reportes.php';
 
@@ -1250,6 +1252,74 @@ if ($method === 'DELETE' && $a === 'ajustes' && $b0 && $b1 && $b2) {
     if (!in_array($b0, ['alim', 'trafo'], true)) jsonErr("tipo debe ser 'alim' o 'trafo'");
     delAjuste($b0, (int)$b1, $b2);
     jsonPy(['ok' => true, 'ajustes' => getAjustes($b0, (int)$b1)]);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Equipos Config — Configuración persistente por equipo (numpos)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/equipos/config ── todos los equipos configurados ────────────────
+if ($method === 'GET' && $a === 'equipos' && $b0 === 'config' && !$b1) {
+    jsonPy(ecGetTodos());
+}
+
+// ── GET /api/equipos/config/{numpos} ── configuración de un equipo ───────────
+if ($method === 'GET' && $a === 'equipos' && $b0 === 'config' && $b1 && !$b2) {
+    $numpos = urldecode($b1);
+    $entry  = ecGetEquipo($numpos);
+    if ($entry === null) jsonErr("Equipo '$numpos' no encontrado", 404);
+    jsonPy($entry);
+}
+
+// ── POST /api/equipos/config/{numpos} ── crear o actualizar ──────────────────
+if ($method === 'POST' && $a === 'equipos' && $b0 === 'config' && $b1 && !$b2) {
+    $numpos = urldecode($b1);
+    $body   = bodyJson();
+    if (empty($numpos)) jsonErr('numpos requerido');
+    try {
+        $entry = ecSetEquipo($numpos, $body);
+        jsonPy(['ok' => true, 'numpos' => $numpos, 'entry' => $entry]);
+    } catch (Throwable $e) {
+        jsonErr('Error al guardar: ' . $e->getMessage());
+    }
+}
+
+// ── DELETE /api/equipos/config/{numpos} ── eliminar configuración ────────────
+if ($method === 'DELETE' && $a === 'equipos' && $b0 === 'config' && $b1 && !$b2) {
+    $numpos = urldecode($b1);
+    ecDeleteEquipo($numpos);
+    jsonPy(['ok' => true]);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Alimentadores Config — Configuración persistente por alimentador (nom_alim)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/alimentadores/config/{nom_alim} ──────────────────────────────────
+if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'config' && $b1 && !$b2) {
+    $nom   = urldecode($b1);
+    $entry = acGetAlim($nom);
+    if ($entry === null) jsonErr("Sin configuración para '$nom'", 404);
+    jsonPy($entry);
+}
+
+// ── POST /api/alimentadores/config/{nom_alim} ─────────────────────────────────
+if ($method === 'POST' && $a === 'alimentadores' && $b0 === 'config' && $b1 && !$b2) {
+    $nom  = urldecode($b1);
+    $body = bodyJson();
+    try {
+        $entry = acSetAlim($nom, $body);
+        jsonPy(['ok' => true, 'nom_alim' => $nom, 'entry' => $entry]);
+    } catch (Throwable $e) {
+        jsonErr('Error al guardar: ' . $e->getMessage());
+    }
+}
+
+// ── DELETE /api/alimentadores/config/{nom_alim} ───────────────────────────────
+if ($method === 'DELETE' && $a === 'alimentadores' && $b0 === 'config' && $b1 && !$b2) {
+    $nom = urldecode($b1);
+    acDeleteAlim($nom);
+    jsonPy(['ok' => true]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
