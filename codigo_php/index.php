@@ -231,6 +231,8 @@ if ($uri === '/') {
     $htmlFile = __DIR__ . '/templates/index.html';
     if (is_file($htmlFile)) {
         header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
         // Inyectar shim que prepende el base path a todas las llamadas /api/*
         // Así el mismo HTML funciona en localhost Y en /AMEyAO/subcarpeta/
         $bJson = json_encode($_basePath, JSON_UNESCAPED_UNICODE);
