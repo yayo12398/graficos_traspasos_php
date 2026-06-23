@@ -504,6 +504,8 @@
             <div class="step-body p-2" id="peor-caso-body" style="overflow-x:auto">
               <!-- se rellena por JS -->
             </div>
+            <!-- Evaluación equipos receptor en peor caso -->
+            <div id="sec-vcc-receptor-peor" class="step-body p-2 border-top" style="display:none"></div>
           </div>
 
           <!-- ── Análisis Mes a Mes ─────────────────────────────────── -->
@@ -574,6 +576,9 @@
                     <tbody id="tabla-mam-body"></tbody>
                   </table>
                 </div>
+
+                <!-- Evaluación equipos receptor (se llena por JS si hay vcc_alim_b_equipos) -->
+                <div id="sec-vcc-receptor-mam" class="mt-2" style="display:none"></div>
 
               </div>
             </div>
@@ -1960,6 +1965,7 @@ function mostrarEquipoCierra(numalimDest) {
   if (!dispositivos.length) {
     el.style.display = "none";
     state.selectedNumposLZ = null;
+    tspCargarEquiposB(null, null, []);
     return;
   }
 
@@ -1981,6 +1987,7 @@ function mostrarEquipoCierra(numalimDest) {
       ...d,
       _viable:          vi?.viable ?? true,
       _equipos_troncal: vi?.equipos_troncal ?? [],
+      _nom_alim:        vi?.nom_alim ?? '',
       _enIsla:          enIsla,
     };
   });
@@ -2071,14 +2078,39 @@ function mostrarEquipoCierra(numalimDest) {
   el.style.display = "";
 
   // Cargar panel de configuración de equipos del receptor
-  const feederB   = state.destinosData.find(d => d.numalim === numalimDest);
-  const nomAlimB  = feederB?.nom_alim || feederB?.nombre || '';
-  const troncalB  = primerOk?._equipos_troncal ?? [];
+  // Preferir nom_alim del LZ (vi.nom_alim), fallback a destinosData
+  const feederB  = state.destinosData.find(d => d.numalim === numalimDest);
+  const nomAlimB = primerOk?._nom_alim || feederB?.nom_alim || feederB?.nombre || '';
+  const troncalB = primerOk?._equipos_troncal ?? [];
   tspCargarEquiposB(numalimDest, nomAlimB, troncalB);
 }
 
 // ── RESULTADOS LZ: TABLAS Y PANELES ───────────────────────────────────────
 // Tabla de equipos troncales usada en el panel de resultados
+function _vccReceptorBlock(equipos) {
+  if (!equipos?.length) return "";
+  const BADGE_CLS = { viable:"badge-viable", prealerta:"badge-prealerta", critico:"badge-critico", sin_cn:"bg-secondary" };
+  const BADGE_LBL = { viable:"Viable", prealerta:"Prealerta", critico:"Crítico", sin_cn:"Sin ajuste" };
+  const estadoGlobal = equipos.reduce((worst, e) => {
+    const ord = { critico:3, prealerta:2, viable:1, sin_cn:0 };
+    return (ord[e.estado] ?? 0) > (ord[worst] ?? 0) ? e.estado : worst;
+  }, "sin_cn");
+  return `<details class="mt-1">
+    <summary class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;list-style:none;font-size:.9rem">
+      <i class="bi bi-diagram-3 text-warning"></i>
+      <span class="fw-semibold">Equipos troncales del receptor</span>
+      <span class="badge ${BADGE_CLS[estadoGlobal] || "bg-secondary"} ms-1">${BADGE_LBL[estadoGlobal] || estadoGlobal}</span>
+    </summary>
+    <div class="mt-1">
+      <p class="small text-muted mb-1">
+        <i class="bi bi-info-circle me-1"></i>
+        I<sub>eq</sub>[mes] = I<sub>alim B</sub>[mes] × fracción + I<sub>isla</sub>[mes]
+      </p>
+      ${vccTablaEquipos(equipos, null)}
+    </div>
+  </details>`;
+}
+
 function _htmlTablaEquiposTroncal(equipos) {
   if (!equipos?.length) return "";
   const filas = equipos.map(eq => {
@@ -2163,32 +2195,6 @@ function renderSecEquiposInvolucrados(data) {
         <span class="badge bg-warning text-dark ms-1">${nItems}</span>
       </summary>
       <div class="step-body p-2">${invHtml}${topoHtml}</div>
-    </details>`);
-  }
-
-  // Evaluación VCC equipos troncales del receptor (si se configuraron CNs)
-  if (data.vcc_alim_b_equipos?.length) {
-    const evalHtml  = vccTablaEquipos(data.vcc_alim_b_equipos, null);
-    const estadoGlobal = data.vcc_alim_b_equipos.reduce((worst, e) => {
-      const ord = { critico: 3, prealerta: 2, viable: 1, sin_cn: 0 };
-      return (ord[e.estado] ?? 0) > (ord[worst] ?? 0) ? e.estado : worst;
-    }, "sin_cn");
-    const BADGE_CLS = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico", sin_cn: "bg-secondary" };
-    const BADGE_LBL = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_cn: "Sin ajuste" };
-    partes.push(`<details class="card step-card mb-2" open>
-      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
-        <i class="bi bi-diagram-3 text-warning"></i>
-        <span>Evaluación equipos troncales del receptor</span>
-        <span class="badge ${BADGE_CLS[estadoGlobal] || 'bg-secondary'} ms-1">${BADGE_LBL[estadoGlobal] || estadoGlobal}</span>
-      </summary>
-      <div class="step-body p-2">
-        <p class="small text-muted mb-2">
-          <i class="bi bi-info-circle me-1"></i>
-          Carga adicional por mes: <strong>I_eq[mes] = I_alim_B[mes] × fracción + isla[mes]</strong>.
-          La isla entra íntegra por todos los equipos troncales (sin ponderar).
-        </p>
-        ${evalHtml}
-      </div>
     </details>`);
   }
 
@@ -2911,6 +2917,18 @@ function renderPeorCaso(data) {
         </div>
       </div>
     </div>`;
+
+  // Evaluación equipos receptor dentro de esta tarjeta
+  const secPeor = document.getElementById("sec-vcc-receptor-peor");
+  if (secPeor) {
+    if (data.vcc_alim_b_equipos?.length) {
+      secPeor.innerHTML = _vccReceptorBlock(data.vcc_alim_b_equipos);
+      secPeor.style.display = "";
+    } else {
+      secPeor.innerHTML = "";
+      secPeor.style.display = "none";
+    }
+  }
 }
 
 function renderCharts(data) {
@@ -3204,6 +3222,18 @@ function renderMamSection(data) {
   renderMamCharts(data);
   renderMamTrafos(data.trafo_orig_mam, data.trafo_dest_mam, data.nombre_orig, data.nombre_dest, data.ajustes_activos, data.misma_barra_se ?? false);
   renderMamTable(data);
+
+  // Evaluación equipos receptor dentro de la sección MAM
+  const secMamVcc = document.getElementById("sec-vcc-receptor-mam");
+  if (secMamVcc) {
+    if (data.vcc_alim_b_equipos?.length) {
+      secMamVcc.innerHTML = _vccReceptorBlock(data.vcc_alim_b_equipos);
+      secMamVcc.style.display = "";
+    } else {
+      secMamVcc.innerHTML = "";
+      secMamVcc.style.display = "none";
+    }
+  }
 }
 
 function renderMamCharts(data) {
@@ -4860,26 +4890,34 @@ async function vccGuardarConfigAlim() {
 
 async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
   const panel = document.getElementById("panel-equipos-b");
-  if (!numalimDest || !nomAlimB || !equiposTroncal?.length) {
+  if (!numalimDest || !nomAlimB) {
     if (panel) panel.style.display = "none";
     state.troncalBNomAlim = null;
     return;
   }
   state.troncalBNomAlim = nomAlimB;
   try {
-    // Fracciones de cada equipo troncal en alim B
-    const r = await apiFetch("/api/alim/troncal_enriquecido", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
-    });
+    let equipos;
+    if (equiposTroncal?.length) {
+      // Enriquecer con fracciones la lista de troncal del LZ
+      const r = await apiFetch("/api/alim/troncal_enriquecido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
+      });
+      equipos = r.data?.equipos ?? [];
+    } else {
+      // Fallback: el LZ no tenía equipos_troncal → usar upstream completo del feeder
+      const r = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlimB)}?modo=equipos`);
+      equipos = Array.isArray(r) ? r : [];
+    }
     // Reusar el cache global de equipos_config (ya cargado al inicio)
     state.equiposConfigB = state.equiposConfig;
     // Config de conductores intermedios del receptor (null si no existe)
     const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
     state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
 
-    tspRenderEquiposBTabla(r.data?.equipos ?? []);
+    tspRenderEquiposBTabla(equipos);
     if (panel) panel.style.display = "";
   } catch(e) {
     console.error("tspCargarEquiposB:", e);
