@@ -1431,7 +1431,7 @@ function generarReporteCadenaHtml(array $casos, string $rutaSalida): string {
 
 
 
-function _repTablaMensualVcc(array $tabla, string $nombre, float $dtA = 0.0, float $dtPct = 0.0): string {
+function _repTablaMensualVcc(array $tabla, string $nombre, float $dtA = 0.0, float $dtPct = 0.0, string $labelDelta = 'ΔI cliente (A)'): string {
     if (empty($tabla)) return '<p>Sin datos.</p>';
     $worstIdx = 0; $worstVal = -1.0;
     foreach ($tabla as $i => $r) {
@@ -1499,7 +1499,7 @@ function _repTablaMensualVcc(array $tabla, string $nombre, float $dtA = 0.0, flo
         $filasInicio  = "<tr><td class='fw-semibold small' style='white-space:nowrap;background:#f8f9fa'>I antes (A)</td>$celdasIAntes</tr>";
     }
 
-    $metricasResto = [['_delta','ΔI cliente (A)'],['I_despues','I después (A)'],['uso_antes_pct','FU antes (%)'],['uso_despues_pct','FU después (%)'],['estado','Estado']];
+    $metricasResto = [['_delta', $labelDelta],['I_despues','I después (A)'],['uso_antes_pct','FU antes (%)'],['uso_despues_pct','FU después (%)'],['estado','Estado']];
     $body = $filasInicio . implode('', array_map(fn($mk) =>
         "<tr><td class='fw-semibold small' style='white-space:nowrap;background:#f8f9fa'>{$mk[1]}</td>"
         . implode('', array_map(fn($i,$r) => $cell($r,$mk[0],$i), array_keys($tabla),$tabla))
@@ -1599,6 +1599,46 @@ function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
          . $cabecera . '<tbody>' . implode('', $filas) . '</tbody></table></div>';
 }
 
+function _repSeccionReceptorHtml(array $dest): string {
+    $nomB   = $dest['nom_alim'] ?? 'Receptor';
+    $cnB    = (float)($dest['cn_alim'] ?? 0);
+    $deltaI = (float)($dest['delta_I'] ?? 0);
+    $pctMax = $dest['pct_max_alim'] !== null ? number_format((float)$dest['pct_max_alim'], 1) . '%' : '—';
+    $mesMax = $dest['mes_max_alim'] ?? '';
+    $mesLbl = $mesMax ? _repMesLbl($mesMax) : '—';
+
+    $tablaAlim   = $dest['tabla_alim'] ?? [];
+    $equiposEval = $dest['equipos_eval'] ?? [];
+    $nEq         = count(array_filter($equiposEval, fn($e) => !empty($e['cn'])));
+
+    $tablaAlimHtml = $tablaAlim
+        ? _repTablaMensualVcc($tablaAlim, $nomB, 0.0, 0.0, 'ΔI traspaso (A)')
+        : '<p>Sin datos.</p>';
+    $equiposHtml = _repTablaEquiposHtml($equiposEval, $deltaI);
+
+    $trafoSection = '';
+    $trafoInfo    = $dest['tabla_trafo'] ?? null;
+    if (!empty($trafoInfo) && !($trafoInfo['sin_datos'] ?? false)) {
+        $trafoNombre  = $trafoInfo['barra'] ?? $trafoInfo['barra_alim'] ?? 'Trafo AT/MT';
+        $trafoTabla   = $trafoInfo['tabla'] ?? [];
+        $trafoHtml    = _repTablaMensualVcc($trafoTabla, $trafoNombre, 0.0, 0.0, 'ΔI traspaso (A)');
+        $trafoSection = "<details class='vcc-det'>"
+            . "<summary class='vcc-det-sum'>Trafo AT/MT &#8212; " . _h($trafoNombre) . "</summary>"
+            . "$trafoHtml</details>";
+    }
+
+    $nomBH = _h($nomB);
+    return "<section class='vcc-receptor'>"
+        . "<h2>&#x21A9; Alimentador receptor &#8212; $nomBH</h2>"
+        . "<p><strong>&#916;I traspaso:</strong> +" . number_format($deltaI, 2) . " A"
+        . " &nbsp;|&nbsp; <strong>CN receptor:</strong> " . number_format($cnB, 0) . " A"
+        . " &nbsp;|&nbsp; <strong>FU peor mes ($mesLbl):</strong> $pctMax</p>"
+        . "<details open class='vcc-det'><summary class='vcc-det-sum'>Alimentador &#8212; $nomBH</summary>$tablaAlimHtml</details>"
+        . $trafoSection
+        . "<details open class='vcc-det'><summary class='vcc-det-sum'>Equipos aguas arriba ($nEq con CN)</summary>$equiposHtml</details>"
+        . "</section>";
+}
+
 function _repSeccionVccHtml(
     string  $titulo,
     string  $nombreAlim,
@@ -1663,8 +1703,9 @@ function generarReporteVcc(array $body, string $rutaSalida): string {
     $dtModo  = $body['delta_traspaso_modo'] ?? '';
     $dtA     = (float)($body['delta_traspaso_a']   ?? 0);
     $dtPct   = (float)($body['delta_traspaso_pct'] ?? 0);
-    $alivioA = (float)($body['alivio_A_peor'] ?? 0);
-    $mesMax  = $body['mes_max_alim'] ?? '';
+    $alivioA     = (float)($body['alivio_A_peor'] ?? 0);
+    $mesMax      = $body['mes_max_alim'] ?? '';
+    $analisisDest = $body['analisis_destino'] ?? null;
 
     $traspasHtml = '';
     if ($dtModo && $dtModo !== 'ninguno' && ($dtA > 0 || $dtPct > 0)) {
@@ -1681,6 +1722,8 @@ function generarReporteVcc(array $body, string $rutaSalida): string {
         $nombreAlim, $tablaAlim, $cnAlim, $tablaTrafo, $equiposEval,
         $deltaI, $kvaEmpalme, $tensionKv, $traspasHtml, $dtA, $dtPct
     );
+
+    $seccionReceptorHtml = $analisisDest ? _repSeccionReceptorHtml($analisisDest) : '';
 
     $seccionInst = '';
     if ($kvaInst && !empty($body['tabla_alim_sens'])) {
@@ -1734,6 +1777,8 @@ function generarReporteVcc(array $body, string $rutaSalida): string {
     .badge-equipo{background:#0dcaf0;color:#000;border-radius:4px;padding:1px 6px;font-size:.7em}
     .badge-conductor{background:#ffc107;color:#000;border-radius:4px;padding:1px 6px;font-size:.7em}
     .vcc-escenario{border:1px solid #dee2e6;border-radius:6px;padding:16px;margin-bottom:24px}
+    .vcc-receptor{border:2px solid #f5a623;border-radius:6px;padding:16px;margin-bottom:24px;background:#fffdf5}
+    .vcc-receptor h2{color:#7a4600;margin-top:0}
     .traspaso-vcc{background:#fff8e1;border-left:4px solid #f5a623;padding:7px 12px;margin:8px 0 14px;border-radius:4px;font-size:.88em}
     .vcc-det{margin:8px 0}
     .vcc-det-sum{cursor:pointer;font-weight:600;color:#1a3a5c;font-size:.95em;padding:4px 0;list-style:none;user-select:none}
@@ -1760,6 +1805,7 @@ function generarReporteVcc(array $body, string $rutaSalida): string {
     <div>$clienteHtml</div>
   </div>
   $seccionEmp
+  $seccionReceptorHtml
   $seccionInst
   <div class="footer">Generado por Sistema O&amp;M ENEL Chile &nbsp;|&nbsp; $today</div>
 </body>

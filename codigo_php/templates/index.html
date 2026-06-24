@@ -6286,6 +6286,7 @@ async function vccGuardar() {
         delta_traspaso_pct:  r.delta_traspaso_pct  || 0,
         delta_traspaso_modo: r.delta_traspaso_modo || "",
         alivio_A_peor:       r.alivio_A_peor       || 0,
+        analisis_destino:    r.analisis_destino     || null,
       }),
     });
     if (resp.error) { mostrarError(resp.error); return; }
@@ -6344,6 +6345,7 @@ async function vccDescargarHTML() {
         delta_traspaso_modo: r.delta_traspaso_modo || "",
         alivio_A_peor:       r.alivio_A_peor       || 0,
         mes_max_alim:        r.mes_max_alim         || "",
+        analisis_destino:    r.analisis_destino     || null,
       }),
     });
     if (!resp.ok) { mostrarError("Error generando HTML."); return; }
