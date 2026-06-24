@@ -912,6 +912,10 @@
                 <!-- Resultado isla (auto) -->
                 <div id="vcc-traspaso-isla-result" style="display:none"
                      class="alert alert-info py-2 small mt-2 mb-0"></div>
+
+                <!-- Panel configuración equipos del receptor -->
+                <div id="vcc-panel-equipos-b" class="mt-3" style="display:none"></div>
+
               </div>
             </div>
           </div>
@@ -1050,6 +1054,17 @@
                 </div>
               </details>
 
+              <!-- Equipos receptor (traspaso simultáneo) -->
+              <details class="bloque mb-1 d-none" id="vcc-det-receptor-emp">
+                <summary class="bloque-summary">
+                  <i class="bi bi-arrow-right-circle me-1" style="color:#f5a623"></i>
+                  Equipos receptor &nbsp;<span id="vcc-receptor-titulo-emp" class="text-muted fw-normal small"></span>
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-receptor-emp"></div>
+                </div>
+              </details>
+
             </details>
 
             <!-- Escenario instalado (sensibilidad) -->
@@ -1091,6 +1106,17 @@
                 </summary>
                 <div class="bloque-body" style="overflow-x:auto">
                   <div id="vcc-tabla-trafo-inst"></div>
+                </div>
+              </details>
+
+              <!-- Equipos receptor (traspaso simultáneo) -->
+              <details class="bloque mb-1 d-none" id="vcc-det-receptor-inst">
+                <summary class="bloque-summary">
+                  <i class="bi bi-arrow-right-circle me-1" style="color:#f5a623"></i>
+                  Equipos receptor &nbsp;<span id="vcc-receptor-titulo-inst" class="text-muted fw-normal small"></span>
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-receptor-inst"></div>
                 </div>
               </details>
 
@@ -1946,7 +1972,6 @@ function _htmlEquiposTroncal(equipos) {
 
 // ── EQUIPO QUE CIERRA (selector LZ) ───────────────────────────────────────
 function mostrarEquipoCierra(numalimDest) {
-  console.log("[TSP-B] mostrarEquipoCierra →", numalimDest, "lzVecinos:", state.lzVecinos?.length);
   const el = document.getElementById("lz-equipo-cierra");
   if (!el) return;
   if (!numalimDest || !state.lzVecinos?.length) {
@@ -4860,6 +4885,186 @@ function vccEliminarConductor(btn) {
   condRow.remove();
 }
 
+// ─── Configuración equipos receptor (panel B en modo Topología VCC) ──────────
+
+async function vccCargarEquiposB(nomAlimB, equiposTroncal) {
+  const panel = document.getElementById("vcc-panel-equipos-b");
+  if (!panel) return;
+  if (!nomAlimB || !equiposTroncal?.length) {
+    panel.innerHTML = ""; panel.style.display = "none"; return;
+  }
+  panel.style.display = "";
+  panel.innerHTML = `<div class="text-muted small"><i class="bi bi-hourglass me-1"></i>Cargando equipos del receptor...</div>`;
+  try {
+    const r = await apiFetch("/api/alim/troncal_enriquecido", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
+    });
+    if (r.error || !r.equipos) {
+      panel.innerHTML = `<p class="text-danger small">Error: ${r.error || "sin datos"}</p>`; return;
+    }
+    const alimCfgR  = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
+    const savedConds = (alimCfgR && alimCfgR.ok !== false) ? (alimCfgR.conductores_intermedios ?? []) : [];
+    vccRenderEquiposBInputs(r.equipos, savedConds);
+  } catch(e) {
+    panel.innerHTML = `<p class="text-danger small">Error al cargar equipos: ${e.message}</p>`;
+  }
+}
+
+function vccRenderEquiposBInputs(equipos, savedConds) {
+  const panel = document.getElementById("vcc-panel-equipos-b");
+  if (!panel) return;
+  if (!equipos.length) {
+    panel.innerHTML = `<p class="text-muted small">Sin equipos troncales en el receptor.</p>`; return;
+  }
+  const sorted = [...equipos].sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
+  const rows = [];
+  sorted.forEach((eq, i) => {
+    rows.push(_vccbEqRow(eq));
+    if (i < sorted.length - 1) {
+      const next  = sorted[i + 1];
+      const saved = savedConds.find(c => c.entre_b === eq.nombre && c.entre_a === next.nombre);
+      rows.push(_vccbCondBtnRow(eq.nombre, next.nombre, eq.fraccion ?? null));
+      if (saved) rows.push(_vccbCondRow(eq.nombre, next.nombre, eq.fraccion ?? null, saved.corriente_a));
+    }
+  });
+  panel.innerHTML =
+    `<div class="small fw-semibold mb-1" style="color:#f5a623">` +
+    `<i class="bi bi-arrow-right-circle me-1"></i>Equipos troncales del receptor</div>` +
+    `<div style="overflow-x:auto"><table class="table table-sm tabla-vcc mb-1" style="font-size:.82rem">` +
+    `<thead><tr><th>Tipo</th><th>NUMPOS</th>` +
+    `<th class="text-end">Fracc.</th><th class="text-end">kVA↓</th>` +
+    `<th class="text-end">CN (A)</th><th></th></tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table></div>` +
+    `<button class="btn btn-sm btn-outline-secondary mt-1" id="vccb-guardar-btn" onclick="vccGuardarConfigAlimB()">` +
+    `<i class="bi bi-floppy me-1"></i>Guardar configuración receptor</button>`;
+  initTooltips(panel);
+}
+
+function _vccbEqRow(eq) {
+  const TIPO_BADGE = {
+    reconectador: `<span class="badge bg-danger">REC</span>`,
+    equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
+  };
+  const badge   = TIPO_BADGE[eq.tipo] || `<span class="badge bg-secondary">${eq.tipo||'?'}</span>`;
+  const fracHtml = eq.fraccion != null ? `${(eq.fraccion*100).toFixed(1)}%` : `<span class="text-muted">—</span>`;
+  const kvaHtml  = eq.kva_down != null ? Math.round(eq.kva_down).toLocaleString("es-CL") : `<span class="text-muted">—</span>`;
+  const warnHtml = (eq.tds_sin_kva > 0) ? ` <span class="text-warning" title="${eq.tds_sin_kva} TDs sin kVA">⚠</span>` : "";
+  const cfg   = state.equiposConfig[eq.nombre];
+  const esPPF = /^PPF/i.test(eq.nombre);
+  let cnHtml;
+  if (esPPF) {
+    cnHtml = cfg?.es_hdlb === true
+      ? `<span class="badge bg-success" style="font-size:.7rem">HDLB</span>`
+      : cfg?.es_hdlb === false
+        ? `<span class="badge bg-warning text-dark" style="font-size:.7rem">No HDLB</span>`
+        : `<span class="text-warning" style="font-size:.8rem">⚠ ¿HDLB?</span>`;
+  } else {
+    const cnPrefill = cfg?.corriente_a ?? "";
+    cnHtml = `<input type="number" class="form-control form-control-sm d-inline-block" style="width:68px"` +
+      ` id="vccb-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">`;
+  }
+  return `<tr class="vccb-eq-row" data-nombre="${eq.nombre}" data-tipo="${eq.tipo??''}" data-fraccion="${eq.fraccion??''}">` +
+    `<td>${badge}</td><td class="font-monospace">${eq.nombre}</td>` +
+    `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
+    `<td class="text-end">${cnHtml}</td>` +
+    `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
+      `onclick="fichaAbrirModal('${eq.nombre}', () => vccCargarEquiposB(state.vccAlimDestNom, state.vccEquiposTroncalB))" ` +
+      `title="Configurar equipo">⚙</button></td></tr>`;
+}
+
+function _vccbCondBtnRow(entreB, entreA, fraccion) {
+  return `<tr class="vccb-cond-btn-row" data-entre-b="${entreB}" data-entre-a="${entreA}" data-fraccion="${fraccion??''}">` +
+    `<td colspan="6" class="p-0 text-center" style="border:none">` +
+    `<button class="btn btn-link btn-sm text-muted py-0 w-100 vccb-cond-btn" ` +
+    `style="font-size:.7rem;opacity:.45" onclick="vccbInsertarConductor(this)" ` +
+    `title="Agregar conductor entre ${entreA} y ${entreB}">` +
+    `<i class="bi bi-plus-circle me-1"></i>conductor</button></td></tr>`;
+}
+
+function _vccbCondRow(entreB, entreA, fraccion, cn) {
+  return `<tr class="vccb-cond-row" data-entre-b="${entreB}" data-entre-a="${entreA}" data-fraccion="${fraccion??''}">` +
+    `<td colspan="2"><span class="badge bg-secondary" style="font-size:.7rem">Cond</span>` +
+    ` <span class="text-muted" style="font-size:.75rem">tramo</span></td>` +
+    `<td colspan="2" class="text-muted" style="font-size:.75rem">→ ${entreB}</td>` +
+    `<td class="text-end"><input type="number" ` +
+    `class="form-control form-control-sm d-inline-block vccb-cond-cn-input" ` +
+    `style="width:68px" placeholder="A" min="1" value="${cn??''}"></td>` +
+    `<td><button class="btn btn-link btn-sm p-0 text-danger" ` +
+    `onclick="vccbEliminarConductor(this)" title="Eliminar conductor">×</button></td></tr>`;
+}
+
+function vccbInsertarConductor(btn) {
+  const btnRow = btn.closest("tr.vccb-cond-btn-row");
+  btnRow.insertAdjacentHTML("afterend",
+    _vccbCondRow(btnRow.dataset.entreB, btnRow.dataset.entreA,
+      parseFloat(btnRow.dataset.fraccion) || null, null));
+  btn.disabled = true; btn.style.opacity = "0.2";
+}
+
+function vccbEliminarConductor(btn) {
+  const condRow = btn.closest("tr.vccb-cond-row");
+  const tbody   = condRow.closest("tbody");
+  const condBtn = tbody.querySelector(
+    `tr.vccb-cond-btn-row[data-entre-b="${condRow.dataset.entreB}"]` +
+    `[data-entre-a="${condRow.dataset.entreA}"] .vccb-cond-btn`);
+  if (condBtn) { condBtn.disabled = false; condBtn.style.opacity = ".45"; }
+  condRow.remove();
+}
+
+async function vccGuardarConfigAlimB() {
+  const nom = state.vccAlimDestNom;
+  if (!nom) return mostrarError("Sin alimentador receptor seleccionado.");
+  const conductores = [];
+  document.getElementById("vcc-panel-equipos-b")?.querySelectorAll("tr.vccb-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vccb-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
+  });
+  spinner(true, "Guardando...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores }),
+    });
+    const btn = document.getElementById("vccb-guardar-btn");
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = `<i class="bi bi-check-circle me-1 text-success"></i>Guardado`;
+      setTimeout(() => { btn.innerHTML = orig; }, 2000);
+    }
+  } catch(e) { mostrarError("Error al guardar: " + e.message); }
+  finally { spinner(false); }
+}
+
+function vccLeerCNsEquiposB() {
+  const panel = document.getElementById("vcc-panel-equipos-b");
+  if (!panel || panel.style.display === "none") return state.vccEquiposTroncalB;
+  const result = [];
+  panel.querySelectorAll("tr.vccb-eq-row").forEach(tr => {
+    const nombre   = tr.dataset.nombre;
+    const fraccion = tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null;
+    const tipo     = tr.dataset.tipo || null;
+    const el       = document.getElementById(`vccb-cn-${nombre}`);
+    const cn       = el ? (parseFloat(el.value) || null) : null;
+    result.push({ nombre, fraccion, tipo, cn });
+  });
+  panel.querySelectorAll("tr.vccb-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vccb-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    result.push({
+      tipo:    "conductor_intermedio",
+      entre_b: tr.dataset.entreB,
+      entre_a: tr.dataset.entreA,
+      fraccion: tr.dataset.fraccion !== "" ? parseFloat(tr.dataset.fraccion) : null,
+      cn,
+    });
+  });
+  return result.length ? result : state.vccEquiposTroncalB;
+}
+
 async function vccGuardarConfigAlim() {
   const nom = state.vccAlimNom;
   if (!nom) return mostrarError("Sin alimentador seleccionado.");
@@ -4891,7 +5096,6 @@ async function vccGuardarConfigAlim() {
 
 async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
   const panel = document.getElementById("panel-equipos-b");
-  console.log("[TSP-B] tspCargarEquiposB →", { numalimDest, nomAlimB, nTroncal: equiposTroncal?.length });
   if (!numalimDest || !nomAlimB) {
     if (panel) panel.style.display = "none";
     state.troncalBNomAlim = null;
@@ -4902,29 +5106,23 @@ async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
   try {
     let equipos;
     if (equiposTroncal?.length) {
-      console.log("[TSP-B] → POST /api/alim/troncal_enriquecido", equiposTroncal);
       const r = await apiFetch("/api/alim/troncal_enriquecido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
       });
-      console.log("[TSP-B] ← respuesta troncal_enriquecido:", r);
       equipos = r.data?.equipos ?? [];
     } else {
-      console.log("[TSP-B] → GET /api/vcc/equipos/ (fallback)");
       const r = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlimB)}?modo=equipos`);
-      console.log("[TSP-B] ← respuesta vcc/equipos:", r);
       equipos = Array.isArray(r) ? r : [];
     }
     state.equiposConfigB = state.equiposConfig;
     const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
     state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
 
-    console.log("[TSP-B] equipos a renderizar:", equipos.length);
     tspRenderEquiposBTabla(equipos);
     if (panel) panel.style.display = "";
   } catch(e) {
-    console.error("[TSP-B] ERROR:", e);
     if (cont) cont.innerHTML = `<p class="text-danger small"><i class="bi bi-x-circle me-1"></i>Error al cargar equipos: ${e.message}</p>`;
     if (panel) panel.style.display = "";
   }
@@ -5109,6 +5307,7 @@ function vccTraspasoAbreChange(equipoAbre) {
   state.vccNumposLz = null; state.vccEquiposTroncalB = []; state.vccKvaIsla = null;
   if (islaEl) { islaEl.style.display = "none"; islaEl.innerHTML = ""; }
   if (infoEl) infoEl.textContent = "";
+  vccCargarEquiposB(null, []);
 
   if (!equipoAbre) { destPanel.style.display = "none"; return; }
 
@@ -5169,7 +5368,7 @@ async function vccTraspasoDestinoChange(numalimDestStr) {
   state.vccAlimDestIdx = null; state.vccAlimDestNom = null;
   state.vccNumposLz = null; state.vccEquiposTroncalB = []; state.vccKvaIsla = null;
   if (islaEl) { islaEl.style.display = "none"; islaEl.innerHTML = ""; }
-  if (!numalimDestStr) return;
+  if (!numalimDestStr) { vccCargarEquiposB(null, []); return; }
 
   const numalimDest = parseInt(numalimDestStr);
   const destSel  = document.getElementById("vcc-traspaso-alim-dest");
@@ -5193,6 +5392,9 @@ async function vccTraspasoDestinoChange(numalimDestStr) {
       `<span class="text-muted">LZ: <code>${lz.numpos_lz || "cabecera"}</code></span>` + html;
     infoEl.className = "small mt-1";
   }
+
+  // Cargar panel de configuración de equipos del receptor (async, sin bloquear isla)
+  vccCargarEquiposB(state.vccAlimDestNom, state.vccEquiposTroncalB);
 
   // Calcular isla automáticamente
   const equipoAbre = document.getElementById("vcc-traspaso-eq-abre")?.value;
@@ -5301,7 +5503,8 @@ function vccGetTraspasoParams() {
   if (modo === "topo") {
     const resEl = document.getElementById("vcc-traspaso-isla-result");
     const pPct  = parseFloat(resEl?.dataset.pPct || 0);
-    return { delta_traspaso_a: 0, delta_traspaso_pct: pPct, delta_traspaso_modo: "topo", ...dest };
+    return { delta_traspaso_a: 0, delta_traspaso_pct: pPct, delta_traspaso_modo: "topo",
+             ...dest, equipos_troncal_b: vccLeerCNsEquiposB() };
   }
   return { delta_traspaso_a: 0, delta_traspaso_pct: 0, delta_traspaso_modo: "" };
 }
@@ -5656,6 +5859,17 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
   document.getElementById("vcc-resumen-emp").innerHTML =
     _vccResumenHTML(r.pct_max_alim, r.tabla_trafo, r.tabla_trafo?.barra || "Trafo", r.equipos_eval);
 
+  // Equipos receptor en Escenario 1
+  const _destRec = r.analisis_destino;
+  const detRec1  = document.getElementById("vcc-det-receptor-emp");
+  if (detRec1) {
+    if (_destRec?.equipos_eval?.length) {
+      document.getElementById("vcc-receptor-titulo-emp").textContent = _destRec.nom_alim || "Receptor";
+      document.getElementById("vcc-tabla-receptor-emp").innerHTML    = vccTablaEquipos(_destRec.equipos_eval, _destRec.delta_I);
+      detRec1.classList.remove("d-none");
+    } else { detRec1.classList.add("d-none"); }
+  }
+
   // ── Escenario 2: instalado ────────────────────────────────────────────────
   const detSens = document.getElementById("vcc-details-sens");
   if (kvaInst && r.tabla_alim_sens) {
@@ -5678,8 +5892,21 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
       _vccResumenHTML(r.pct_max_alim_sens, r.tabla_trafo_sens,
                       r.tabla_trafo_sens?.barra || "Trafo", r.equipos_eval_sens);
 
+    // Equipos receptor en Escenario 2
+    const detRec2 = document.getElementById("vcc-det-receptor-inst");
+    if (detRec2) {
+      if (_destRec?.equipos_eval?.length) {
+        document.getElementById("vcc-receptor-titulo-inst").textContent = _destRec.nom_alim || "Receptor";
+        document.getElementById("vcc-tabla-receptor-inst").innerHTML    = vccTablaEquipos(_destRec.equipos_eval, _destRec.delta_I);
+        detRec2.classList.remove("d-none");
+      } else { detRec2.classList.add("d-none"); }
+    }
+
     detSens.classList.remove("d-none");
-  } else { detSens.classList.add("d-none"); }
+  } else {
+    document.getElementById("vcc-det-receptor-inst")?.classList.add("d-none");
+    detSens.classList.add("d-none");
+  }
 
   // ── Alimentador receptor ─────────────────────────────────────────────────
   const detDest = document.getElementById("vcc-details-destino");

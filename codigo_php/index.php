@@ -1591,29 +1591,78 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
     $result['lz_info'] = _lzInfoEntre($numalimOrig, $numalim);
 
     // ── Análisis del alimentador receptor (traspaso simultáneo) ──────────────
-    $nomAlimDest   = trim((string)($b['nom_alim_dest']      ?? ''));
-    $numalimDest   = (int)($b['numalim_dest']               ?? 0);
-    $equipoLzB     = trim((string)($b['equipo_lz']          ?? ''));
-    $eqTroncalB    = $b['equipos_troncal_b']                ?? [];
-    $alivioAPeor   = (float)($result['alivio_A_peor']       ?? 0.0);
+    $nomAlimDest = trim((string)($b['nom_alim_dest'] ?? ''));
+    $numalimDest = (int)($b['numalim_dest']          ?? 0);
+    $equipoLzB   = trim((string)($b['equipo_lz']     ?? ''));
+    $eqTroncalB  = $b['equipos_troncal_b']           ?? [];
+    $alivioAPeor = (float)($result['alivio_A_peor']  ?? 0.0);
 
-    if ($nomAlimDest && is_array($eqTroncalB) && count($eqTroncalB) > 0 && $alivioAPeor > 0.0) {
+    // Normalizar: soporta lista de strings (legado) o lista de objetos con cn
+    $eqNombresB   = [];
+    $eqCNsFromReq = [];
+    $eqCondsB     = [];
+    foreach ((array)$eqTroncalB as $item) {
+        if (is_string($item)) {
+            $eqNombresB[] = $item;
+        } elseif (is_array($item)) {
+            if (($item['tipo'] ?? '') === 'conductor_intermedio') {
+                $eqCondsB[] = $item;
+            } else {
+                $nombre = trim((string)($item['nombre'] ?? ''));
+                if ($nombre) {
+                    $eqNombresB[] = $nombre;
+                    if (isset($item['cn']) && is_numeric($item['cn'])) {
+                        $eqCNsFromReq[$nombre] = (float)$item['cn'];
+                    }
+                }
+            }
+        }
+    }
+
+    if ($nomAlimDest && (!empty($eqNombresB) || !empty($eqCondsB)) && $alivioAPeor > 0.0) {
         $nmDest = $numalimDest ?: (numalimDeNomAlim($dfAb, $nomAlimDest) ?? 0);
         if ($nmDest) {
-            // Enriquecer equipos troncal B: clasificar → fracción → CN desde config
-            $clasificadosB = _vccClasificarUpstream($eqTroncalB);
+            $nullFrac      = ['kva_down'=>null,'kva_total'=>null,'fraccion'=>null,
+                              'tds_down'=>null,'tds_con_kva'=>null,'tds_sin_kva'=>null];
+            $clasificadosB = _vccClasificarUpstream($eqNombresB);
             $equiposBEnrich = [];
-            $nullFrac = ['kva_down'=>null,'kva_total'=>null,'fraccion'=>null,
-                         'tds_down'=>null,'tds_con_kva'=>null,'tds_sin_kva'=>null];
+
             foreach ($clasificadosB as $eq) {
-                $frac  = in_array($eq['tipo'], ['reconectador','equipo_sub'], true)
-                       ? calcularFraccionReco($dfAb, $nomAlimDest, $eq['nombre'])
-                       : $nullFrac;
-                $cfg   = ecGetEquipo($eq['nombre']);
-                $eq['cn']           = $cfg ? ((float)($cfg['corriente_a'] ?? 0) ?: null) : null;
-                $eq['tipo_limite']  = $cfg['tipo_limite'] ?? null;
-                $eq['fuente_ajuste']= $cfg ? 'config' : 'sin_config';
-                $equiposBEnrich[] = array_merge($eq, $frac, ['numpos' => $eq['nombre']]);
+                $nombre = $eq['nombre'];
+                $frac   = in_array($eq['tipo'], ['reconectador','equipo_sub'], true)
+                        ? calcularFraccionReco($dfAb, $nomAlimDest, $nombre)
+                        : $nullFrac;
+                // CN: usuario (request) > equipos_config
+                if (array_key_exists($nombre, $eqCNsFromReq)) {
+                    $cn     = $eqCNsFromReq[$nombre] ?: null;
+                    $fuente = 'usuario';
+                } else {
+                    $cfg    = ecGetEquipo($nombre);
+                    $cn     = $cfg ? ((float)($cfg['corriente_a'] ?? 0) ?: null) : null;
+                    $fuente = $cfg ? 'config' : 'sin_config';
+                }
+                $cfg = ecGetEquipo($nombre);
+                $equiposBEnrich[] = array_merge($eq, $frac, [
+                    'cn'           => $cn,
+                    'tipo_limite'  => $cfg['tipo_limite'] ?? null,
+                    'fuente_ajuste'=> $fuente,
+                    'numpos'       => $nombre,
+                ]);
+            }
+
+            // Conductores intermedios definidos por el usuario en el panel B
+            foreach ($eqCondsB as $cond) {
+                $cn   = isset($cond['cn']) && is_numeric($cond['cn']) ? (float)$cond['cn'] : null;
+                $frac = isset($cond['fraccion']) && is_numeric($cond['fraccion']) ? (float)$cond['fraccion'] : null;
+                $entreB = (string)($cond['entre_b'] ?? '');
+                $equiposBEnrich[] = array_merge($nullFrac, [
+                    'nombre'       => "Conductor({$entreB})",
+                    'tipo'         => 'conductor_intermedio',
+                    'cn'           => $cn,
+                    'fraccion'     => $frac,
+                    'fuente_ajuste'=> 'usuario',
+                    'numpos'       => "Conductor({$entreB})",
+                ]);
             }
 
             // Serie y trafo de B
@@ -1621,17 +1670,13 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
             $trafoB     = trafoDeFeeder($dfTrafo, $nmDest);
             if ($trafoB !== null) $trafoB = aplicarAjustesFila($trafoB, 'trafo', $nmDest);
 
-            // evaluarEquipos para B (ΔI = alivio_A_peor)
-            $cnB         = is_finite($serieBData['cn']) ? $serieBData['cn'] : null;
-            $equiposEvalB = evaluarEquipos(
-                $equiposBEnrich, $alivioAPeor,
-                $cnB,
-                $serieBData['serie'], $mesesSel ?: null
-            );
+            $cnB          = is_finite($serieBData['cn']) ? $serieBData['cn'] : null;
+            $equiposEvalB = $equiposBEnrich
+                ? evaluarEquipos($equiposBEnrich, $alivioAPeor, $cnB, $serieBData['serie'], $mesesSel ?: null)
+                : [];
 
-            // calcularVcc para B: FU% alimentador + trafo
-            $vccB       = calcularVcc($dfAlim, $nmDest, $trafoB, $alivioAPeor, $mesesSel);
-            $pctMaxB    = null; $mesMaxB = '';
+            $vccB    = calcularVcc($dfAlim, $nmDest, $trafoB, $alivioAPeor, $mesesSel);
+            $pctMaxB = null; $mesMaxB = '';
             foreach ($vccB['tabla_alim'] ?? [] as $rB) {
                 $pB = $rB['uso_despues_pct'] ?? null;
                 if ($pB !== null && ($pctMaxB === null || $pB > $pctMaxB)) {
