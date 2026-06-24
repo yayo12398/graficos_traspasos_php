@@ -5778,6 +5778,7 @@ async function vccEvaluar() {
     if (r.error) { mostrarError(r.error); return; }
     state.vccUltimaEval = r;
     vccRenderResultados(r, tension, kvaEmp, kvaInst);
+    document.getElementById("vcc-resultados")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } finally { spinner(false); }
 }
 
