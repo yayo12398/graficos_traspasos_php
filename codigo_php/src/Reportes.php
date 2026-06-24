@@ -1628,12 +1628,23 @@ function _repSeccionReceptorHtml(array $dest): string {
     }
 
     $nomBH = _h($nomB);
+
+    $maniobraHtml = '';
+    $eqAbre   = $dest['equipo_abre']   ?? null;
+    $eqCierra = $dest['equipo_cierra'] ?? $dest['equipo_lz'] ?? null;
+    if ($eqAbre || $eqCierra) {
+        $abreH   = $eqAbre   ? '<code>' . _h(strtoupper($eqAbre))   . '</code>' : '&#8212;';
+        $cierraH = $eqCierra ? '<code>' . _h(strtoupper($eqCierra)) . '</code>' : '&#8212;';
+        $maniobraHtml = "<p style='font-size:.88em;color:#555;margin:4px 0 10px'>"
+            . "&#x2197; Abre: $abreH &nbsp;|&nbsp; &#x2199; Cierra: $cierraH</p>";
+    }
+
     $meta = "<p style='margin:6px 0 10px'><strong>&#916;I traspaso:</strong> +" . number_format($deltaI, 2) . " A"
         . " &nbsp;|&nbsp; <strong>CN receptor:</strong> " . number_format($cnB, 0) . " A"
         . " &nbsp;|&nbsp; <strong>FU peor mes ($mesLbl):</strong> $pctMax</p>";
     return "<details class='vcc-receptor'>"
         . "<summary class='vcc-esc-sum vcc-receptor-sum'>&#x21A9; Alimentador receptor &#8212; $nomBH</summary>"
-        . $meta
+        . $maniobraHtml . $meta
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>Alimentador &#8212; $nomBH</summary>$tablaAlimHtml</details>"
         . $trafoSection
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>Equipos aguas arriba ($nEq con CN)</summary>$equiposHtml</details>"

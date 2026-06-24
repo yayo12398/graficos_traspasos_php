@@ -1921,3 +1921,89 @@ El scroll es suave (`smooth`) y apunta al inicio de `#vcc-resultados`.
 La pestaña **Configuración** se movió al último lugar para no interrumpir el flujo de trabajo principal:
 
 `Nuevo Traspaso → Alimentadores en Comisionamiento → VCC → Historial VCC → Configuración`
+
+---
+
+## 20. Filtrado topológico de LZ — VCC y Nuevo Traspaso (sesión 2026-06-24)
+
+### 20.1 VCC — Selector de equipo que cierra (LZ)
+
+**Archivos:** `codigo_php/templates/index.html`
+
+Antes, `vccTraspasoDestinoChange` tomaba `lzList?.[0]` sin mostrar opciones al usuario. Ahora, al seleccionar el alimentador receptor en modo Topología, se llama `vccMostrarLzCierra(lzList)`:
+
+- **1 LZ válido** → se auto-selecciona y muestra como texto con badge de tipo
+- **Varios LZ válidos** → radio buttons, el primero pre-seleccionado
+
+Todos los LZ del `lzList` son topológicamente válidos porque el filtro en `vccTraspasoAbreChange` ya garantiza `equipoAbre ∈ lz.equipos_troncal_orig` y `v.viable !== false`. No hay opciones inválidas ni badges "Verificar".
+
+**Funciones nuevas:**
+
+```js
+vccMostrarLzCierra(lzList)   // renderiza selector en #vcc-lz-cierra-panel
+vccSeleccionarLz(lz)         // actualiza state.vccNumposLz y recarga panel equipos B
+vccLzCierraChange(numposLz)  // callback del radio button
+```
+
+`vccTraspasoAbreChange` ahora también almacena `tipo` en cada entrada del `lzList` para mostrar el badge (Bilateral / 3 ramas).
+
+Reset del panel: al cambiar el equipo que abre, `#vcc-lz-cierra-panel` se oculta hasta que se re-seleccione el receptor.
+
+### 20.2 VCC — Info de maniobra en sector receptor
+
+**Archivos:** `codigo_php/templates/index.html`, `codigo_php/src/Reportes.php`
+
+**UI:** `_vccRenderReceptorEnEscenario(suffix, dest)` ahora rellena `#vcc-receptor-maniobra-{suffix}` con:
+
+```
+↗ Abre: <EQUIPO>  |  ↙ Cierra: <NUMPOS_LZ>
+```
+
+El equipo que abre se lee desde `#vcc-traspaso-eq-abre`; el que cierra desde `dest.equipo_lz || state.vccNumposLz`.
+
+**Reporte HTML:** `_repSeccionReceptorHtml` lee `$dest['equipo_abre']` y `$dest['equipo_cierra']` (con fallback a `$dest['equipo_lz']`) y agrega un párrafo `↗ Abre: X | ↙ Cierra: Y` antes del metadata de FU/CN.
+
+**Payload:** `vccGuardar` y `vccDescargarHTML` enriquecen `analisis_destino` con:
+
+```js
+analisis_destino: r.analisis_destino ? {
+  ...r.analisis_destino,
+  equipo_abre:   document.getElementById("vcc-traspaso-eq-abre")?.value || null,
+  equipo_cierra: state.vccNumposLz || r.analisis_destino.equipo_lz || null,
+} : null,
+```
+
+Esto asegura que el historial VCC también conserve la info de maniobra.
+
+### 20.3 Nuevo Traspaso — Filtrado de destinos al elegir equipo que abre
+
+**Archivos:** `codigo_php/templates/index.html`
+
+**Problema anterior:** el TomSelect de alim B mostraba todos los vecinos LZ del alim A, independientemente del equipo que abre seleccionado. El filtro topológico (`equipoAbre ∈ lz.equipos_troncal_orig`) solo se aplicaba en `mostrarEquipoCierra` como badge informativo.
+
+**Solución:** nueva función `filtrarDestinosPorEquipo(equipoAbre)` que reconstruye el TomSelect de destino en tiempo real:
+
+```js
+// Con equipo → filtra lzVecinos por equipos_troncal_orig
+const lzValidos = state.lzVecinos.filter(lz =>
+  lz.equipos_troncal_orig?.some(e => e.toUpperCase().trim() === eqUp)
+);
+// Solo destinos alcanzables via esos LZ viables
+const numalimSet = new Set(
+  lzValidos.flatMap(lz => lz.vecinos.filter(v => v.viable !== false).map(v => v.numalim))
+);
+```
+
+**Comportamiento:**
+- Si la destino actual sigue en la lista filtrada → se preserva la selección y `mostrarEquipoCierra` se re-ejecuta automáticamente
+- Si la destino actual cae del filtro → se resetea y se limpia el selector de equipo cierra
+- Sin equipo (o modo "tds") → restaura todos los vecinos LZ (comportamiento original)
+
+**Aplica a corrimientos:** en un corrimiento la destino C se pre-selecciona al hacer clic en el candidato. Si el equipo sugerido es válido para ese par (como se espera), la selección se preserva sin cambio.
+
+**Hooks:**
+- `ts.equipo onChange` → llama `filtrarDestinosPorEquipo(val)` (reemplaza el `mostrarEquipoCierra` directo que había)
+- `ts.equipo onChange` con val vacío → `filtrarDestinosPorEquipo(null)`
+- Radio tipo-isla al cambiar a "tds" → `filtrarDestinosPorEquipo(null)`
+
+**Indicador visual:** `#lz-dest-info` muestra "X alimentador(es) con LZ válido para equipo `EQUIPO`" con ícono de embudo azul cuando hay filtro activo.

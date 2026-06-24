@@ -909,6 +909,7 @@
                     <option value="">— Seleccionar alimentador —</option>
                   </select>
                   <div id="vcc-traspaso-dest-info" class="small text-muted mt-1"></div>
+                  <div id="vcc-lz-cierra-panel" class="mt-2" style="display:none"></div>
                 </div>
 
                 <!-- Resultado isla (auto) -->
@@ -1063,6 +1064,7 @@
                   Alimentador receptor &nbsp;<span id="vcc-receptor-group-titulo-emp" class="text-muted fw-normal small"></span>
                 </summary>
                 <div class="bloque-body">
+                  <div id="vcc-receptor-maniobra-emp" class="small text-muted mb-2" style="display:none"></div>
                   <details class="bloque mb-1 d-none" id="vcc-det-receptor-emp">
                     <summary class="bloque-summary">
                       <i class="bi bi-diagram-3 me-1"></i>
@@ -1144,6 +1146,7 @@
                   Alimentador receptor &nbsp;<span id="vcc-receptor-group-titulo-inst" class="text-muted fw-normal small"></span>
                 </summary>
                 <div class="bloque-body">
+                  <div id="vcc-receptor-maniobra-inst" class="small text-muted mb-2" style="display:none"></div>
                   <details class="bloque mb-1 d-none" id="vcc-det-receptor-inst">
                     <summary class="bloque-summary">
                       <i class="bi bi-diagram-3 me-1"></i>
@@ -1373,6 +1376,7 @@ function registrarEventos() {
       if (modo === "tds") {
         ocultarPanelTDsEquipo();
         if (state.tdsData.length === 0 && state.origenNomAlim) cargarTDs(state.origenNomAlim);
+        filtrarDestinosPorEquipo(null); // restaurar todos los destinos LZ
       }
     })
   );
@@ -1655,12 +1659,11 @@ function renderEquipos(equipos) {
       if (val) {
         cargarTDsEquipo(val);
         actualizarPreviewIsla();
-        // Re-evaluar posición en isla si ya hay destino seleccionado
-        const destVal = ts.destino?.getValue();
-        if (destVal) mostrarEquipoCierra(parseInt(destVal));
+        filtrarDestinosPorEquipo(val);
       } else {
         ocultarPanelTDsEquipo();
         ocultarPreviewIsla();
+        filtrarDestinosPorEquipo(null);
       }
     },
   });
@@ -1936,6 +1939,61 @@ async function actualizarDestinosLZ(numalim) {
     const pd = state.pendingPreselectDest;
     state.pendingPreselectDest = null;
     ts.destino.setValue(String(pd));
+  }
+}
+
+// Filtra el TomSelect de destino según equipo que abre (null = restaurar todos)
+function filtrarDestinosPorEquipo(equipoAbre) {
+  if (!state.lzVecinos?.length) return;
+  const lzInfoEl = document.getElementById("lz-dest-info");
+
+  let filtrados;
+  if (!equipoAbre) {
+    // Sin equipo seleccionado: mostrar todos los vecinos viables
+    const numalimSet = new Set(state.lzVecinos.flatMap(v => v.vecinos.map(x => x.numalim)));
+    filtrados = state.destinosData.filter(d => numalimSet.has(d.numalim));
+  } else {
+    const eqUp = equipoAbre.toUpperCase().trim();
+    const lzValidos = state.lzVecinos.filter(lz =>
+      lz.equipos_troncal_orig?.some(e => e.toUpperCase().trim() === eqUp)
+    );
+    const numalimSet = new Set(
+      lzValidos.flatMap(lz => lz.vecinos.filter(v => v.viable !== false).map(v => v.numalim))
+    );
+    filtrados = state.destinosData.filter(d => numalimSet.has(d.numalim));
+  }
+
+  // Preservar selección actual si sigue siendo válida
+  const selActual = ts.destino?.getValue() ? parseInt(ts.destino.getValue()) : null;
+  const sigueValida = selActual != null && filtrados.some(d => d.numalim === selActual);
+
+  if (ts.destino) ts.destino.destroy();
+  ts.destino = new TomSelect("#sel-destino", {
+    options: filtrados.map(d => ({
+      value: d.numalim,
+      text: `${d.nombre}  (CN=${d.cn?.toFixed(0) ?? "?"} A)`,
+    })),
+    valueField: "value",
+    labelField: "text",
+    searchField: ["text"],
+    maxOptions: 50,
+    placeholder: "Buscar alimentador destino...",
+    onChange: v => mostrarEquipoCierra(v ? parseInt(v) : null),
+  });
+
+  const ecuacion = equipoAbre ? ` para equipo <code>${equipoAbre.toUpperCase()}</code>` : "";
+  if (lzInfoEl) {
+    lzInfoEl.innerHTML = filtrados.length
+      ? `<i class="bi bi-funnel-fill me-1 text-${equipoAbre ? "primary" : "success"}"></i>${filtrados.length} alimentador(es) con LZ válido${ecuacion}`
+      : `<i class="bi bi-x-circle me-1"></i>Sin destinos LZ válidos${ecuacion}`;
+    lzInfoEl.className = filtrados.length ? "small text-success mt-1" : "small text-danger mt-1";
+    lzInfoEl.style.display = "";
+  }
+
+  if (sigueValida) {
+    ts.destino.setValue(String(selActual));
+  } else {
+    if (selActual != null) mostrarEquipoCierra(null); // destino cayó del filtro → limpiar equipo cierra
   }
 }
 
@@ -5318,6 +5376,8 @@ function vccTraspasoAbreChange(equipoAbre) {
   state.vccNumposLz = null; state.vccEquiposTroncalB = []; state.vccKvaIsla = null;
   if (islaEl) { islaEl.style.display = "none"; islaEl.innerHTML = ""; }
   if (infoEl) infoEl.textContent = "";
+  const lzPanel = document.getElementById("vcc-lz-cierra-panel");
+  if (lzPanel) lzPanel.style.display = "none";
   vccCargarEquiposB(null, []);
 
   if (!equipoAbre) { destPanel.style.display = "none"; return; }
@@ -5345,7 +5405,7 @@ function vccTraspasoAbreChange(equipoAbre) {
     lz.vecinos?.forEach(v => {
       if (!v.viable) return;
       if (!destMap.has(v.numalim)) destMap.set(v.numalim, { nom_alim: v.nom_alim, lzList: [] });
-      destMap.get(v.numalim).lzList.push({ numpos_lz: lz.numpos_lz, equipos_troncal: v.equipos_troncal });
+      destMap.get(v.numalim).lzList.push({ numpos_lz: lz.numpos_lz, equipos_troncal: v.equipos_troncal, tipo: lz.tipo ?? '' });
     });
   });
 
@@ -5372,6 +5432,60 @@ function vccTraspasoAbreChange(equipoAbre) {
   }
 }
 
+// ── EQUIPO QUE CIERRA — selector LZ en VCC ───────────────────────────────
+function vccMostrarLzCierra(lzList) {
+  const panel = document.getElementById("vcc-lz-cierra-panel");
+  if (!panel) return;
+  if (!lzList?.length) { panel.style.display = "none"; return; }
+
+  const TIPO_LBL = { bilateral: "Bilateral", subterraneo_3ramas: "3 ramas" };
+  const _badge = lz => {
+    const lbl = TIPO_LBL[lz.tipo] || lz.tipo || '';
+    const cls = lz.tipo === "subterraneo_3ramas" ? "bg-warning text-dark" : "bg-success text-white";
+    return lbl ? ` <span class="badge ${cls} ms-1">${lbl}</span>` : '';
+  };
+
+  // Auto-seleccionar el primero
+  vccSeleccionarLz(lzList[0]);
+
+  if (lzList.length === 1) {
+    const lz = lzList[0];
+    panel.innerHTML =
+      `<div class="small"><i class="bi bi-toggle-on me-1 text-primary"></i>` +
+      `<span class="text-muted">Equipo que cierra:</span> ` +
+      `<code class="ms-1">${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}</div>`;
+  } else {
+    const opts = lzList.map((lz, i) =>
+      `<div class="form-check form-check-inline mb-0">
+        <input class="form-check-input" type="radio" name="vcc-sel-lz"
+               id="vcc-lz-radio-${lz.numpos_lz}" value="${lz.numpos_lz}"
+               ${i === 0 ? "checked" : ""}
+               onchange="vccLzCierraChange('${lz.numpos_lz}')">
+        <label class="form-check-label small" for="vcc-lz-radio-${lz.numpos_lz}">
+          <code>${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}
+        </label>
+      </div>`
+    ).join("");
+    panel.innerHTML =
+      `<div class="text-muted small mb-1"><i class="bi bi-toggle-on me-1 text-primary"></i>Equipo que cierra — selecciona:</div>${opts}`;
+  }
+  panel.style.display = "";
+}
+
+function vccSeleccionarLz(lz) {
+  state.vccNumposLz        = lz.numpos_lz;
+  state.vccEquiposTroncalB = lz.equipos_troncal ?? [];
+  vccCargarEquiposB(state.vccAlimDestNom, state.vccEquiposTroncalB);
+}
+
+function vccLzCierraChange(numposLz) {
+  const destSel = document.getElementById("vcc-traspaso-alim-dest");
+  const destMap = JSON.parse(destSel?.dataset.destMap || "{}");
+  const entry   = destMap[String(state.vccAlimDestIdx)];
+  const lz      = entry?.lzList?.find(l => l.numpos_lz === numposLz);
+  if (lz) vccSeleccionarLz(lz);
+}
+
 // Llamado al seleccionar alimentador receptor en modo topo
 async function vccTraspasoDestinoChange(numalimDestStr) {
   const islaEl = document.getElementById("vcc-traspaso-isla-result");
@@ -5387,25 +5501,13 @@ async function vccTraspasoDestinoChange(numalimDestStr) {
   const entry    = destMap[String(numalimDest)];
   if (!entry) return;
 
-  // Tomar primer LZ (generalmente hay uno por par para un equipo_abre dado)
-  const lz = entry.lzList?.[0];
-  if (!lz) return;
+  if (!entry.lzList?.length) return;
 
-  state.vccAlimDestIdx      = numalimDest;
-  state.vccAlimDestNom      = entry.nom_alim;
-  state.vccNumposLz         = lz.numpos_lz;
-  state.vccEquiposTroncalB  = lz.equipos_troncal ?? [];
+  state.vccAlimDestIdx = numalimDest;
+  state.vccAlimDestNom = entry.nom_alim;
 
-  // Mostrar equipos troncal de B
-  if (infoEl) {
-    const html = _htmlEquiposTroncal(state.vccEquiposTroncalB);
-    infoEl.innerHTML =
-      `<span class="text-muted">LZ: <code>${lz.numpos_lz || "cabecera"}</code></span>` + html;
-    infoEl.className = "small mt-1";
-  }
-
-  // Cargar panel de configuración de equipos del receptor (async, sin bloquear isla)
-  vccCargarEquiposB(state.vccAlimDestNom, state.vccEquiposTroncalB);
+  // Mostrar selector equipo cierra (auto-selecciona primero y carga panel B)
+  vccMostrarLzCierra(entry.lzList);
 
   // Calcular isla automáticamente
   const equipoAbre = document.getElementById("vcc-traspaso-eq-abre")?.value;
@@ -5840,6 +5942,18 @@ function _vccRenderReceptorEnEscenario(suffix, dest) {
   if (group) {
     document.getElementById(`vcc-receptor-group-titulo-${suffix}`).textContent = nomB;
     group.classList.remove("d-none");
+  }
+  // Info de maniobra
+  const maniobraEl = document.getElementById(`vcc-receptor-maniobra-${suffix}`);
+  if (maniobraEl) {
+    const eqAbre   = document.getElementById("vcc-traspaso-eq-abre")?.value || "";
+    const eqCierra = dest.equipo_lz || state.vccNumposLz || "";
+    if (eqAbre || eqCierra) {
+      maniobraEl.innerHTML =
+        `<i class="bi bi-arrow-up-right me-1"></i>Abre: <code>${eqAbre || "—"}</code>` +
+        ` &nbsp;|&nbsp; <i class="bi bi-arrow-down-left me-1"></i>Cierra: <code>${eqCierra || "—"}</code>`;
+      maniobraEl.style.display = "";
+    }
   }
   // Equipos troncal
   const detEq = document.getElementById(ids.eq);
@@ -6304,7 +6418,11 @@ async function vccGuardar() {
         delta_traspaso_pct:  r.delta_traspaso_pct  || 0,
         delta_traspaso_modo: r.delta_traspaso_modo || "",
         alivio_A_peor:       r.alivio_A_peor       || 0,
-        analisis_destino:    r.analisis_destino     || null,
+        analisis_destino:    r.analisis_destino ? {
+          ...r.analisis_destino,
+          equipo_abre:   document.getElementById("vcc-traspaso-eq-abre")?.value || null,
+          equipo_cierra: state.vccNumposLz || r.analisis_destino.equipo_lz || null,
+        } : null,
       }),
     });
     if (resp.error) { mostrarError(resp.error); return; }
@@ -6363,7 +6481,11 @@ async function vccDescargarHTML() {
         delta_traspaso_modo: r.delta_traspaso_modo || "",
         alivio_A_peor:       r.alivio_A_peor       || 0,
         mes_max_alim:        r.mes_max_alim         || "",
-        analisis_destino:    r.analisis_destino     || null,
+        analisis_destino:    r.analisis_destino ? {
+          ...r.analisis_destino,
+          equipo_abre:   document.getElementById("vcc-traspaso-eq-abre")?.value || null,
+          equipo_cierra: state.vccNumposLz || r.analisis_destino.equipo_lz || null,
+        } : null,
       }),
     });
     if (!resp.ok) { mostrarError("Error generando HTML."); return; }
