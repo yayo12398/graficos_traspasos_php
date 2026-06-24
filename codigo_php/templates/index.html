@@ -4901,12 +4901,12 @@ async function vccCargarEquiposB(nomAlimB, equiposTroncal) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
     });
-    if (r.error || !r.equipos) {
-      panel.innerHTML = `<p class="text-danger small">Error: ${r.error || "sin datos"}</p>`; return;
+    if (!r.ok || !r.data?.equipos) {
+      panel.innerHTML = `<p class="text-danger small">Error: ${r.error || "sin datos del receptor"}</p>`; return;
     }
     const alimCfgR  = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
     const savedConds = (alimCfgR && alimCfgR.ok !== false) ? (alimCfgR.conductores_intermedios ?? []) : [];
-    vccRenderEquiposBInputs(r.equipos, savedConds);
+    vccRenderEquiposBInputs(r.data.equipos, savedConds);
   } catch(e) {
     panel.innerHTML = `<p class="text-danger small">Error al cargar equipos: ${e.message}</p>`;
   }
