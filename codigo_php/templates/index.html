@@ -5837,7 +5837,7 @@ function _vccRenderReceptorEnEscenario(suffix, dest) {
   if (detAlim) {
     if (dest.tabla_alim?.length) {
       document.getElementById(`vcc-alim-receptor-titulo-${suffix}`).textContent = nomB;
-      document.getElementById(`vcc-tabla-alim-receptor-${suffix}`).innerHTML    = vccTablaFU(dest.tabla_alim, null);
+      document.getElementById(`vcc-tabla-alim-receptor-${suffix}`).innerHTML    = vccTablaFU(dest.tabla_alim, null, { labelDelta: "ΔI traspaso (A)" });
       detAlim.classList.remove("d-none");
     } else detAlim.classList.add("d-none");
   }
@@ -5845,7 +5845,7 @@ function _vccRenderReceptorEnEscenario(suffix, dest) {
   const detTraf = document.getElementById(ids.traf);
   if (detTraf) {
     if (dest.tabla_trafo?.tabla) {
-      document.getElementById(`vcc-tabla-trafo-receptor-${suffix}`).innerHTML = vccTablaFU(dest.tabla_trafo.tabla, null);
+      document.getElementById(`vcc-tabla-trafo-receptor-${suffix}`).innerHTML = vccTablaFU(dest.tabla_trafo.tabla, null, { labelDelta: "ΔI traspaso (A)" });
       detTraf.classList.remove("d-none");
     } else detTraf.classList.add("d-none");
   }
@@ -5948,7 +5948,7 @@ function initTooltips(container) {
 }
 
 // ─── tabla FU transpuesta (meses = columnas) ──────────────────────────────
-function vccTablaFU(tabla, vccResult) {
+function vccTablaFU(tabla, vccResult, opts = {}) {
   if (!tabla?.length) return "<p class='text-muted small'>Sin datos.</p>";
 
   const W_TH = "border-left:2px solid rgba(192,0,0,.6);border-right:2px solid rgba(192,0,0,.6);background:rgba(231,76,60,.12);font-weight:bold";
@@ -6031,7 +6031,7 @@ function vccTablaFU(tabla, vccResult) {
   } else {
     body += fila("I antes (A)", "I_antes");
   }
-  body += fila("ΔI cliente (A)",    "_delta");
+  body += fila(opts.labelDelta ?? "ΔI cliente (A)", "_delta");
   body += fila("I después (A)",     "I_despues");
   body += fila("FU antes (%)",      "uso_antes_pct");
   body += fila("FU después (%)",    "uso_despues_pct");
