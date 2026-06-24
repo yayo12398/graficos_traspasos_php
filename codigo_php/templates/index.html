@@ -1054,7 +1054,7 @@
                 </div>
               </details>
 
-              <!-- Equipos receptor (traspaso simultáneo) -->
+              <!-- Receptor: equipos troncal -->
               <details class="bloque mb-1 d-none" id="vcc-det-receptor-emp">
                 <summary class="bloque-summary">
                   <i class="bi bi-arrow-right-circle me-1" style="color:#f5a623"></i>
@@ -1062,6 +1062,28 @@
                 </summary>
                 <div class="bloque-body" style="overflow-x:auto">
                   <div id="vcc-tabla-receptor-emp"></div>
+                </div>
+              </details>
+
+              <!-- Receptor: alimentador FU mensual -->
+              <details class="bloque mb-1 d-none" id="vcc-det-alim-receptor-emp">
+                <summary class="bloque-summary">
+                  <i class="bi bi-lightning me-1" style="color:#f5a623"></i>
+                  Alimentador receptor — detalle mensual &nbsp;<span id="vcc-alim-receptor-titulo-emp" class="text-muted fw-normal small"></span>
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-alim-receptor-emp"></div>
+                </div>
+              </details>
+
+              <!-- Receptor: trafo -->
+              <details class="bloque mb-1 d-none" id="vcc-det-trafo-receptor-emp">
+                <summary class="bloque-summary">
+                  <i class="bi bi-box me-1" style="color:#f5a623"></i>
+                  Transformador AT/MT receptor
+                </summary>
+                <div class="bloque-body" style="overflow-x:auto">
+                  <div id="vcc-tabla-trafo-receptor-emp"></div>
                 </div>
               </details>
 
@@ -1109,7 +1131,7 @@
                 </div>
               </details>
 
-              <!-- Equipos receptor (traspaso simultáneo) -->
+              <!-- Receptor: equipos troncal -->
               <details class="bloque mb-1 d-none" id="vcc-det-receptor-inst">
                 <summary class="bloque-summary">
                   <i class="bi bi-arrow-right-circle me-1" style="color:#f5a623"></i>
@@ -1120,46 +1142,25 @@
                 </div>
               </details>
 
-            </details>
-
-            <!-- Alimentador receptor (traspaso simultáneo) -->
-            <details id="vcc-details-destino" class="mb-2 d-none">
-              <summary class="fw-semibold ps-1" style="cursor:pointer;list-style:none;color:#f5a623">
-                <i class="bi bi-chevron-down me-1 vcc-chevron"></i>
-                Alimentador receptor
-                <span class="badge ms-1" id="vcc-badge-destino"
-                      style="background:#f5a623;color:#fff"></span>
-              </summary>
-
-              <div id="vcc-resumen-destino" class="d-flex flex-wrap gap-2 my-2 ps-1"></div>
-
-              <details class="bloque mb-1" open id="vcc-det-equip-destino">
+              <!-- Receptor: alimentador FU mensual -->
+              <details class="bloque mb-1 d-none" id="vcc-det-alim-receptor-inst">
                 <summary class="bloque-summary">
-                  <i class="bi bi-diagram-3 me-1"></i>
-                  Equipos troncal <span id="vcc-destino-titulo" class="text-muted fw-normal small ms-1"></span>
+                  <i class="bi bi-lightning me-1" style="color:#f5a623"></i>
+                  Alimentador receptor — detalle mensual &nbsp;<span id="vcc-alim-receptor-titulo-inst" class="text-muted fw-normal small"></span>
                 </summary>
                 <div class="bloque-body" style="overflow-x:auto">
-                  <div id="vcc-tabla-equip-destino"></div>
+                  <div id="vcc-tabla-alim-receptor-inst"></div>
                 </div>
               </details>
 
-              <details class="bloque mb-1">
+              <!-- Receptor: trafo -->
+              <details class="bloque mb-1 d-none" id="vcc-det-trafo-receptor-inst">
                 <summary class="bloque-summary">
-                  <i class="bi bi-lightning me-1"></i>
-                  Alimentador receptor — detalle mensual
-                </summary>
-                <div class="bloque-body" style="overflow-x:auto">
-                  <div id="vcc-tabla-alim-destino"></div>
-                </div>
-              </details>
-
-              <details class="bloque mb-1 d-none" id="vcc-det-trafo-destino">
-                <summary class="bloque-summary">
-                  <i class="bi bi-box me-1"></i>
+                  <i class="bi bi-box me-1" style="color:#f5a623"></i>
                   Transformador AT/MT receptor
                 </summary>
                 <div class="bloque-body" style="overflow-x:auto">
-                  <div id="vcc-tabla-trafo-destino"></div>
+                  <div id="vcc-tabla-trafo-receptor-inst"></div>
                 </div>
               </details>
 
@@ -5811,6 +5812,45 @@ function _vccResumenHTML(pctAlim, pctTrafo, trafoNom, equipos) {
   return items.join(" ");
 }
 
+function _vccRenderReceptorEnEscenario(suffix, dest) {
+  const ids = {
+    eq:   `vcc-det-receptor-${suffix}`,
+    alim: `vcc-det-alim-receptor-${suffix}`,
+    traf: `vcc-det-trafo-receptor-${suffix}`,
+  };
+  if (!dest) {
+    Object.values(ids).forEach(id => document.getElementById(id)?.classList.add("d-none"));
+    return;
+  }
+  const nomB = dest.nom_alim || "Receptor";
+  // Equipos troncal
+  const detEq = document.getElementById(ids.eq);
+  if (detEq) {
+    if (dest.equipos_eval?.length) {
+      document.getElementById(`vcc-receptor-titulo-${suffix}`).textContent = nomB;
+      document.getElementById(`vcc-tabla-receptor-${suffix}`).innerHTML    = vccTablaEquipos(dest.equipos_eval, dest.delta_I);
+      detEq.classList.remove("d-none");
+    } else detEq.classList.add("d-none");
+  }
+  // Alimentador FU mensual
+  const detAlim = document.getElementById(ids.alim);
+  if (detAlim) {
+    if (dest.tabla_alim?.length) {
+      document.getElementById(`vcc-alim-receptor-titulo-${suffix}`).textContent = nomB;
+      document.getElementById(`vcc-tabla-alim-receptor-${suffix}`).innerHTML    = vccTablaFU(dest.tabla_alim, null);
+      detAlim.classList.remove("d-none");
+    } else detAlim.classList.add("d-none");
+  }
+  // Trafo
+  const detTraf = document.getElementById(ids.traf);
+  if (detTraf) {
+    if (dest.tabla_trafo?.tabla) {
+      document.getElementById(`vcc-tabla-trafo-receptor-${suffix}`).innerHTML = vccTablaFU(dest.tabla_trafo.tabla, null);
+      detTraf.classList.remove("d-none");
+    } else detTraf.classList.add("d-none");
+  }
+}
+
 function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
   document.getElementById("vcc-res-titulo").textContent = `VCC — ${state.vccAlimNom}`;
 
@@ -5859,16 +5899,9 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
   document.getElementById("vcc-resumen-emp").innerHTML =
     _vccResumenHTML(r.pct_max_alim, r.tabla_trafo, r.tabla_trafo?.barra || "Trafo", r.equipos_eval);
 
-  // Equipos receptor en Escenario 1
+  // Receptor dentro de cada escenario
   const _destRec = r.analisis_destino;
-  const detRec1  = document.getElementById("vcc-det-receptor-emp");
-  if (detRec1) {
-    if (_destRec?.equipos_eval?.length) {
-      document.getElementById("vcc-receptor-titulo-emp").textContent = _destRec.nom_alim || "Receptor";
-      document.getElementById("vcc-tabla-receptor-emp").innerHTML    = vccTablaEquipos(_destRec.equipos_eval, _destRec.delta_I);
-      detRec1.classList.remove("d-none");
-    } else { detRec1.classList.add("d-none"); }
-  }
+  _vccRenderReceptorEnEscenario("emp", _destRec);
 
   // ── Escenario 2: instalado ────────────────────────────────────────────────
   const detSens = document.getElementById("vcc-details-sens");
@@ -5892,69 +5925,11 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
       _vccResumenHTML(r.pct_max_alim_sens, r.tabla_trafo_sens,
                       r.tabla_trafo_sens?.barra || "Trafo", r.equipos_eval_sens);
 
-    // Equipos receptor en Escenario 2
-    const detRec2 = document.getElementById("vcc-det-receptor-inst");
-    if (detRec2) {
-      if (_destRec?.equipos_eval?.length) {
-        document.getElementById("vcc-receptor-titulo-inst").textContent = _destRec.nom_alim || "Receptor";
-        document.getElementById("vcc-tabla-receptor-inst").innerHTML    = vccTablaEquipos(_destRec.equipos_eval, _destRec.delta_I);
-        detRec2.classList.remove("d-none");
-      } else { detRec2.classList.add("d-none"); }
-    }
-
+    _vccRenderReceptorEnEscenario("inst", _destRec);
     detSens.classList.remove("d-none");
   } else {
-    document.getElementById("vcc-det-receptor-inst")?.classList.add("d-none");
+    _vccRenderReceptorEnEscenario("inst", null);
     detSens.classList.add("d-none");
-  }
-
-  // ── Alimentador receptor ─────────────────────────────────────────────────
-  const detDest = document.getElementById("vcc-details-destino");
-  const dest    = r.analisis_destino;
-  if (dest && detDest) {
-    const nomB = dest.nom_alim || "Receptor";
-    const dI   = dest.delta_I?.toFixed(2) ?? "—";
-    const cnB  = dest.cn_alim?.toFixed(0)  ?? "—";
-    document.getElementById("vcc-badge-destino").textContent =
-      `${nomB}  ·  ΔI = ${dI} A  |  CN = ${cnB} A`;
-    document.getElementById("vcc-destino-titulo").textContent =
-      nomB + (dest.equipo_lz ? ` (LZ: ${dest.equipo_lz})` : "");
-
-    document.getElementById("vcc-tabla-equip-destino").innerHTML =
-      vccTablaEquipos(dest.equipos_eval, dest.delta_I);
-    document.getElementById("vcc-tabla-alim-destino").innerHTML =
-      vccTablaFU(dest.tabla_alim, dest);
-
-    const detTD = document.getElementById("vcc-det-trafo-destino");
-    if (dest.tabla_trafo?.tabla) {
-      document.getElementById("vcc-tabla-trafo-destino").innerHTML =
-        vccTablaFU(dest.tabla_trafo.tabla, null);
-      detTD.classList.remove("d-none");
-    } else { detTD.classList.add("d-none"); }
-
-    const resumenDestEl = document.getElementById("vcc-resumen-destino");
-    resumenDestEl.innerHTML =
-      _vccResumenHTML(dest.pct_max_alim, dest.tabla_trafo,
-                      dest.tabla_trafo?.barra || "Trafo", dest.equipos_eval);
-
-    // Eliminar alertas previas antes de añadir nueva
-    resumenDestEl.nextElementSibling?.classList.contains("alert") &&
-      resumenDestEl.nextElementSibling.remove();
-
-    // Advertencia si receptor supera capacidad
-    const pctB = dest.pct_max_alim;
-    if (pctB != null && pctB > 100) {
-      resumenDestEl.insertAdjacentHTML("afterend",
-        `<div class="alert alert-warning py-2 mt-1 small mb-0">
-          <i class="bi bi-exclamation-triangle me-1"></i>
-          <strong>Advertencia:</strong> ${nomB} supera su capacidad
-          (${pctB.toFixed(1)}%) al recibir ${dI} A.
-          Considerar maniobras adicionales o reducir la carga traspasada.
-        </div>`);
-    }
-    detDest.classList.remove("d-none");
-  } else if (detDest) {
-    detDest.classList.add("d-none");
   }
 
   document.getElementById("vcc-resultados").classList.remove("d-none");
