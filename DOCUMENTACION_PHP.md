@@ -1847,3 +1847,77 @@ Los autotransformadores no aparecen en `dfAb` como equipo explícito. Se identif
   - Segmento 23 kV: `ΔI = kVA / (√3 × 23)`
   - Segmento 12 kV: `ΔI = kVA / (√3 × 12)` (mayor; hoy subestimado)
 - Sin cambio en el backend `evaluarEquipos()`: la fracción y CN ya dan el cuadro correcto si el ΔI enviado es el del segmento correcto
+
+---
+
+## 19. VCC — Mejoras de UX e interfaz (sesión 2026-06-24)
+
+### 19.1 Reporte HTML descargable — secciones colapsables
+
+**Archivos:** `codigo_php/src/Reportes.php`
+
+Antes, `_repSeccionVccHtml` y `_repSeccionReceptorHtml` retornaban `<section>` planas, no colapsables. Se convirtieron a `<details open>` / `<details>` con `<summary class="vcc-esc-sum">`:
+
+- **Escenario 1 y 2**: `<details open>` — abiertos al cargar, con `▼/▶` rotatorio
+- **Receptor**: `<details>` sin `open` — cerrado por defecto (color ámbar: `.vcc-receptor-sum`)
+- CSS agregado: `.vcc-esc-sum`, `.vcc-receptor-sum`, `details[open]>.vcc-esc-sum::before`
+
+El receptor parte cerrado intencionalmente porque es información secundaria respecto a los escenarios del alimentador principal.
+
+### 19.2 Reporte HTML — inclusión del análisis del receptor
+
+**Archivos:** `codigo_php/src/Reportes.php`, `codigo_php/templates/index.html`
+
+- `vccGuardar` y `vccDescargarHTML` ahora envían `analisis_destino: r.analisis_destino || null`
+- `generarReporteVcc` extrae `$analisisDest = $body['analisis_destino'] ?? null` y llama `_repSeccionReceptorHtml($analisisDest)` entre Escenario 1 y Escenario 2
+- El receptor se muestra una sola vez (no por escenario) porque el análisis B no varía entre kVA empalme e instalado
+- `_repTablaMensualVcc` acepta 5° parámetro `$labelDelta = 'ΔI cliente (A)'`; las tablas del receptor usan `'ΔI traspaso (A)'`
+- Evaluaciones del historial (`hvccDescargar`) heredan el receptor automáticamente porque `guardarEvaluacion` persiste el body completo
+
+### 19.3 UI — Sector receptor agrupado bajo un `<details>` padre
+
+**Archivos:** `codigo_php/templates/index.html`
+
+Los 3 sub-bloques del receptor (equipos, detalle mensual, trafo) estaban como `<details>` independientes dentro de cada escenario. Se agruparon bajo un `<details>` padre por escenario:
+
+```
+#vcc-det-receptor-group-emp   ← padre colapsable "Alimentador receptor — NOM"
+  #vcc-det-receptor-emp       ← Equipos (sub-bloque)
+  #vcc-det-alim-receptor-emp  ← Detalle mensual (sub-bloque)
+  #vcc-det-trafo-receptor-emp ← Trafo (sub-bloque, si hay datos)
+```
+
+`_vccRenderReceptorEnEscenario(suffix, dest)` ahora muestra/oculta el grupo padre (`#vcc-det-receptor-group-{suffix}`) además de los hijos individuales. El título del grupo se rellena con `dest.nom_alim`.
+
+### 19.4 UI — Jerarquía visual por indentación
+
+**Archivos:** `codigo_php/templates/index.html` (bloque `<style>`)
+
+Dos reglas CSS para crear dos niveles visuales en los resultados VCC:
+
+```css
+.bloque-summary { padding-left: .75rem; }
+.bloque-body    { padding-left: .75rem; }
+```
+
+Efecto acumulativo:
+- **Nivel 1** (Equipos Aguas Arriba, Alimentador, Trafo, Alimentador receptor): `0.75rem`
+- **Nivel 2** (sub-ítems del receptor): `0.75rem` (bloque-body del padre) + `0.75rem` (su propio summary) = `1.5rem`
+
+### 19.5 UX — Scroll automático al evaluar VCC
+
+**Archivos:** `codigo_php/templates/index.html`
+
+Al terminar `vccEvaluar()`, se ejecuta:
+
+```js
+document.getElementById("vcc-resultados")?.scrollIntoView({ behavior: "smooth", block: "start" });
+```
+
+El scroll es suave (`smooth`) y apunta al inicio de `#vcc-resultados`.
+
+### 19.6 UI — Orden de pestañas
+
+La pestaña **Configuración** se movió al último lugar para no interrumpir el flujo de trabajo principal:
+
+`Nuevo Traspaso → Alimentadores en Comisionamiento → VCC → Historial VCC → Configuración`
