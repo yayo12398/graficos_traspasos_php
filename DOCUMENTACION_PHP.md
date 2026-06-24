@@ -38,9 +38,14 @@ graficos_traspasos/
 │   ├── ajustes.py              → src/Ajustes.php
 │   ├── reportes.py             → src/Reportes.php
 │   └── matching.py             → src/Matching.php (solo _slug())
+├── src/ (solo PHP — sin equivalente Python)
+│   ├── EquiposConfig.php       → Config persistente por NUMPOS (corriente, tipo, HDLB, notas)
+│   └── AlimentadoresConfig.php → Config persistente por alimentador (conductores intermedios)
 ├── data/
 │   ├── cache/                  → data/cache/ (archivos PKL → JSON serializado)
-│   └── ajustes_demanda.json    → data/ajustes_demanda.json (sin cambios)
+│   ├── ajustes_demanda.json    → data/ajustes_demanda.json (sin cambios)
+│   ├── equipos_config.json     → Fichas de equipos (se crea al guardar primera ficha)
+│   └── alimentadores_config.json → Conductores intermedios por alimentador (se crea al guardar)
 ├── feeders_nuevos/             → feeders_nuevos/ (sin cambios, JSON)
 ├── vcc_evaluaciones/           → vcc_evaluaciones/ (sin cambios, JSON)
 └── resultados/                 → ELIMINADO (reportes se sirven como descarga directa vía tempnam)
@@ -545,33 +550,63 @@ function deltaICliente(float $kva, float $tensionKv): float {
 }
 ```
 
-### 6.2 `calcular_vcc` con traspaso simultáneo
+### 6.2 `calcularVcc` con traspaso simultáneo
+
+El alimentador recibe reducción porcentual o absoluta. El trafo AT/MT recibe una reducción
+**basada en la demanda del feeder**, no del propio trafo (el trafo puede alimentar otros feeders
+además del analizado, por lo que su reducción viene del feeder que transfiere, no del propio AT).
 
 ```php
 function calcularVcc(array $dfAlim, int $numalim, ?array $trafoRow,
                      float $deltaI, array $mesesFiltro,
                      float $deltaTraspasoA = 0.0, float $deltaTraspasoPct = 0.0): array {
-    $alimRow = $dfAlim[$numalim] ?? null;
-    if (!$alimRow) throw new RuntimeException("NUMALIM $numalim no encontrado");
 
-    // Aplicar alivio traspaso a la serie del alim
+    $alimRow     = $dfAlim[$numalim];
+    $alimRowOrig = $alimRow;  // guardar antes de modificar (PHP copia por valor)
+
+    // Reducir serie del alim: esto sí aplica el % sobre los propios valores del feeder
     if ($deltaTraspasoPct > 0 || $deltaTraspasoA > 0) {
         $factor = $deltaTraspasoPct > 0 ? (1.0 - $deltaTraspasoPct / 100.0) : null;
         foreach ($alimRow as $col => $v) {
-            if (preg_match('/^\d{4}-\d{2}$/', $col) && $v !== null) {
+            if (preg_match('/^\d{4}-\d{2}$/', $col) && $v !== null)
                 $alimRow[$col] = $factor !== null
                     ? max(0.0, (float)$v * $factor)
                     : max(0.0, (float)$v - $deltaTraspasoA);
-            }
         }
     }
-
     $alimResult = analizarTrafo($alimRow, $deltaI, 'carga', $mesesFiltro);
+
     $trafoResult = null;
     if ($trafoRow) {
-        $trafoResult = analizarTrafo($trafoRow, $deltaI, 'carga', $mesesFiltro);
-        $trafoResult['barra']       = trim($trafoRow['barra'] ?? '');
+        $trafoRowAdj = $trafoRow;
+        // Reducción del trafo = la que aporta el feeder (no % del propio trafo).
+        // trafoAdj[mes] = trafoOrig[mes] - feederOrig[mes] × p_pct
+        if ($deltaTraspasoPct > 0 || $deltaTraspasoA > 0) {
+            foreach ($trafoRowAdj as $col => $val) {
+                if (!preg_match('/^\d{4}-\d{2}$/', $col) || !is_numeric($val)) continue;
+                $feederOrig = $alimRowOrig[$col] ?? null;
+                if (!is_numeric($feederOrig)) continue;
+                $reduc = $deltaTraspasoPct > 0
+                    ? (float)$feederOrig * ($deltaTraspasoPct / 100.0)
+                    : $deltaTraspasoA;
+                $trafoRowAdj[$col] = max(0.0, (float)$val - $reduc);
+            }
+        }
+        $trafoResult = analizarTrafo($trafoRowAdj, $deltaI, 'carga', $mesesFiltro);
+        // Enriquecer filas con I_antes_orig e I_traspasada para el display JS
+        // (iSQL() no puede reconstruir la reducción feeder-based con simple %)
+        if ($deltaTraspasoPct > 0 || $deltaTraspasoA > 0) {
+            foreach ($trafoResult['tabla'] as &$row) {
+                $mes  = $row['mes'];
+                $orig = is_numeric($trafoRow[$mes] ?? null) ? round((float)$trafoRow[$mes], 1) : null;
+                $row['I_antes_orig'] = $orig;
+                $row['I_traspasada'] = ($orig !== null && $row['I_antes'] !== null)
+                    ? round((float)$row['I_antes'] - $orig, 1) : null;
+            }
+            unset($row);
+        }
         $trafoResult['subestacion'] = trim($trafoRow['subestacion'] ?? '');
+        $trafoResult['barra']       = trim($trafoRow['barra'] ?? '');
     }
     return [
         'tabla_alim'   => $alimResult['tabla'],
@@ -584,82 +619,93 @@ function calcularVcc(array $dfAlim, int $numalim, ?array $trafoRow,
 }
 ```
 
-### 6.3 `evaluar_equipos` (Enfoques A y B)
+**JS (`vccTablaFU`):** cuando `r.I_antes_orig != null` lo usa directamente en vez de `iSQL(r.I_antes)`.
+Igual para `r.I_traspasada`. Esto evita el error de reconstrucción `I_adj / (1−p%)` que asume
+una reducción porcentual sobre los propios valores del trafo.
+
+### 6.3 `evaluarEquipos` (Enfoques A y B) — alivio absoluto
+
+**Principio clave:** la isla transferida fluía íntegra por TODOS los equipos upstream del equipo_abre,
+independientemente de su `fraccion`. La reducción se resta en valor absoluto, no proporcional a fraccion.
+
+```
+❌ Antes (incorrecto): I_reco = I_alim_reducida × fraccion = I_alim × (1−p%) × fraccion
+✓  Ahora (correcto):  I_reco = I_alim_orig × fraccion − I_isla[mes]
+                              = I_alim_orig × (fraccion − p%)
+```
+
+Para fraccion=0.461, p%=17.8%, peor mes I_alim=363.5 A:
+- Incorrecto: `363.5 × 0.822 × 0.461 = 137.6 A` (alivio ▼29.8 A)
+- Correcto:   `363.5 × (0.461 − 0.178) = 102.9 A` (alivio ▼64.7 A = header)
+
+**Firma actual:**
 
 ```php
-function evaluarEquipos(array $equipos, float $deltaI,
-                        ?float $cnAlim, array $serieAlim, array $mesesFiltro): array {
-    $ordenEstado = ['critico'=>2,'prealerta'=>1,'viable'=>0,'sin_cn'=>-1];
+function evaluarEquipos(
+    array  $equipos,
+    float  $deltaI,
+    ?float $cnAlim      = null,   // CN original del alim
+    ?array $serieAlim   = null,   // serie ORIGINAL (sin reducir)
+    ?array $mesesFiltro = null,
+    ?array $serieAlivio = null,   // [mes => ΔI_isla [A]] — se resta directo por mes
+    ?float $alivioA_abs = null,   // reducción para Enfoque A (CN × p% o ΔA fijo)
+): array
+```
 
-    function clasif(float $pct): string {
-        if ($pct >= 100) return 'critico';
-        if ($pct >= 90)  return 'prealerta';
-        return 'viable';
-    }
-
-    $result = [];
-    foreach ($equipos as $eq) {
-        $cn      = isset($eq['cn']) && $eq['cn'] > 0 ? (float)$eq['cn'] : null;
-        $fraccion = isset($eq['fraccion']) ? (float)$eq['fraccion'] : null;
-        $ent     = array_merge($eq, ['delta_I' => $deltaI]);
-
-        if (!$cn) {
-            $ent += ['delta_pct'=>null,'estado'=>'sin_cn','enfoque_a'=>null,'enfoque_b'=>null];
-            $result[] = $ent;
-            continue;
-        }
-
-        $enf_a = null;
-        if ($fraccion !== null && $cnAlim && $cnAlim > 0) {
-            $IbaseA  = $cnAlim * $fraccion;
-            $ItotalA = $IbaseA + $deltaI;
-            $pctA    = round($ItotalA / $cn * 100, 1);
-            $enf_a   = ['I_base'=>round($IbaseA,2),'I_total'=>round($ItotalA,2),
-                        'pct'=>$pctA,'estado'=>clasif($pctA)];
-        }
-
-        $enf_b = null;
-        if ($fraccion !== null && $serieAlim) {
-            $meses = $mesesFiltro ?: array_keys($serieAlim);
-            $serieReco = [];
-            foreach ($meses as $mes) {
-                $v = $serieAlim[$mes] ?? null;
-                if ($v !== null && is_finite((float)$v))
-                    $serieReco[$mes] = round((float)$v * $fraccion, 2);
-            }
-            if ($serieReco) {
-                $mesMaxB  = array_keys($serieReco, max($serieReco))[0];
-                $IbaseB   = $serieReco[$mesMaxB];
-                $ItotalB  = round($IbaseB + $deltaI, 2);
-                $pctB     = round($ItotalB / $cn * 100, 1);
-                $serieDet = [];
-                foreach (array_keys($serieReco) as $m) {
-                    $iR = $serieReco[$m];
-                    $iT = round($iR + $deltaI, 2);
-                    $p  = round($iT / $cn * 100, 1);
-                    $serieDet[] = ['mes'=>$m,'I_reco'=>$iR,'I_total'=>$iT,'pct'=>$p,'estado'=>clasif($p)];
-                }
-                $enf_b = ['I_base_max'=>$IbaseB,'mes_max'=>$mesMaxB,'I_total'=>$ItotalB,
-                          'pct'=>$pctB,'estado'=>clasif($pctB),'serie'=>$serieDet];
-            }
-        }
-        $ent['enfoque_a'] = $enf_a;
-        $ent['enfoque_b'] = $enf_b;
-
-        if ($fraccion !== null) {
-            $estados = array_filter([$enf_a['estado'] ?? null, $enf_b['estado'] ?? null]);
-            usort($estados, fn($a,$b) => ($ordenEstado[$b]??-1) - ($ordenEstado[$a]??-1));
-            $ent['estado']    = $estados[0] ?? 'sin_cn';
-            $ent['delta_pct'] = ($enf_a ?? $enf_b)['pct'] ?? null;
-        } else {
-            $pLeg = round($deltaI / $cn * 100, 1);
-            $ent['delta_pct'] = $pLeg;
-            $ent['estado']    = clasif($pLeg);
-        }
-        $result[] = $ent;
-    }
-    return $result;
+En el caller (`/api/vcc/evaluar`):
+```php
+// Modo %: serieAlivio[mes] = I_alim[mes] × p%  — varía con la demanda mensual
+// Modo ΔA: serieAlivio[mes] = ΔA constante
+$serieAlivio = [];
+foreach ($serieAlim['serie'] as $mes => $val) {
+    $serieAlivio[$mes] = is_numeric($val)
+        ? round((float)$val * ($dtPct / 100.0), 2) : 0.0;
 }
+$alivioA_abs = $cnAlim * ($dtPct / 100.0);  // CN × p%
+
+// Se pasa la serie ORIGINAL (sin reducir) — la función resta el alivio internamente
+$equipos = evaluarEquipos($upstream, $deltaI, $cnAlim, $serieAlim['serie'],
+                          $mesesSel ?: null, $serieAlivio, $alivioA_abs);
+```
+
+**Display de alivio (JS):**
+- Enfoque A: `▼ 80.1 A (CN)` → reducción calculada sobre CN máx (CN × p%)
+- Enfoque B: `▼ 64.7 A (real)` → reducción sobre demanda real del peor mes
+- Tooltip: muestra valor sin traspaso → con traspaso explícitamente
+- Los valores difieren porque Enfoque A usa CN=450 A como base mientras B usa demanda histórica=363.5 A
+
+```php
+// Enfoque A: I_base = max(0, CN × fraccion − alivioA_abs)
+$iBaseA = max(0.0, $cnAlim * $fraccion - $alivioA_abs);
+// I_alivio_A = negativo (CN × p%), igual para todos los equipos upstream
+
+// Enfoque B: I_reco[mes] = max(0, I_alim[mes] × fraccion − serieAlivio[mes])
+$serieReco[$mes] = max(0.0, $vf * $fraccion - ($serieAlivio[$mes] ?? 0.0));
+// I_alivio_B = negativo, ≈ −I_alim_peor × p% = −alivio_header
+```
+
+**Resultado `enfoque_a` / `enfoque_b` por equipo:**
+```json
+{
+  "I_base": 127.2,
+  "I_total": 151.3,
+  "pct": 50.4,
+  "estado": "viable",
+  "I_alivio": -80.1
+}
+```
+
+**Resultado filas `tabla_trafo` cuando hay traspaso:**
+```json
+{ "mes": "2025-06", "I_antes": 607.4, "I_despues": 631.4,
+  "I_antes_orig": 672.0, "I_traspasada": -64.6, ... }
+```
+
+**Estado anterior (reemplazado):**
+
+```php
+// OBSOLETO — no usar
+// $serieReco[$mes] = round((float)$v * $fraccion, 2);  // ← no restaba la isla
 ```
 
 ---
@@ -803,6 +849,88 @@ class Ajustes {
         }
     }
 }
+```
+
+### 7.4 Fichas de equipos (`EquiposConfig.php`)
+
+**Archivo:** `data/equipos_config.json` (se crea automáticamente al guardar la primera ficha)
+
+**Estructura:**
+```json
+{
+  "REC102921": {
+    "corriente_a": 300,
+    "tipo_limite": "setpoint",
+    "corriente_conductor_a": null,
+    "es_hdlb": null,
+    "notas": "Reconectador troncal, bajada ABB",
+    "fecha_registro": "2026-06-23",
+    "historial": [
+      { "fecha": "2026-06-20", "valor_anterior": 280, "valor_nuevo": 300, "notas": "Ajuste firmware" }
+    ]
+  },
+  "PPF76085": {
+    "corriente_a": 200,
+    "tipo_limite": "fusible",
+    "corriente_conductor_a": 280,
+    "es_hdlb": true,
+    "notas": "",
+    "fecha_registro": "2026-06-23",
+    "historial": []
+  }
+}
+```
+
+**Campos:**
+- `corriente_a` — corriente límite en A (setpoint, fusible, o cable); el valor que bloquea VCC si se supera
+- `tipo_limite` — `"setpoint"` | `"conductor"` | `"fusible"`
+- `corriente_conductor_a` — solo para fusibles: corriente del conductor aguas abajo
+- `es_hdlb` — solo para PPF: `true` (HDLB confirma) / `false` (no HDLB) / `null` (sin ficha)
+- `historial` — cambios anteriores de `corriente_a`, con fecha y nota de motivo
+
+**Funciones PHP (`src/EquiposConfig.php`):**
+```php
+ecGetTodos(): array               // retorna todo el JSON
+ecGetEquipo(string $numpos): ?array
+ecSetEquipo(string $numpos, array $body): array   // crea o actualiza, maneja historial
+ecDeleteEquipo(string $numpos): void
+```
+
+---
+
+### 7.5 Configuración de alimentadores (`AlimentadoresConfig.php`)
+
+**Archivo:** `data/alimentadores_config.json` (se crea al guardar desde VCC)
+
+**Estructura:**
+```json
+{
+  "NOM73123": {
+    "conductores_intermedios": [
+      {
+        "entre_a": "CLB101976",
+        "entre_b": "REC102921",
+        "corriente_a": 150,
+        "fecha_registro": "2026-06-23"
+      }
+    ]
+  }
+}
+```
+
+**Semántica:**
+- `entre_a` — equipo aguas abajo (más alejado de la SE)
+- `entre_b` — equipo aguas arriba (más cercano a la SE)
+- El conductor existe entre estos dos equipos en el troncal
+- `corriente_a` — corriente límite del tramo de conductor
+- La fraccion usada en el cálculo se hereda del equipo `entre_b` (conservador: captura toda la carga que pasa por ese punto)
+
+**Funciones PHP (`src/AlimentadoresConfig.php`):**
+```php
+acGetTodos(): array
+acGetAlim(string $nom): ?array
+acSetAlim(string $nom, array $body): array   // reemplaza lista completa de conductores_intermedios
+acDeleteAlim(string $nom): void
 ```
 
 ---
@@ -1098,6 +1226,51 @@ Lista todos los ajustes activos enriquecidos con nombre y valor SQL.
 ### POST /api/vcc/descargar_html
 **Body:** Datos de la evaluación VCC
 **Respuesta:** Archivo HTML adjunto
+
+### GET /api/equipos/config
+**Respuesta:** Objeto con todas las fichas guardadas `{ "REC102921": {...}, ... }`
+
+### GET /api/equipos/config/{numpos}
+**Respuesta:** Entrada de la ficha, o `{error: "not found"}` si no existe
+
+### POST /api/equipos/config/{numpos}
+**Body:**
+```json
+{
+  "corriente_a": 300,
+  "tipo_limite": "setpoint",
+  "corriente_conductor_a": null,
+  "es_hdlb": null,
+  "notas": "Texto libre",
+  "notas_historial": "Motivo del cambio"
+}
+```
+**Respuesta:** `{ "ok": true, "entry": { ...ficha actualizada... } }`
+
+Nota: si ya existe `corriente_a` y el nuevo valor difiere, se agrega entrada a `historial` automáticamente.
+
+### DELETE /api/equipos/config/{numpos}
+**Respuesta:** `{ "ok": true }`
+
+### GET /api/alimentadores/config
+**Respuesta:** Objeto con todos los alimentadores configurados `{ "NOM73123": {...}, ... }`
+
+### GET /api/alimentadores/config/{nom_alim}
+**Respuesta:** Config del alimentador o `null` si no existe
+
+### POST /api/alimentadores/config/{nom_alim}
+**Body:**
+```json
+{
+  "conductores_intermedios": [
+    { "entre_a": "CLB101976", "entre_b": "REC102921", "corriente_a": 150 }
+  ]
+}
+```
+**Respuesta:** `{ ...config guardada... }` (reemplaza lista completa)
+
+### DELETE /api/alimentadores/config/{nom_alim}
+**Respuesta:** `{ "ok": true }`
 
 ---
 
@@ -1443,3 +1616,234 @@ Registro de divergencias Python→PHP encontradas y corregidas en revisión post
 | # | Archivo | Descripción | Fix aplicado |
 |---|---------|-------------|--------------|
 | 22 | index.php | Reportes se guardaban en `resultados/` del servidor | `tempnam()` + `readfile()` + `unlink()` — sin copia permanente |
+
+### VCC — sesión 2026-06-23
+
+| # | Archivo | Descripción | Fix aplicado |
+|---|---------|-------------|--------------|
+| 23 | Vcc.php | `buscarPuntoConexion` fallaba en NUMPOS numéricos | `array_keys($tdsViaEq)` retorna int para keys numéricas; forzado `(string)$tdKey` |
+| 24 | Reportes.php | `conductor_intermedio` no aparecía en tabla de equipos del reporte | Agregado `'conductor_intermedio'=>'Conductor'` a `$tipoMap` en `_repTablaEquiposHtml()` |
+| 25 | Reportes.php | Nombre raw `Conductor(→REC102921)` en reporte en vez de `tramo →REC102921` | Formateo condicional por tipo en ambas variantes de tabla (legacy y dos-enfoque) |
+
+---
+
+## 17. VCC — Tabla Unificada y Cuellos de Botella (sesión 2026-06-23)
+
+### 17.1 Contexto y motivación
+
+La implementación original de VCC tenía dos secciones separadas:
+- **Parte 1**: tabla de solo lectura con equipos upstream (fracción, kVA, tipo)
+- **Parte 2**: inputs de corriente nominal (CN) por equipo
+
+Se unificaron en una sola tabla interactiva. Adicionalmente se agregó soporte para modelar **cuellos de botella** (tramos de conductor con capacidad limitada) entre equipos específicos del troncal, con persistencia por alimentador.
+
+---
+
+### 17.2 Tabla unificada en el paso 4 de VCC
+
+**Columnas:** Tipo | NUMPOS | Fracc. | kVA↓ | CN (A) | ⚙
+
+- La columna **Fracc.** es la fracción del alimentador que pasa por ese equipo (descendente = más cercano a SE tiene fracción mayor).
+- **CN** viene pre-llenado desde `equipos_config.json` si hay ficha guardada; es editable.
+- **⚙** abre el modal de ficha del equipo (corriente, tipo, HDLB, notas, historial).
+- **PPF en troncal**: muestra badge `HDLB`, `No HDLB` o `⚠ ¿HDLB?` según ficha. PPF en arranques (fuera del troncal) no aparecen.
+- Equipos ordenados por fracción descendente (más upstream primero).
+
+**Entre cada par de equipos consecutivos** aparece un botón `+ conductor` oculto que se activa al hover. Al hacer clic inserta una fila de conductor intermedio con:
+- Input de corriente límite (A)
+- Botón `×` para eliminar
+- Fracción heredada del equipo upstream (valor más alto = conservador)
+
+**Botón "Guardar configuración del alimentador"** → `POST /api/alimentadores/config/{nom_alim}` con todos los conductores actuales.
+
+Al seleccionar un alimentador que ya tiene config guardada, los conductores se pre-insertan automáticamente en sus posiciones.
+
+---
+
+### 17.3 Conductores intermedios como elementos de cuello de botella
+
+Un conductor intermedio se trata **exactamente igual que un equipo con CN** en el cálculo:
+
+```
+tipo = "conductor_intermedio"
+nombre = "Conductor(→{entre_b})"     ← nombre interno
+fraccion = fraccion del equipo entre_b (upstream)
+cn = corriente_a ingresada por el usuario
+```
+
+- `evaluarEquipos()` lo procesa sin distinción de tipo.
+- Enfoque A y Enfoque B se calculan normalmente.
+- Si `margen < 0` (sobrepasa CN del conductor) → **bloquea aprobación** igual que un reconectador.
+- En la tabla de resultados del reporte: se muestra como `tramo →{entre_b}` en vez del nombre raw.
+
+**Lógica de fracción conservadora:** el conductor entre `CLB101976` (aguas abajo) y `REC102921` (aguas arriba) transporta toda la carga que pasa por `REC102921`, incluyendo posibles arranques intermedios. Usar la fracción de `REC102921` (mayor) asegura que no se subestime la carga real sobre el conductor.
+
+---
+
+### 17.4 Modal de ficha de equipo (`modalFichaEquipo`)
+
+El modal existente se extendió para soportar creación de nuevas fichas desde el tab Configuración:
+
+- **Modo edición** (desde VCC o desde tabla global): `fichaAbrirModal(numpos)` — pre-llena campos desde `state.equiposConfig[numpos]`.
+- **Modo nueva ficha** (desde botón "+ Nueva ficha"): `fichaAbrirModal('', callback)` — muestra campo NUMPOS editable en el modal.
+- **Callback opcional**: al guardar/eliminar, si se pasó `callback` se llama en vez de refrescar la tabla VCC. Permite que el modal funcione desde VCC y desde el tab Configuración sin duplicar código.
+
+```js
+// Desde VCC (comportamiento original):
+fichaAbrirModal("REC102921");
+
+// Desde tab Configuración (refrescar tabla global):
+fichaAbrirModal("REC102921", cargarEquiposGlobal);
+
+// Nueva ficha desde tab Configuración:
+fichaAbrirModal("", cargarEquiposGlobal);
+```
+
+---
+
+### 17.5 Tab Configuración global
+
+El tab "Ajustes de Demanda" fue reemplazado por "Configuración" con tres pills internos:
+
+#### Pill: Equipos
+Tabla CRUD de todas las fichas en `equipos_config.json`:
+- Columnas: NUMPOS | Tipo | CN (A) | HDLB | Notas | Fecha | Acciones
+- Buscador por NUMPOS (filtro local, sin request al servidor)
+- ⚙ edita con el modal de ficha (callback → `cargarEquiposGlobal()`)
+- ✕ elimina con confirmación (`DELETE /api/equipos/config/{numpos}`)
+- "Nueva ficha" abre modal en modo creación
+
+#### Pill: Alimentadores
+Tabla expandible de todos los alimentadores con config guardada:
+- Fila principal: NOM_ALIM + conteo de conductores
+- Click expande → sub-tabla con conductores (desde / hasta / CN / fecha / ✕)
+- ✕ en conductor: elimina ese conductor (fetch GET → modifica lista → POST)
+- ✕ en fila principal: elimina toda la config del alimentador (`DELETE /api/alimentadores/config/{nom_alim}`)
+- Lectura: la config se agrega desde VCC; desde aquí solo se revisa y elimina
+
+#### Pill: Ajustes de Demanda
+Mismo contenido que tenía el tab "Ajustes de Demanda" anteriormente, sin cambios funcionales.
+
+---
+
+### 17.6 Flujo completo de una evaluación con conductores
+
+1. Usuario selecciona alimentador en VCC → `cargarConfigAlim(nom)` precarga conductores guardados
+2. La tabla upstream muestra equipos ordenados + conductores pre-insertados en posición
+3. Usuario revisa/completa CNs de equipos y conductores
+4. Usuario puede agregar más conductores con `+` entre filas
+5. Click "Guardar configuración del alimentador" → `POST /api/alimentadores/config/{nom}` con todos los conductores
+6. Click "Evaluar" → `vccLeerCNsEquipos()` lee todos los `tr.vcc-eq-row` y `tr.vcc-cond-row`
+7. Body enviado a `/api/vcc/evaluar` incluye conductores como equipos con `tipo: "conductor_intermedio"`
+8. PHP `evaluarEquipos()` calcula Enfoque A y B para todos los elementos
+9. Frontend muestra tabla de resultados con conductores integrados como `tramo →{equipo}`
+10. Si algún conductor tiene margen < 0 → estado `critico` → botón Aprobar bloqueado
+
+---
+
+---
+
+## 18. VCC — Evaluación del alimentador receptor en traspaso simultáneo (sesión 2026-06-23 tarde)
+
+### 18.1 Contexto
+
+Cuando se configura un **Traspaso simultáneo** en modo **Topología** (Paso 6 de VCC), el alimentador receptor (alim B) recibe la carga de la isla que se libera. Esta sección describe cómo se configura el receptor y cómo aparecen sus resultados dentro del flujo VCC.
+
+---
+
+### 18.2 Panel de configuración del receptor (UI)
+
+Al seleccionar el alimentador receptor en `#vcc-traspaso-alim-dest`, el hook `vccTraspasoDestinoChange()` llama a `vccCargarEquiposB(nomAlimB, equiposTroncalB)` que:
+
+1. Hace `POST /api/alim/troncal_enriquecido` con los nombres de equipos troncales y el `nom_alim` del receptor → responde con equipos enriquecidos (fracción, kVA↓, tipo)
+2. Hace `GET /api/alimentadores/config/{nomAlimB}` para cargar conductores intermedios guardados
+3. Renderiza `#vcc-panel-equipos-b` con la misma tabla que el paso 4 principal:
+   - Columnas: Tipo | NUMPOS | Fracc. | kVA↓ | CN (A) | ⚙
+   - Botones `+ conductor` entre equipos consecutivos
+   - Botón **"Guardar configuración receptor"** → `POST /api/alimentadores/config/{nomAlimB}`
+4. El panel se limpia automáticamente al cambiar el equipo que abre o desactivar el modo Topología
+
+Los conductores del receptor se guardan en `alimentadores_config.json` usando el `nom_alim` del receptor como clave — misma estructura que los conductores del alimentador principal.
+
+---
+
+### 18.3 Lectura de CNs al evaluar
+
+En `vccGetTraspasoParams()`, cuando el modo es `topo`, `equipos_troncal_b` ya no es la lista cruda de nombres sino el resultado de `vccLeerCNsEquiposB()`, que retorna un array de objetos estructurados:
+
+```js
+[
+  { nombre: "REC12345", tipo: "reconectador", fraccion: 0.82, cn: 150 },
+  { tipo: "conductor_intermedio", entre_b: "REC12345", entre_a: "CLB99001", fraccion: 0.82, cn: 120 },
+  { nombre: "CLB99001", tipo: "equipo_sub", fraccion: 0.45, cn: null },
+]
+```
+
+Si el panel no está visible, retorna `state.vccEquiposTroncalB` (lista de strings, compatibilidad legado).
+
+---
+
+### 18.4 Backend — normalización de `equipos_troncal_b`
+
+El endpoint Python-alias (`POST /api/simular` ← VCC flow) acepta `equipos_troncal_b` en **dos formatos**:
+
+- **Legado** (lista de strings): `["REC12345", "CLB99001"]` — CN se lee desde `equipos_config.json`
+- **Nuevo** (lista de objetos): array con `nombre`, `tipo`, `cn`, `fraccion`; conductores con `tipo: "conductor_intermedio"` y `entre_b`, `entre_a`
+
+El backend normaliza automáticamente:
+```php
+foreach ($eqTroncalB as $item) {
+    if (is_string($item))          → $eqNombresB[]     (CN desde ecGetEquipo)
+    elseif tipo == "conductor_intermedio" → $eqCondsB[]
+    else                           → $eqNombresB[] + $eqCNsFromReq[$nombre] si hay cn
+}
+```
+
+**Prioridad de CN:** CN del request (usuario) > `equipos_config.json`.
+
+Los conductores intermedios del receptor se envían a `evaluarEquipos()` con `fraccion` desde el request.
+
+---
+
+### 18.5 Resultados dentro de cada escenario
+
+Los resultados del receptor aparecen **dentro de Escenario 1 y Escenario 2**, no como sección aparte. Cada escenario tiene tres bloques colapsables del receptor (color naranja `#f5a623`):
+
+| ID (sufijo `-emp` / `-inst`) | Contenido |
+|---|---|
+| `vcc-det-receptor-{s}` | Tabla de equipos troncales del receptor (misma función `vccTablaEquipos`) |
+| `vcc-det-alim-receptor-{s}` | FU mensual del alimentador receptor (`vccTablaFU` con `labelDelta: "ΔI traspaso (A)"`) |
+| `vcc-det-trafo-receptor-{s}` | FU mensual del trafo AT/MT del receptor (si existe) |
+
+El helper `_vccRenderReceptorEnEscenario(suffix, dest)` encapsula el rendering para evitar duplicación.
+
+#### Label personalizado en `vccTablaFU`
+
+La función `vccTablaFU(tabla, vccResult, opts = {})` acepta un tercer parámetro `opts`:
+- `opts.labelDelta`: reemplaza el label de la fila delta (default: `"ΔI cliente (A)"`). Para el receptor se usa `"ΔI traspaso (A)"`.
+
+---
+
+### 18.6 Flujo completo del traspaso en VCC (modo Topología)
+
+1. Paso 6 → modo Topología → selecciona equipo que abre (`vccTraspasoAbreChange`)
+2. Aparece selector de alimentador receptor con destinos viables (por LZ)
+3. Al seleccionar alim B → `vccTraspasoDestinoChange` → resultado de isla + **panel equipos B**
+4. Usuario revisa/completa CNs del receptor; opcionalmente agrega conductores intermedios y guarda
+5. Click "Evaluar VCC" → body incluye `equipos_troncal_b: vccLeerCNsEquiposB()`
+6. Backend evalúa alim B con `evaluarEquipos(equiposBEnrich, alivioAPeor, cnB, serieB, meses)` y `calcularVcc` para FU
+7. Resultado en `r.analisis_destino` → `_vccRenderReceptorEnEscenario("emp", dest)` y `("inst", dest)` dentro de cada escenario
+
+### 17.7 Pendiente — Fase 2: Autotransformadores
+
+Los autotransformadores no aparecen en `dfAb` como equipo explícito. Se identifican por tener dos reconectadores flanqueantes con corrientes nominales distintas (expresadas en sus tensiones de red respectivas: 12 kV vs 23 kV). El plan es:
+
+- Identificar el boundary autotrafo en la tabla upstream (usuario marca el REC del lado conexión)
+- Guardar en `alimentadores_config.json` bajo clave `"autotrafos"`:
+  ```json
+  { "rec_lado_conexion": "REC1234", "tension_lado_conexion": 23 }
+  ```
+- Al evaluar, usar ΔI diferenciado por segmento:
+  - Segmento 23 kV: `ΔI = kVA / (√3 × 23)`
+  - Segmento 12 kV: `ΔI = kVA / (√3 × 12)` (mayor; hoy subestimado)
+- Sin cambio en el backend `evaluarEquipos()`: la fracción y CN ya dan el cuadro correcto si el ΔI enviado es el del segmento correcto
