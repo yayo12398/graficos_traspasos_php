@@ -1628,15 +1628,16 @@ function _repSeccionReceptorHtml(array $dest): string {
     }
 
     $nomBH = _h($nomB);
-    return "<section class='vcc-receptor'>"
-        . "<h2>&#x21A9; Alimentador receptor &#8212; $nomBH</h2>"
-        . "<p><strong>&#916;I traspaso:</strong> +" . number_format($deltaI, 2) . " A"
+    $meta = "<p style='margin:6px 0 10px'><strong>&#916;I traspaso:</strong> +" . number_format($deltaI, 2) . " A"
         . " &nbsp;|&nbsp; <strong>CN receptor:</strong> " . number_format($cnB, 0) . " A"
-        . " &nbsp;|&nbsp; <strong>FU peor mes ($mesLbl):</strong> $pctMax</p>"
+        . " &nbsp;|&nbsp; <strong>FU peor mes ($mesLbl):</strong> $pctMax</p>";
+    return "<details class='vcc-receptor'>"
+        . "<summary class='vcc-esc-sum vcc-receptor-sum'>&#x21A9; Alimentador receptor &#8212; $nomBH</summary>"
+        . $meta
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>Alimentador &#8212; $nomBH</summary>$tablaAlimHtml</details>"
         . $trafoSection
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>Equipos aguas arriba ($nEq con CN)</summary>$equiposHtml</details>"
-        . "</section>";
+        . "</details>";
 }
 
 function _repSeccionVccHtml(
@@ -1670,16 +1671,17 @@ function _repSeccionVccHtml(
     $diFmt   = number_format($deltaI, 2);
     $tensFmt = number_format($tension, 0);
     $eqLabel = "Equipos aguas arriba ($nEq con CN)";
-    return "<section class='vcc-escenario'>"
-        . "<h2>$titulo</h2>"
-        . "<p><strong>kVA:</strong> $kvaFmt &nbsp;|&nbsp; <strong>Tensión:</strong> $tensFmt kV"
+    $meta = "<p style='margin:6px 0 10px'><strong>kVA:</strong> $kvaFmt &nbsp;|&nbsp; <strong>Tensión:</strong> $tensFmt kV"
         . " &nbsp;|&nbsp; <strong>ΔI cliente:</strong> $diFmt A"
-        . " &nbsp;|&nbsp; <strong>CN alimentador:</strong> $cnFmt A</p>"
+        . " &nbsp;|&nbsp; <strong>CN alimentador:</strong> $cnFmt A</p>";
+    return "<details open class='vcc-escenario'>"
+        . "<summary class='vcc-esc-sum'>$titulo</summary>"
+        . $meta
         . $traspasHtml
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>Alimentador &#8212; " . _h($nombreAlim) . "</summary>$tablaAlimHtml</details>"
         . $trafoSection
         . "<details open class='vcc-det'><summary class='vcc-det-sum'>$eqLabel</summary>$equiposHtml</details>"
-        . "</section>";
+        . "</details>";
 }
 
 function generarReporteVcc(array $body, string $rutaSalida): string {
@@ -1776,9 +1778,13 @@ function generarReporteVcc(array $body, string $rutaSalida): string {
     .badge-s{background:#e2e3e5;color:#383d41}
     .badge-equipo{background:#0dcaf0;color:#000;border-radius:4px;padding:1px 6px;font-size:.7em}
     .badge-conductor{background:#ffc107;color:#000;border-radius:4px;padding:1px 6px;font-size:.7em}
-    .vcc-escenario{border:1px solid #dee2e6;border-radius:6px;padding:16px;margin-bottom:24px}
-    .vcc-receptor{border:2px solid #f5a623;border-radius:6px;padding:16px;margin-bottom:24px;background:#fffdf5}
-    .vcc-receptor h2{color:#7a4600;margin-top:0}
+    .vcc-escenario{border:1px solid #dee2e6;border-radius:6px;padding:4px 16px 16px;margin-bottom:24px}
+    .vcc-receptor{border:2px solid #f5a623;border-radius:6px;padding:4px 16px 16px;margin-bottom:24px;background:#fffdf5}
+    .vcc-esc-sum{cursor:pointer;font-size:1.05em;font-weight:700;color:#1a3a5c;padding:10px 0 4px;list-style:none;user-select:none;display:block}
+    .vcc-esc-sum::-webkit-details-marker{display:none}
+    .vcc-esc-sum::before{content:"▶ ";font-size:.75em;opacity:.7}
+    details[open]>.vcc-esc-sum::before{content:"▼ "}
+    .vcc-receptor-sum{color:#7a4600}
     .traspaso-vcc{background:#fff8e1;border-left:4px solid #f5a623;padding:7px 12px;margin:8px 0 14px;border-radius:4px;font-size:.88em}
     .vcc-det{margin:8px 0}
     .vcc-det-sum{cursor:pointer;font-weight:600;color:#1a3a5c;font-size:.95em;padding:4px 0;list-style:none;user-select:none}
