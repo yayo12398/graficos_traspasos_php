@@ -738,3 +738,68 @@ function cargarLimiteZona(bool $force = false): array
     error_log("[INFO] limite_zona: $nDisp dispositivos, $nAlim alimentadores. Caché guardada.");
     return $records;
 }
+
+/**
+ * Índice derivado de equipos únicos del sistema (dfAb + LZ).
+ *
+ * Retorna: ['NUMPOS' => ['feeders' => [nom_alim, ...], 'es_lz' => bool], ...]
+ *
+ * TTL: igual que dfAb (7 días). Se construye en el primer llamado y se cachea.
+ * El scan de 285k filas solo ocurre en el primer request (o si la caché expiró).
+ */
+function cargarEquiposIndex(bool $force = false): array
+{
+    $cacheKey = 'equipos_index';
+    if (!$force && _cacheValida($cacheKey, TTL_AB)) {
+        error_log('[INFO] equipos_index: cargando desde caché...');
+        return _cacheCargar($cacheKey);
+    }
+
+    error_log('[INFO] equipos_index: construyendo desde dfAb + LZ...');
+    $dfAb   = cargarAguasAbajo();
+    $lzData = cargarLimiteZona();
+
+    $numalimNom = [];
+    $feedersIdx = [];  // numpos → [nom_alim → true]
+    $esLz       = [];  // numpos → true
+
+    foreach ($dfAb as $row) {
+        $nm  = $row['numalim'] ?? null;
+        $nom = trim($row['nom_alim'] ?? '');
+        if ($nm !== null && $nom !== '' && !isset($numalimNom[(int)$nm])) {
+            $numalimNom[(int)$nm] = $nom;
+        }
+        if (($row['nombre_equip'] ?? '') === 'cabecera') continue;
+        $np = strtoupper(trim($row['numpos_equip'] ?? ''));
+        if ($np === '') continue;
+        if (!isset($feedersIdx[$np])) $feedersIdx[$np] = [];
+        if ($nom !== '') $feedersIdx[$np][$nom] = true;
+    }
+
+    foreach ($lzData as $rec) {
+        $np  = strtoupper(trim($rec['numpos_lz']));
+        $nm  = (int)$rec['numalim'];
+        $nom = $numalimNom[$nm] ?? null;
+        if ($np !== '') {
+            if (!isset($feedersIdx[$np])) $feedersIdx[$np] = [];
+            $esLz[$np] = true;
+            if ($nom) $feedersIdx[$np][$nom] = true;
+        }
+        foreach ($rec['equipos_troncal'] as $et) {
+            $npT = strtoupper(trim($et));
+            if ($npT === '') continue;
+            if (!isset($feedersIdx[$npT])) $feedersIdx[$npT] = [];
+            if ($nom) $feedersIdx[$npT][$nom] = true;
+        }
+    }
+
+    $index = [];
+    foreach ($feedersIdx as $np => $feeders) {
+        $npStr = (string)$np;   // evita que PHP reinterprete claves numéricas como int
+        $index[$npStr] = ['feeders' => array_values(array_map('strval', array_keys($feeders))), 'es_lz' => isset($esLz[$npStr])];
+    }
+
+    _cacheGuardar($cacheKey, $index);
+    error_log('[INFO] equipos_index: ' . count($index) . ' equipos únicos. Caché guardada.');
+    return $index;
+}

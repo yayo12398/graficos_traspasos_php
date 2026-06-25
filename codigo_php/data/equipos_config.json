@@ -7,5 +7,89 @@
         "notas": "",
         "fecha_registro": "2026-06-23",
         "historial": []
+    },
+    "DBC96456": {
+        "corriente_a": 200,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-24",
+        "historial": []
+    },
+    "CLB111483": {
+        "corriente_a": 450,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": [
+            {
+                "fecha": "2026-06-25",
+                "valor_anterior": 400,
+                "valor_nuevo": 450,
+                "notas": ""
+            }
+        ]
+    },
+    "CLB111484": {
+        "corriente_a": 450,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": [
+            {
+                "fecha": "2026-06-25",
+                "valor_anterior": 400,
+                "valor_nuevo": 450,
+                "notas": ""
+            }
+        ]
+    },
+    "DBC111543": {
+        "corriente_a": 450,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": [
+            {
+                "fecha": "2026-06-25",
+                "valor_anterior": 400,
+                "valor_nuevo": 450,
+                "notas": ""
+            }
+        ]
+    },
+    "REC104951": {
+        "corriente_a": 300,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": []
+    },
+    "DBC113488": {
+        "corriente_a": 150,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": []
+    },
+    "ORM78511": {
+        "corriente_a": 300,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-06-25",
+        "historial": []
     }
 }

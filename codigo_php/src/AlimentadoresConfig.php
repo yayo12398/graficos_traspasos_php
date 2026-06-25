@@ -47,6 +47,11 @@ function _acSave(array $data): void
     );
 }
 
+function acGetTodos(): array
+{
+    return _acLoad();
+}
+
 function acGetAlim(string $nom): ?array
 {
     $data = _acLoad();

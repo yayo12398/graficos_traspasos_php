@@ -1,0 +1,28 @@
+{
+    "CAMILA": {
+        "conductores_intermedios": [
+            {
+                "entre_a": "CLB62066",
+                "entre_b": "CLB2051662",
+                "corriente_a": 150,
+                "fecha_registro": "2026-06-23"
+            }
+        ]
+    },
+    "MONASTERIO": {
+        "conductores_intermedios": []
+    },
+    "DELANO": {
+        "conductores_intermedios": []
+    },
+    "LABBE": {
+        "conductores_intermedios": [
+            {
+                "entre_a": "DBC36796",
+                "entre_b": "CLB85904",
+                "corriente_a": 350,
+                "fecha_registro": "2026-06-25"
+            }
+        ]
+    }
+}

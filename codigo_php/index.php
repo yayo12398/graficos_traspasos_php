@@ -565,6 +565,7 @@ if ($method === 'POST' && $a === 'reload' && !$b0) {
     cargarAguasAbajo(true);
     cargarDemandas(true);
     cargarLimiteZona(true);
+    cargarEquiposIndex(true);   // reconstruye índice con datos frescos
     $_G = null; $_LZ = null;
     jsonOk(['message' => 'Caché recargado']);
 }
@@ -1337,6 +1338,67 @@ if ($method === 'DELETE' && $a === 'equipos' && $b0 === 'config' && $b1 && !$b2)
     jsonPy(['ok' => true]);
 }
 
+// ── GET /api/equipos/todos?q=TERM&limit=N ─────────────────────────────────────
+// Sin ?q: devuelve solo equipos configurados (rápido).
+// Con ?q: filtra el índice completo por substring en numpos, máx ?limit (default 100).
+if ($method === 'GET' && $a === 'equipos' && $b0 === 'todos' && !$b1) {
+    $q           = strtoupper(trim($_GET['q'] ?? ''));
+    $limit       = min(500, max(1, (int)($_GET['limit'] ?? 100)));
+    $equipConfig = ecGetTodos();
+
+    $buildEntry = function (string $npStr, array $info, ?array $cfg): array {
+        $uAct = null;
+        if ($cfg) {
+            $uAct = $cfg['fecha_registro'] ?? null;
+            foreach ($cfg['historial'] ?? [] as $h) {
+                if (($h['fecha'] ?? '') > ($uAct ?? '')) $uAct = $h['fecha'];
+            }
+        }
+        return [
+            'numpos'           => $npStr,
+            'feeders'          => $info['feeders'],
+            'es_lz'            => $info['es_lz'],
+            'tiene_config'     => $cfg !== null,
+            'corriente_a'      => $cfg['corriente_a'] ?? null,
+            'tipo_limite'      => $cfg['tipo_limite']  ?? null,
+            'notas'            => $cfg['notas']        ?? null,
+            'fecha_registro'   => $cfg['fecha_registro'] ?? null,
+            'ultima_actividad' => $uAct,
+        ];
+    };
+
+    if ($q === '') {
+        // Solo configurados — no toca el índice completo
+        $index  = cargarEquiposIndex();
+        $result = [];
+        foreach ($equipConfig as $npStr => $cfg) {
+            $info     = $index[$npStr] ?? ['feeders' => [], 'es_lz' => false];
+            $result[] = $buildEntry((string)$npStr, $info, $cfg);
+        }
+        usort($result, function ($a, $b) {
+            $cmp = strcmp((string)($b['ultima_actividad'] ?? ''), (string)($a['ultima_actividad'] ?? ''));
+            return $cmp !== 0 ? $cmp : strcmp((string)$a['numpos'], (string)$b['numpos']);
+        });
+    } else {
+        // Búsqueda: filtra índice completo por substring, primero configurados
+        $index  = cargarEquiposIndex();
+        $result = [];
+        foreach ($index as $np => $info) {
+            $npStr = (string)$np;
+            if (strpos(strtoupper($npStr), $q) === false) continue;
+            $cfg      = $equipConfig[$npStr] ?? null;
+            $result[] = $buildEntry($npStr, $info, $cfg);
+            if (count($result) >= $limit) break;
+        }
+        usort($result, function ($a, $b) {
+            if ($a['tiene_config'] !== $b['tiene_config']) return $b['tiene_config'] <=> $a['tiene_config'];
+            return strcmp((string)$a['numpos'], (string)$b['numpos']);
+        });
+    }
+
+    jsonOk($result);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Alimentadores Config — Configuración persistente por alimentador (nom_alim)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1371,6 +1433,62 @@ if ($method === 'DELETE' && $a === 'alimentadores' && $b0 === 'config' && $b1 &&
     $nom = urldecode($b1);
     acDeleteAlim($nom);
     jsonPy(['ok' => true]);
+}
+
+// ── GET /api/alimentadores/lista ── todos los nom_alim (desde índice cacheado) ─
+if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'lista' && !$b1) {
+    $eqIdx = cargarEquiposIndex();
+    $noms  = [];
+    foreach ($eqIdx as $info) {
+        foreach ($info['feeders'] as $f) $noms[$f] = true;
+    }
+    $noms = array_keys($noms);
+    sort($noms);
+    jsonOk($noms);
+}
+
+// ── GET /api/alimentadores/equipos/{nom_alim}?numalim=N ──────────────────────
+// numalim viene del JS (state.feedersData) para evitar re-escanear dfAb
+if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'equipos' && $b1 && !$b2) {
+    $nomAlim     = urldecode($b1);
+    $numalim     = isset($_GET['numalim']) && is_numeric($_GET['numalim'])
+                    ? (int)$_GET['numalim'] : null;
+    $eqIdx       = cargarEquiposIndex();
+    $equipConfig = ecGetTodos();
+
+    $equipsList = [];
+    foreach ($eqIdx as $np => $info) {
+        if (!in_array($nomAlim, $info['feeders'], true)) continue;
+        $npStr = (string)$np;
+        $cfg   = $equipConfig[$npStr] ?? null;
+        $equipsList[] = [
+            'numpos'         => $npStr,
+            'es_lz'          => $info['es_lz'],
+            'tiene_config'   => $cfg !== null,
+            'corriente_a'    => $cfg['corriente_a']   ?? null,
+            'tipo_limite'    => $cfg['tipo_limite']    ?? null,
+            'notas'          => $cfg['notas']          ?? null,
+            'fecha_registro' => $cfg['fecha_registro'] ?? null,
+        ];
+    }
+
+    usort($equipsList, function ($a, $b) {
+        if ($a['tiene_config'] !== $b['tiene_config']) return $b['tiene_config'] <=> $a['tiene_config'];
+        return strcmp((string)$a['numpos'], (string)$b['numpos']);
+    });
+
+    $condInter      = acGetAlim($nomAlim);
+    $ajustesDemanda = $numalim !== null
+        ? ['alim' => getAjustes('alim', $numalim), 'trafo' => getAjustes('trafo', $numalim)]
+        : ['alim' => [], 'trafo' => []];
+
+    jsonOk([
+        'nom_alim'                => $nomAlim,
+        'numalim'                 => $numalim,
+        'equipos'                 => $equipsList,
+        'conductores_intermedios' => $condInter['conductores_intermedios'] ?? [],
+        'ajustes_demanda'         => $ajustesDemanda,
+    ]);
 }
 
 // ── POST /api/alim/troncal_enriquecido ── equipos troncal de alim B con fracciones

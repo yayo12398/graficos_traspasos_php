@@ -662,7 +662,7 @@
           </div>
           <div class="d-flex gap-2 align-items-center">
             <input type="text" id="cfg-eq-buscar" class="form-control form-control-sm"
-                   style="width:180px" placeholder="Buscar NUMPOS..."
+                   style="width:200px" placeholder="Buscar NUMPOS (≥2 chars)…"
                    oninput="filtrarEquiposGlobal()">
             <button class="btn btn-sm btn-primary" onclick="fichaAbrirModal('', cargarEquiposGlobal)">
               <i class="bi bi-plus-circle me-1"></i>Nueva ficha
@@ -677,16 +677,47 @@
 
       <!-- Sección: Alimentadores -->
       <div id="cfg-alimentadores" class="cfg-section d-none">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h5 class="mb-0 fw-semibold">Configuración de alimentadores</h5>
-            <div class="text-muted small">Conductores intermedios guardados desde VCC.</div>
+        <div class="mb-3">
+          <h5 class="mb-0 fw-semibold">Configuración de alimentadores</h5>
+          <div class="text-muted small">Equipos, cables y conductores intermedios por alimentador.</div>
+        </div>
+
+        <!-- Buscador de alimentador -->
+        <div class="position-relative mb-3" style="max-width:380px">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="cfg-alim-buscar" class="form-control"
+                   placeholder="Buscar alimentador…" autocomplete="off"
+                   oninput="cfgAlimBuscar(this.value)"
+                   onblur="setTimeout(()=>document.getElementById('cfg-alim-dropdown').style.display='none',200)">
           </div>
-          <button class="btn btn-sm btn-outline-secondary" onclick="cargarAlimentadoresConfig()" title="Actualizar">
+          <div id="cfg-alim-dropdown" class="dropdown-menu w-100"
+               style="display:none;max-height:220px;overflow-y:auto;position:absolute;top:100%;left:0;z-index:300"></div>
+        </div>
+
+        <!-- Detalle del alimentador seleccionado -->
+        <div id="cfg-alim-detalle" class="card border-primary mb-4 d-none">
+          <div class="card-header d-flex align-items-center gap-2 py-2 bg-transparent border-primary">
+            <i class="bi bi-diagram-3 text-primary"></i>
+            <span class="fw-semibold font-monospace small" id="cfg-alim-det-nom"></span>
+            <span class="text-muted small ms-1" id="cfg-alim-det-meta"></span>
+            <button class="btn btn-link btn-sm p-0 text-muted ms-auto" onclick="cfgAlimCerrarDetalle()">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <div class="card-body p-2">
+            <div id="cfg-alim-det-contenido"><div class="text-muted small p-2">Cargando…</div></div>
+          </div>
+        </div>
+
+        <!-- Lista de alimentadores con conductores intermedios guardados -->
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small text-muted fw-semibold">Alimentadores con conductores intermedios guardados</span>
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="cargarAlimentadoresConfig()" title="Actualizar">
             <i class="bi bi-arrow-clockwise"></i>
           </button>
         </div>
-        <div id="cfg-alim-contenido"><div class="text-muted small">Cargando...</div></div>
+        <div id="cfg-alim-contenido"><div class="text-muted small">Cargando…</div></div>
       </div>
 
       <!-- Sección: Ajustes de Demanda -->
@@ -6514,77 +6545,119 @@ function cfgMostrar(seccion) {
   if (pill) { pill.classList.remove("btn-outline-secondary"); pill.classList.add("btn-primary"); }
 
   if (seccion === "equipos")       cargarEquiposGlobal();
-  if (seccion === "alimentadores") cargarAlimentadoresConfig();
+  if (seccion === "alimentadores") { cargarAlimentadoresConfig(); _cfgAlimGetNoms(); }
   if (seccion === "ajustes")       cargarAjustesAdmin();
 }
 
-// ── Equipos globales ──────────────────────────────────────────────────────
+// ── Equipos globales (todos los del sistema desde dfAb + LZ) ──────────────
+
+let _cfgEqLista = []; // cache local de la lista completa
 
 async function cargarEquiposGlobal() {
   const cont = document.getElementById("cfg-eq-contenido");
   if (!cont) return;
+  cont.innerHTML = '<div class="text-muted small">'
+    + '<div class="spinner-border spinner-border-sm me-2" role="status"></div>'
+    + 'Cargando…</div>';
   try {
-    const data = await apiFetch("/api/equipos/config");
-    state.equiposConfig = (data && !Array.isArray(data)) ? data : {};
-    renderEquiposGlobal(state.equiposConfig);
+    const data = await apiFetch("/api/equipos/todos");
+    if (data?.ok === false) throw new Error(data.error || "Error del servidor");
+    _cfgEqLista = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+    renderEquiposGlobal(_cfgEqLista, false);
   } catch(e) {
-    cont.innerHTML = `<div class="text-danger small">Error al cargar: ${e.message}</div>`;
+    cont.innerHTML = '<div class="text-danger small p-2">Error al cargar equipos: ' + e.message + '</div>';
   }
 }
 
+let _cfgEqBuscarTimer = null;
 function filtrarEquiposGlobal() {
+  clearTimeout(_cfgEqBuscarTimer);
   const q = (document.getElementById("cfg-eq-buscar")?.value ?? "").trim().toUpperCase();
-  document.querySelectorAll("#cfg-eq-contenido tr.cfg-eq-row").forEach(tr => {
-    const numpos = (tr.dataset.numpos ?? "").toUpperCase();
-    tr.style.display = (!q || numpos.includes(q)) ? "" : "none";
-  });
+  if (!q) {
+    renderEquiposGlobal(_cfgEqLista, false);
+    return;
+  }
+  if (q.length < 2) return;
+  _cfgEqBuscarTimer = setTimeout(async () => {
+    const cont = document.getElementById("cfg-eq-contenido");
+    if (!cont) return;
+    cont.innerHTML = '<div class="text-muted small"><div class="spinner-border spinner-border-sm me-2" role="status"></div>Buscando…</div>';
+    try {
+      const data = await apiFetch(`/api/equipos/todos?q=${encodeURIComponent(q)}`);
+      if (data?.ok === false) throw new Error(data.error || "Error del servidor");
+      const lista = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      renderEquiposGlobal(lista, true, q);
+    } catch(e) {
+      cont.innerHTML = '<div class="text-danger small p-2">Error: ' + e.message + '</div>';
+    }
+  }, 300);
 }
 
-function renderEquiposGlobal(data) {
+function renderEquiposGlobal(lista, esBusqueda = false, q = "") {
   const cont = document.getElementById("cfg-eq-contenido");
   if (!cont) return;
-  const entries = Object.entries(data ?? {});
-  if (!entries.length) {
-    cont.innerHTML = `<p class="text-muted small">Sin fichas configuradas. Usa ⚙ en VCC o "Nueva ficha".</p>`;
+  if (!lista || !lista.length) {
+    cont.innerHTML = esBusqueda
+      ? `<p class="text-muted small">Sin resultados para "<b>${q}</b>".</p>`
+      : `<p class="text-muted small">Sin equipos configurados aún. Usa el botón "＋ Nuevo" o búscalos por NUMPOS.</p>`;
     return;
   }
   const TIPO_LBL = { setpoint:"Setpoint", conductor:"Conductor", fusible:"Fusible" };
-  const rows = entries.map(([numpos, e]) => {
-    const tipo   = TIPO_LBL[e.tipo_limite] ?? e.tipo_limite ?? "—";
-    const cn     = e.corriente_a != null ? `${e.corriente_a} A` : "—";
-    const esPPF  = /^PPF/i.test(numpos);
-    const hdlb   = esPPF
-      ? (e.es_hdlb === true
-          ? `<span class="badge bg-success" style="font-size:.7rem">Sí</span>`
-          : e.es_hdlb === false
-            ? `<span class="badge bg-warning text-dark" style="font-size:.7rem">No</span>`
-            : `<span class="text-muted">—</span>`)
-      : `<span class="text-muted">—</span>`;
-    const notas  = e.notas ? `<span title="${e.notas.replace(/"/g,"&quot;")}">📝</span>` : "";
-    const fecha  = e.fecha_registro ?? "—";
-    const np     = numpos.replace(/'/g, "\\'");
-    return `<tr class="cfg-eq-row" data-numpos="${numpos}">
-      <td class="font-monospace">${numpos}</td>
-      <td>${tipo}</td>
-      <td class="text-end">${cn}</td>
-      <td class="text-center">${hdlb}</td>
-      <td class="text-center">${notas}</td>
-      <td class="text-muted small">${fecha}</td>
-      <td class="text-nowrap">
-        <button class="btn btn-link btn-sm p-0 me-2 text-secondary"
-          onclick="fichaAbrirModal('${np}', cargarEquiposGlobal)" title="Editar">⚙</button>
-        <button class="btn btn-link btn-sm p-0 text-danger"
-          onclick="cfgEliminarEquipo('${np}')" title="Eliminar">✕</button>
-      </td>
-    </tr>`;
-  }).join("");
-  cont.innerHTML = `<div style="overflow-x:auto"><table class="table table-sm tabla-vcc" style="font-size:.84rem">
-    <thead><tr>
-      <th>NUMPOS</th><th>Tipo</th><th class="text-end">CN</th>
-      <th class="text-center">HDLB</th><th></th><th>Fecha</th><th></th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
+  const confCount = lista.filter(e => e.tiene_config).length;
+
+  let rows = "";
+  for (const e of lista) {
+    try {
+      const np      = (e.numpos || "").replace(/'/g, "\\'");
+      const lzBadge = e.es_lz
+        ? '<span class="badge bg-warning text-dark ms-1" style="font-size:.62rem;vertical-align:middle">LZ</span>'
+        : "";
+      const tipo  = e.tiene_config
+        ? (TIPO_LBL[e.tipo_limite] || e.tipo_limite || "—")
+        : '<span class="text-muted">—</span>';
+      const cn    = e.corriente_a != null
+        ? (e.corriente_a + " A")
+        : '<span class="text-muted">—</span>';
+      const fecha = e.ultima_actividad || "—";
+      const feeders = e.feeders || [];
+      const feedTitle = feeders.join(", ").replace(/"/g, "&quot;");
+      const feedStr   = feeders.slice(0, 2).join(", ")
+        + (feeders.length > 2 ? ' <span class="text-muted">+' + (feeders.length - 2) + "</span>" : "");
+      const notas = e.notas
+        ? '<span title="' + e.notas.replace(/"/g, "&quot;") + '">📝</span>'
+        : "";
+      const rowStyle  = e.tiene_config ? "" : "opacity:.5";
+      const editTitle = e.tiene_config ? "Editar" : "Crear ficha";
+      const editIcon  = e.tiene_config ? "⚙" : "＋";
+      const editBtn   = '<button class="btn btn-link btn-sm p-0 me-1 text-secondary"'
+        + ' onclick="fichaAbrirModal(\'' + np + '\', cargarEquiposGlobal)"'
+        + ' title="' + editTitle + '">' + editIcon + '</button>';
+      const delBtn = e.tiene_config
+        ? '<button class="btn btn-link btn-sm p-0 text-danger" onclick="cfgEliminarEquipo(\''
+          + np + '\')" title="Eliminar">✕</button>'
+        : "";
+      rows += '<tr class="cfg-eq-row" data-numpos="' + e.numpos + '" style="' + rowStyle + '">'
+        + '<td class="font-monospace small">' + e.numpos + lzBadge + '</td>'
+        + '<td class="small">' + tipo + '</td>'
+        + '<td class="text-end small">' + cn + '</td>'
+        + '<td class="small" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"'
+        + ' title="' + feedTitle + '">' + feedStr + '</td>'
+        + '<td class="text-center small">' + notas + '</td>'
+        + '<td class="text-muted small">' + fecha + '</td>'
+        + '<td class="text-nowrap">' + editBtn + delBtn + '</td>'
+        + '</tr>';
+    } catch(_) { /* skip malformed entry */ }
+  }
+
+  const resumen = esBusqueda
+    ? `${lista.length} resultado${lista.length !== 1 ? "s" : ""} para "<b>${q}</b>" — ${confCount} configurados`
+    : `${lista.length} equipos configurados`;
+  cont.innerHTML =
+    '<div class="text-muted small mb-2">' + resumen + '</div>'
+    + '<div style="overflow-x:auto"><table class="table table-sm tabla-vcc" style="font-size:.83rem">'
+    + '<thead><tr><th>NUMPOS</th><th>Tipo</th><th class="text-end">CN</th>'
+    + '<th>Alimentador(es)</th><th></th><th>Última actividad</th><th></th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>';
 }
 
 async function cfgEliminarEquipo(numpos) {
@@ -6592,7 +6665,7 @@ async function cfgEliminarEquipo(numpos) {
   try {
     await apiFetch(`/api/equipos/config/${encodeURIComponent(numpos)}`, { method: "DELETE" });
     delete state.equiposConfig[numpos];
-    renderEquiposGlobal(state.equiposConfig);
+    cargarEquiposGlobal();
     if (state.vccEquipos.length) vccRenderEquiposInputs(state.vccEquipos);
   } catch(e) { alert("Error: " + e.message); }
 }
@@ -6621,12 +6694,15 @@ function renderAlimentadoresConfig(data) {
   const rows = entries.map(([nom, cfg]) => {
     const conds  = cfg.conductores_intermedios ?? [];
     const nConds = conds.length;
-    const id     = "cfg-alim-d-" + nom.replace(/[^a-zA-Z0-9]/g, "_");
+    const safeId = nom.replace(/[^a-zA-Z0-9]/g, "_");
+    const id     = "cfg-alim-d-" + safeId;
+    const eqId   = "cfg-alim-eq-" + safeId;
     const nomE   = nom.replace(/'/g, "\\'");
     const condRows = conds.map((c, i) =>
       `<tr>
-        <td class="ps-4 font-monospace small">${c.entre_a}</td>
-        <td class="small">→ ${c.entre_b}</td>
+        <td class="font-monospace small">${c.entre_a}</td>
+        <td class="small text-muted">→</td>
+        <td class="font-monospace small">${c.entre_b}</td>
         <td class="text-end small">${c.corriente_a} A</td>
         <td class="text-muted small">${c.fecha_registro ?? "—"}</td>
         <td>
@@ -6635,39 +6711,106 @@ function renderAlimentadoresConfig(data) {
         </td>
       </tr>`
     ).join("");
+    const condSection = nConds
+      ? `<div style="overflow-x:auto"><table class="table table-sm mb-0" style="font-size:.82rem;background:#f8f9fa">
+          <thead><tr><th>Desde</th><th></th><th>Hasta</th><th class="text-end">CN (A)</th><th>Fecha</th><th></th></tr></thead>
+          <tbody>${condRows}</tbody>
+        </table></div>`
+      : `<div class="text-muted small fst-italic px-1">Sin conductores intermedios.</div>`;
     return `
-      <tr style="cursor:pointer" onclick="cfgToggleAlim('${id}')">
+      <tr style="cursor:pointer" onclick="cfgToggleAlim('${id}','${nomE}')">
         <td class="fw-semibold font-monospace">${nom}</td>
         <td class="text-muted small">${nConds} conductor${nConds !== 1 ? "es" : ""}</td>
-        <td></td><td></td>
+        <td class="text-muted small"><i class="bi bi-cpu me-1"></i><span class="cfg-alim-eq-badge-${safeId}">equipos</span></td>
         <td>
           <button class="btn btn-link btn-sm p-0 text-danger"
             onclick="event.stopPropagation();cfgEliminarAlim('${nomE}')" title="Eliminar alimentador">✕</button>
         </td>
       </tr>
       <tr class="d-none" id="${id}">
-        <td colspan="5" class="p-0">
-          <table class="table table-sm mb-0" style="font-size:.82rem;background:#f8f9fa">
-            <thead><tr>
-              <th class="ps-4">Desde</th><th>Hasta</th>
-              <th class="text-end">CN (A)</th><th>Fecha</th><th></th>
-            </tr></thead>
-            <tbody>${condRows}</tbody>
-          </table>
+        <td colspan="4" class="p-0 bg-light">
+          <div class="px-3 pt-2 pb-1">
+            <div class="small fw-semibold text-muted mb-1">Conductores intermedios</div>
+            ${condSection}
+          </div>
+          <div class="px-3 pb-2" id="${eqId}">
+            <div class="small fw-semibold text-muted mb-1">Equipos</div>
+            <div class="text-muted small fst-italic cfg-alim-eq-pending">Expandiendo…</div>
+          </div>
         </td>
       </tr>`;
   }).join("");
   cont.innerHTML = `<div style="overflow-x:auto"><table class="table table-sm tabla-vcc" style="font-size:.84rem">
     <thead><tr>
-      <th>Alimentador</th><th>Conductores</th><th></th><th></th><th></th>
+      <th>Alimentador</th><th>Conductores</th><th>Equipos</th><th></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
 
-function cfgToggleAlim(id) {
+function cfgToggleAlim(id, nom) {
   const row = document.getElementById(id);
-  if (row) row.classList.toggle("d-none");
+  if (!row) return;
+  const wasHidden = row.classList.contains("d-none");
+  row.classList.toggle("d-none");
+  if (wasHidden && nom) {
+    const safeId = nom.replace(/[^a-zA-Z0-9]/g, "_");
+    const eqCont = document.getElementById("cfg-alim-eq-" + safeId);
+    if (eqCont && !eqCont.dataset.loaded) {
+      eqCont.dataset.loaded = "1";
+      cfgCargarEquiposAlim(nom, eqCont, safeId);
+    }
+  }
+}
+
+async function cfgCargarEquiposAlim(nom, cont, safeId) {
+  const pending = cont.querySelector(".cfg-alim-eq-pending");
+  if (pending) pending.textContent = "Cargando…";
+  try {
+    const fd = state.feedersData.find(f => f.nom_alim === nom);
+    const numalim = fd?.numalim ?? "";
+    const r    = await apiFetch(`/api/alimentadores/equipos/${encodeURIComponent(nom)}?numalim=${numalim}`);
+    const data = r?.data ?? r;
+    const equipos = data.equipos ?? [];
+    const confEq  = equipos.filter(e => e.tiene_config).length;
+    const TIPO_LBL = { setpoint:"Setpoint", conductor:"Conductor", fusible:"Fusible" };
+
+    // actualizar badge en la fila cabecera
+    const badge = document.querySelector(`.cfg-alim-eq-badge-${safeId}`);
+    if (badge) badge.textContent = `${equipos.length} (${confEq} cfg)`;
+
+    if (!equipos.length) {
+      cont.innerHTML = '<div class="small fw-semibold text-muted mb-1">Equipos</div>'
+        + '<div class="text-muted small fst-italic">Sin equipos en la base.</div>';
+      return;
+    }
+    const eqRows = equipos.map(eq => {
+      const np      = (eq.numpos || "").replace(/'/g, "\\'");
+      const lzBadge = eq.es_lz
+        ? '<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem">LZ</span>' : "";
+      const tipo = eq.tiene_config ? (TIPO_LBL[eq.tipo_limite] || "—") : '<span class="text-muted">—</span>';
+      const cn   = eq.corriente_a != null ? (eq.corriente_a + " A") : '<span class="text-muted">—</span>';
+      const rowStyle = eq.tiene_config ? "" : "opacity:.45";
+      const btnIcon  = eq.tiene_config ? "⚙" : "＋";
+      const btnTitle = eq.tiene_config ? "Editar" : "Crear ficha";
+      return `<tr style="${rowStyle}">
+        <td class="font-monospace small">${eq.numpos}${lzBadge}</td>
+        <td class="small">${tipo}</td>
+        <td class="text-end small">${cn}</td>
+        <td><button class="btn btn-link btn-sm p-0 text-secondary"
+          onclick="fichaAbrirModal('${np}', cfgAlimFichaCallback)"
+          title="${btnTitle}">${btnIcon}</button></td>
+      </tr>`;
+    }).join("");
+    cont.innerHTML = `<div class="small fw-semibold text-muted mb-1">Equipos (${equipos.length} — ${confEq} configurados)</div>
+      <div style="overflow-x:auto"><table class="table table-sm tabla-vcc mb-0" style="font-size:.82rem">
+        <thead><tr><th>NUMPOS</th><th>Tipo</th><th class="text-end">CN</th><th></th></tr></thead>
+        <tbody>${eqRows}</tbody>
+      </table></div>`;
+  } catch(e) {
+    cont.innerHTML = '<div class="small fw-semibold text-muted mb-1">Equipos</div>'
+      + `<div class="text-danger small">Error: ${e.message}</div>`;
+  }
 }
 
 async function cfgEliminarAlim(nom) {
@@ -6689,6 +6832,172 @@ async function cfgEliminarConductorAlim(nom, idx) {
     });
     await cargarAlimentadoresConfig();
   } catch(e) { alert("Error: " + e.message); }
+}
+
+// ── Alimentadores — búsqueda y detalle de feeder ──────────────────────────
+
+let _cfgAlimActual = null;   // {nom_alim, numalim}
+let _cfgAlimNoms   = null;   // cache de la lista de nom_alim
+
+async function _cfgAlimGetNoms() {
+  if (_cfgAlimNoms) return _cfgAlimNoms;
+  // Si feedersData ya está cargado, extraer nom_alim desde ahí
+  if (state.feedersData.length) {
+    _cfgAlimNoms = state.feedersData
+      .map(f => f.nom_alim).filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    return _cfgAlimNoms;
+  }
+  try {
+    const r = await apiFetch("/api/alimentadores/lista");
+    _cfgAlimNoms = Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []);
+  } catch(e) { _cfgAlimNoms = []; }
+  return _cfgAlimNoms;
+}
+
+async function cfgAlimBuscar(q) {
+  const dd = document.getElementById("cfg-alim-dropdown");
+  q = q.trim().toUpperCase();
+  if (!q || q.length < 2) { dd.style.display = "none"; return; }
+  const noms = await _cfgAlimGetNoms();
+  const hits  = noms.filter(n => n.toUpperCase().includes(q)).slice(0, 25);
+  if (!hits.length) { dd.style.display = "none"; return; }
+  dd.innerHTML = hits.map(n => {
+    const ne = n.replace(/'/g, "\\'");
+    return `<a class="dropdown-item py-1 font-monospace small" href="#"
+      onmousedown="event.preventDefault();cfgAlimSeleccionar('${ne}')">${n}</a>`;
+  }).join("");
+  dd.style.display = "block";
+}
+
+async function cfgAlimSeleccionar(nomAlim) {
+  document.getElementById("cfg-alim-dropdown").style.display = "none";
+  document.getElementById("cfg-alim-buscar").value = nomAlim;
+
+  const det = document.getElementById("cfg-alim-detalle");
+  det.classList.remove("d-none");
+  document.getElementById("cfg-alim-det-nom").textContent = nomAlim;
+  document.getElementById("cfg-alim-det-meta").textContent = "";
+  document.getElementById("cfg-alim-det-contenido").innerHTML =
+    '<div class="text-muted small p-2">Cargando…</div>';
+
+  // numalim lo tomamos de feedersData para que el PHP evite re-escanear dfAb
+  const fd      = state.feedersData.find(f => f.nom_alim === nomAlim);
+  const numalim = fd?.numalim ?? "";
+
+  try {
+    const r    = await apiFetch(
+      `/api/alimentadores/equipos/${encodeURIComponent(nomAlim)}?numalim=${numalim}`
+    );
+    const data = r?.data ?? r;
+    _cfgAlimActual = { nom_alim: nomAlim, numalim: data.numalim };
+    const metaTxt  = data.numalim ? `#${data.numalim}` : "";
+    document.getElementById("cfg-alim-det-meta").textContent = metaTxt;
+    renderCfgAlimDetalle(data);
+  } catch(e) {
+    document.getElementById("cfg-alim-det-contenido").innerHTML =
+      `<div class="text-danger small p-2">Error: ${e.message}</div>`;
+  }
+}
+
+function cfgAlimCerrarDetalle() {
+  document.getElementById("cfg-alim-detalle").classList.add("d-none");
+  document.getElementById("cfg-alim-buscar").value = "";
+  _cfgAlimActual = null;
+}
+
+async function cfgAlimFichaCallback() {
+  if (!_cfgAlimActual) { cargarEquiposGlobal(); return; }
+  await cargarEquiposConfig();
+  await cfgAlimSeleccionar(_cfgAlimActual.nom_alim);
+}
+
+function renderCfgAlimDetalle(data) {
+  const cont    = document.getElementById("cfg-alim-det-contenido");
+  const equipos = data.equipos ?? [];
+  const condInter   = data.conductores_intermedios ?? [];
+  const ajAlim  = Object.entries(data.ajustes_demanda?.alim  ?? {});
+  const ajTrafo = Object.entries(data.ajustes_demanda?.trafo ?? {});
+  const TIPO_LBL = { setpoint:"Setpoint", conductor:"Conductor", fusible:"Fusible" };
+
+  let html = "";
+
+  // ─── Equipos ───────────────────────────────────────────────
+  const confEq = equipos.filter(e => e.tiene_config).length;
+  html += '<div class="mb-3">'
+    + '<div class="d-flex align-items-center gap-2 mb-1">'
+    + '<span class="small fw-semibold">Equipos del alimentador</span>'
+    + '<span class="text-muted small">' + equipos.length + ' total — ' + confEq + ' configurados</span>'
+    + '</div>';
+  if (!equipos.length) {
+    html += '<div class="text-muted small">Sin equipos en la base.</div>';
+  } else {
+    let eqRows = "";
+    for (const eq of equipos) {
+      const np      = (eq.numpos || "").replace(/'/g, "\\'");
+      const lzBadge = eq.es_lz
+        ? '<span class="badge bg-warning text-dark ms-1" style="font-size:.6rem">LZ</span>' : "";
+      const tipo = eq.tiene_config
+        ? (TIPO_LBL[eq.tipo_limite] || "—")
+        : '<span class="text-muted">—</span>';
+      const cn   = eq.corriente_a != null
+        ? (eq.corriente_a + " A")
+        : '<span class="text-muted">—</span>';
+      const rowStyle = eq.tiene_config ? "" : "opacity:.5";
+      const btnTitle = eq.tiene_config ? "Editar" : "Crear ficha";
+      const btnIcon  = eq.tiene_config ? "⚙" : "＋";
+      eqRows += '<tr style="' + rowStyle + '">'
+        + '<td class="font-monospace small">' + eq.numpos + lzBadge + '</td>'
+        + '<td class="small">' + tipo + '</td>'
+        + '<td class="text-end small">' + cn + '</td>'
+        + '<td class="text-nowrap">'
+        + '<button class="btn btn-link btn-sm p-0 text-secondary"'
+        + ' onclick="fichaAbrirModal(\'' + np + '\', cfgAlimFichaCallback)"'
+        + ' title="' + btnTitle + '">' + btnIcon + '</button>'
+        + '</td></tr>';
+    }
+    html += '<div style="overflow-x:auto"><table class="table table-sm tabla-vcc mb-0" style="font-size:.82rem">'
+      + '<thead><tr><th>NUMPOS</th><th>Tipo</th><th class="text-end">CN</th><th></th></tr></thead>'
+      + '<tbody>' + eqRows + '</tbody></table></div>';
+  }
+  html += '</div>';
+
+  // ─── Conductores intermedios ───────────────────────────────
+  if (condInter.length) {
+    const ciRows = condInter.map(c => `<tr>
+      <td class="font-monospace small">${c.entre_a}</td>
+      <td class="small text-muted">→</td>
+      <td class="font-monospace small">${c.entre_b}</td>
+      <td class="text-end small">${c.corriente_a} A</td>
+      <td class="text-muted small">${c.fecha_registro ?? "—"}</td>
+    </tr>`).join("");
+    html += `<div class="mb-3">
+      <div class="small fw-semibold mb-1">Conductores intermedios</div>
+      <div style="overflow-x:auto"><table class="table table-sm mb-0" style="font-size:.81rem;background:#f8f9fa">
+        <thead><tr><th>Desde</th><th></th><th>Hasta</th><th class="text-end">CN</th><th>Fecha</th></tr></thead>
+        <tbody>${ciRows}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // ─── Ajustes de demanda ────────────────────────────────────
+  if (ajAlim.length || ajTrafo.length) {
+    html += `<div class="mb-1"><div class="small fw-semibold mb-1">Ajustes de demanda activos</div>
+      <div class="d-flex gap-3 flex-wrap small">`;
+    if (ajAlim.length) {
+      html += `<div><span class="badge bg-secondary me-1" style="font-size:.68rem">Alimentador</span>`;
+      html += ajAlim.map(([m, v]) => `${_mesLabel(m)}: <b>${v.toFixed(1)} A</b>`).join(" · ");
+      html += `</div>`;
+    }
+    if (ajTrafo.length) {
+      html += `<div><span class="badge bg-secondary me-1" style="font-size:.68rem">Trafo</span>`;
+      html += ajTrafo.map(([m, v]) => `${_mesLabel(m)}: <b>${v.toFixed(1)} A</b>`).join(" · ");
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  cont.innerHTML = html;
 }
 
 // ── AJUSTES ADMIN ─────────────────────────────────────────────────────────
