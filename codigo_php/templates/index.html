@@ -46,6 +46,10 @@
     .res-card { border-radius: 8px; padding: .9rem 1.1rem; text-align: center; }
     .res-val  { font-size: 1.6rem; font-weight: 700; }
     .res-lbl  { font-size: .73rem; color: #555; }
+    .res-chip { display:inline-flex; flex-direction:column; align-items:center;
+                background:#f0f4fb; border-radius:8px; padding:.4rem .9rem; min-width:90px; }
+    .res-chip-val { font-size:1.1rem; font-weight:700; line-height:1.2; }
+    .res-chip-lbl { font-size:.68rem; color:#666; white-space:nowrap; }
     .badge-viable    { background: var(--enel-green) !important; }
     .badge-prealerta { background: var(--enel-amber) !important; }
     .badge-critico   { background: var(--enel-red)   !important; }
@@ -479,54 +483,85 @@
           <!-- Banner caso actual (dentro para que se copie al colapsar) -->
           <div id="caso-banner" style="display:none" class="mb-2"></div>
 
-          <div class="row g-2 mb-3" id="cards-resumen"></div>
-
-          <!-- Alerta crítico/prealerta -->
+          <!-- Alerta principal (viable / prealerta / crítico) -->
           <div id="alerta-resultado" class="mb-2"></div>
-          <div id="alerta-inversion-resultado" class="mb-2"></div>
 
-          <!-- Info equipos abre/cierra -->
-          <div id="info-equipos" class="mb-2" style="display:none"></div>
+          <!-- Métricas clave condensadas -->
+          <div id="cards-resumen" class="mb-2"></div>
 
-          <!-- Equipos involucrados (troncal receptor + isla a vigilar) -->
-          <div id="sec-equipos-involucrados" class="mb-2"></div>
-
-          <!-- Panel Límite de Zona (resultado) -->
-          <div id="panel-lz" class="mb-2" style="display:none"></div>
-
-          <!-- Panel Corrimiento -->
-          <div id="panel-corrimiento" class="mb-2" style="display:none"></div>
-
-          <!-- Tarjeta peor caso estándar -->
-          <div class="card step-card mb-2">
-            <div class="step-header">
-              <i class="bi bi-bullseye me-1"></i>
-              <span class="fw-semibold">Peor caso — Δ fijo (escenario conservador)</span>
+          <!-- ── Tabla resumen ejecutivo (FU mes a mes) ─────────────── -->
+          <div id="sec-tabla-resumen" class="card step-card mb-2" style="display:none">
+            <div class="step-body p-2" style="overflow-x:auto">
+              <table class="table tabla-sim mb-0">
+                <thead id="tabla-resumen-head"></thead>
+                <tbody id="tabla-resumen-body"></tbody>
+              </table>
             </div>
-            <div class="step-body p-2" id="peor-caso-body" style="overflow-x:auto">
-              <!-- se rellena por JS -->
-            </div>
-            <!-- Evaluación equipos receptor en peor caso -->
-            <div id="sec-vcc-receptor-peor" class="step-body p-2 border-top" style="display:none"></div>
           </div>
 
-          <!-- ── Análisis Mes a Mes ─────────────────────────────────── -->
+          <!-- ── Tabla trafos ejecutivo ─────────────────────────────── -->
+          <div id="sec-tabla-trafos-ej" class="card step-card mb-2" style="display:none">
+            <div class="step-header">
+              <i class="bi bi-lightning me-1"></i>
+              <span class="fw-semibold">Transformadores de potencia — perfil mes a mes</span>
+            </div>
+            <div class="step-body p-2" style="overflow-x:auto">
+              <div id="nota-misma-barra-ej" style="display:none" class="mb-2">
+                <div class="alert alert-info py-1 mb-0" style="font-size:.85rem">
+                  <i class="bi bi-info-circle me-1"></i>
+                  Alimentadores en la <strong>misma barra SE</strong> — el transformador de potencia no ve cambio neto en su cargabilidad.
+                </div>
+              </div>
+              <table class="table tabla-sim mb-0">
+                <thead id="tabla-trafos-ej-head"></thead>
+                <tbody id="tabla-trafos-ej-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Alerta inversión de flujo y equipos abre/cierra -->
+          <div id="alerta-inversion-resultado" class="mb-2"></div>
+          <div id="info-equipos" class="mb-2" style="display:none"></div>
+
+          <!-- ── Detalles: Equipos involucrados + LZ ────────────────── -->
+          <details id="det-equipos-lz" class="mb-2" style="display:none">
+            <summary class="step-header rounded d-flex align-items-center gap-2"
+                     style="cursor:pointer;list-style:none">
+              <i class="bi bi-diagram-3"></i>
+              <span class="fw-semibold">Equipos involucrados y Límite de Zona</span>
+              <i class="bi bi-chevron-down ms-auto me-1" style="font-size:.8rem"></i>
+            </summary>
+            <div class="mt-1">
+              <div id="sec-equipos-involucrados" class="mb-1"></div>
+              <div id="panel-lz" class="mb-1"></div>
+            </div>
+          </details>
+
+          <!-- ── Detalles: Corrimiento ───────────────────────────────── -->
+          <details id="det-corrimiento" class="mb-2" style="display:none">
+            <summary class="step-header rounded d-flex align-items-center gap-2"
+                     style="cursor:pointer;list-style:none">
+              <i class="bi bi-arrow-repeat"></i>
+              <span class="fw-semibold">Corrimiento de carga — candidatos</span>
+              <i class="bi bi-chevron-down ms-auto me-1" style="font-size:.8rem"></i>
+            </summary>
+            <div class="mt-1">
+              <div id="panel-corrimiento"></div>
+            </div>
+          </details>
+
+          <!-- ── Gráficos Mes a Mes (colapsado por defecto) ─────────── -->
           <div class="card step-card mb-2" id="sec-mam" style="display:none">
             <div class="step-header d-flex align-items-center"
                  style="cursor:pointer;user-select:none" onclick="toggleSecMam()">
               <i class="bi bi-graph-up me-1"></i>
-              <span class="fw-semibold">Análisis Mes a Mes</span>
+              <span class="fw-semibold">Gráficos — perfil mes a mes</span>
               <span class="ms-auto small text-white-50 me-2" id="mam-header-info"></span>
               <i class="bi bi-chevron-down" id="mam-chevron"
                  style="transition:transform .25s"></i>
             </div>
             <div id="mam-body" style="display:none">
               <div class="step-body p-2">
-
-                <p class="text-muted small mb-2">
-                  Perfil de demanda usando el % traspasado del peor mes aplicado
-                  proporcionalmente a cada mes.
-                </p>
 
                 <!-- Gráfico corriente mam -->
                 <div class="mb-2">
@@ -547,7 +582,7 @@
                   </div>
                 </div>
 
-                <!-- Trafos mam -->
+                <!-- Trafos mam (gráficos) -->
                 <div id="sec-trafos-mam" style="display:none">
                   <div id="misma-barra-nota" style="display:none" class="mb-2">
                     <div class="alert alert-info py-2 mb-0" style="font-size:.88rem">
@@ -571,14 +606,6 @@
                   </div>
                 </div>
 
-                <!-- Tabla mam -->
-                <div style="overflow-x:auto">
-                  <table class="table tabla-sim mb-0">
-                    <thead id="tabla-mam-head"></thead>
-                    <tbody id="tabla-mam-body"></tbody>
-                  </table>
-                </div>
-
                 <!-- Evaluación equipos receptor (se llena por JS si hay vcc_alim_b_equipos) -->
                 <div id="sec-vcc-receptor-mam" class="mt-2" style="display:none"></div>
 
@@ -600,6 +627,17 @@
               <div class="p-2 border border-top-0 rounded-bottom" id="ajuste-panel-body">
               </div>
             </details>
+          </div>
+
+          <!-- ── Peor caso — Δ fijo (escenario conservador) — al final ─ -->
+          <div class="card step-card mb-2" id="sec-peor-caso" style="display:none">
+            <div class="step-header">
+              <i class="bi bi-bullseye me-1"></i>
+              <span class="fw-semibold">Peor caso — Δ fijo (escenario conservador)</span>
+            </div>
+            <div class="step-body p-2" id="peor-caso-body" style="overflow-x:auto">
+            </div>
+            <div id="sec-vcc-receptor-peor" class="step-body p-2 border-top" style="display:none"></div>
           </div>
 
           <!-- Acciones -->
@@ -2591,13 +2629,15 @@ async function ejecutarSimulacion() {
 const _CASO_COLORS = ["#1565c0", "#e65100", "#1b5e20"];
 
 async function renderPanelCorrimiento(numalimDest, nombreDest) {
-  const el = document.getElementById("panel-corrimiento");
-  if (!el || numalimDest == null) { if (el) el.style.display = "none"; return; }
+  const el    = document.getElementById("panel-corrimiento");
+  const detEl = document.getElementById("det-corrimiento");
+  const _hide = () => { if (detEl) detEl.style.display = "none"; };
+  if (!el || numalimDest == null) { _hide(); return; }
 
-  if (state.numeroCaso >= 3) { el.style.display = "none"; return; }
+  if (state.numeroCaso >= 3) { _hide(); return; }
 
   const candidatos = await apiFetch(`/api/corrimiento_candidatos/${numalimDest}`);
-  if (!candidatos?.length) { el.style.display = "none"; return; }
+  if (!candidatos?.length) { _hide(); return; }
 
   const filas = candidatos.map(c => {
     const rem    = c.remanente_A;
@@ -2629,7 +2669,7 @@ async function renderPanelCorrimiento(numalimDest, nombreDest) {
       </table>
     </div>
   </div>`;
-  el.style.display = "";
+  if (detEl) detEl.style.display = "";
 }
 
 async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) {
@@ -2837,34 +2877,7 @@ function mostrarResultados(data) {
     document.getElementById("resultado-contenido").style.setProperty("display","block","important");
     _sec.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Cards resumen
-  const cards = [
-    { val: `${fmt(data.delta?.delta_max)} A`, lbl: "Δ aplicado (peor mes)", bg: "#E8F0FA", col: "var(--enel-blue)" },
-    { val: `${fmt(data.isla?.p_pct)}%`,        lbl: "% kVA traspasado",     bg: "#E8F0FA", col: "var(--enel-blue)" },
-    { val: data.isla?.n_td ?? "—",             lbl: "Transformadores",      bg: "#F0F9F3", col: "var(--enel-green)",
-      click: data.detalle_tds?.length ? `verDetalleTDs(state.ultimaSimulacion.detalle_tds)` : null },
-    { val: data.isla?.clientes ?? "—",         lbl: "Clientes",             bg: "#F0F9F3", col: "var(--enel-green)" },
-    { val: data.delta?.mes_peor ?? "—",        lbl: "Mes peor caso",        bg: "#FEF9EC", col: "var(--enel-amber)" },
-    { val: data.resumen?.pct_max_uso != null ? `${fmt(data.resumen.pct_max_uso)}%` : "—",
-      lbl: `Uso máx. destino (${data.resumen?.mes_max_uso ?? "—"})`,
-      bg: "#FEF9EC", col: "var(--enel-amber)" },
-    { val: data.resumen?.conteo?.viable    ?? 0, lbl: "Meses viables",    bg: "#EAF7EE", col: "var(--enel-green)" },
-    { val: data.resumen?.conteo?.prealerta ?? 0, lbl: "Meses prealerta",  bg: "#FEF3E2", col: "var(--enel-amber)" },
-    { val: data.resumen?.conteo?.critico   ?? 0, lbl: "Meses críticos",   bg: "#FCECEA", col: "var(--enel-red)"   },
-  ];
-
-  document.getElementById("cards-resumen").innerHTML = cards.map(c => `
-    <div class="col-6 col-md-4">
-      <div class="res-card" style="background:${c.bg}${c.click ? ";cursor:pointer" : ""}"
-           ${c.click ? `onclick="${c.click}" title="Ver detalle de TDs"` : ""}>
-        <div class="res-val" style="color:${c.col}">${c.val}
-          ${c.click ? `<i class="bi bi-list-ul ms-1" style="font-size:.9rem"></i>` : ""}
-        </div>
-        <div class="res-lbl">${c.lbl}</div>
-      </div>
-    </div>`).join("");
-
-  // Alerta
+  // Alerta principal (sube al tope)
   const alerta = document.getElementById("alerta-resultado");
   const ncrit  = data.resumen.conteo?.critico ?? 0;
   const npre   = data.resumen.conteo?.prealerta ?? 0;
@@ -2878,6 +2891,24 @@ function mostrarResultados(data) {
     alerta.innerHTML = `<div class="alert alert-success py-2"><i class="bi bi-check-circle me-1"></i>
       Traspaso viable en todos los meses del histórico.</div>`;
   }
+
+  // Métricas clave — fila condensada de chips
+  const _tdClick = data.detalle_tds?.length ? `onclick="verDetalleTDs(state.ultimaSimulacion.detalle_tds)" style="cursor:pointer"` : "";
+  const _chips = [
+    { val: `${fmt(data.delta?.delta_max)} A`,    lbl: "Δ aplicado",      col: "var(--enel-blue)" },
+    { val: `${fmt(data.isla?.p_pct)}%`,           lbl: "% kVA",           col: "var(--enel-blue)" },
+    { val: data.isla?.n_td ?? "—",               lbl: "TDs",             col: "var(--enel-green)", extra: _tdClick },
+    { val: data.isla?.clientes ?? "—",           lbl: "Clientes",        col: "var(--enel-green)" },
+    { val: data.delta?.mes_peor ?? "—",          lbl: "Mes peor",        col: "var(--enel-amber)" },
+    { val: data.resumen?.pct_max_uso != null ? `${fmt(data.resumen.pct_max_uso)}%` : "—",
+      lbl: `FU máx. destino`,                                             col: "var(--enel-amber)" },
+  ];
+  document.getElementById("cards-resumen").innerHTML =
+    `<div class="d-flex flex-wrap gap-2">${_chips.map(c =>
+      `<div class="res-chip" ${c.extra || ""}>
+        <span class="res-chip-val" style="color:${c.col}">${c.val}</span>
+        <span class="res-chip-lbl">${c.lbl}</span>
+      </div>`).join("")}</div>`;
 
   // Alerta inversión de flujo
   const _alertaInv = document.getElementById("alerta-inversion-resultado");
@@ -2916,20 +2947,30 @@ function mostrarResultados(data) {
     _infoEq.style.display = _eqHtml ? "" : "none";
   }
 
-  // Sección equipos involucrados (troncal receptor + isla a vigilar)
+  // Tabla resumen ejecutivo (FU mes a mes) + trafos
+  renderTablaResumenEjecutivo(data);
+  renderTablaTrafosEjecutivo(data);
+
+  // Sección equipos involucrados + LZ (dentro de <details>)
   renderSecEquiposInvolucrados(data);
-
-  // Panel Límite de Zona
   renderPanelLZ(data.lz_info, data.nombre_orig, data.nombre_dest);
+  const _lzEl  = document.getElementById("panel-lz");
+  const _eqEl  = document.getElementById("sec-equipos-involucrados");
+  const _detLZ = document.getElementById("det-equipos-lz");
+  if (_detLZ) {
+    const _hasLZ = _lzEl?.innerHTML.trim() !== "" && _lzEl?.style.display !== "none";
+    const _hasEq = _eqEl?.innerHTML.trim() !== "";
+    _detLZ.style.display = (_hasLZ || _hasEq) ? "" : "none";
+  }
 
-  // Panel Corrimiento
+  // Panel Corrimiento (el show/hide de det-corrimiento lo maneja la propia función)
   renderPanelCorrimiento(data.numalim_dest, data.nombre_dest);
 
-  // Peor caso (escenario conservador Δ fijo)
-  renderPeorCaso(data);
-
-  // Análisis Mes a mes (incluye tabla, gráficos y trafos Mes a mes)
+  // Gráficos Mes a mes (tabla ya está en ejecutivo)
   renderMamSection(data);
+
+  // Peor caso — escenario conservador Δ fijo (al final)
+  renderPeorCaso(data);
 
   // Panel de ajuste de datos anómalos
   renderAjustePanel(data);
@@ -2977,9 +3018,11 @@ function _mesLabel(yyyymm) {
 
 function renderPeorCaso(data) {
   _destroyCharts("barras", "estados");
-  const tabla = data.tabla || [];
-  const el = document.getElementById("peor-caso-body");
-  if (!tabla.length) { el.innerHTML = ""; return; }
+  const tabla   = data.tabla || [];
+  const secEl   = document.getElementById("sec-peor-caso");
+  const el      = document.getElementById("peor-caso-body");
+  if (!tabla.length) { el.innerHTML = ""; if (secEl) secEl.style.display = "none"; return; }
+  if (secEl) secEl.style.display = "";
 
   const nO = data.nombre_orig || "Origen";
   const nD = data.nombre_dest || "Destino";
@@ -3328,8 +3371,19 @@ function toggleSecMam() {
   const body    = document.getElementById("mam-body");
   const chevron = document.getElementById("mam-chevron");
   const abierto = body.style.display !== "none";
-  body.style.display      = abierto ? "none" : "";
-  chevron.style.transform = abierto ? "" : "rotate(180deg)";
+  if (!abierto) {
+    body.style.display      = "";
+    chevron.style.transform = "rotate(180deg)";
+    // Lazy-init — Chart.js necesita canvas visible para calcular dimensiones
+    const sim = state.ultimaSimulacion;
+    if (sim && !_charts["barras-mam"]) {
+      renderMamCharts(sim);
+      renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam, sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
+    }
+  } else {
+    body.style.display      = "none";
+    chevron.style.transform = "";
+  }
 }
 
 function renderMamSection(data) {
@@ -3337,17 +3391,14 @@ function renderMamSection(data) {
   if (!data.tabla_mam || !data.tabla_mam.length) { sec.style.display = "none"; return; }
 
   sec.style.display = "";
-  // Abrir el body ANTES de crear los charts — Chart.js necesita dimensiones reales
+  // Destruir charts anteriores para que toggleSecMam los reinicie al abrir
+  _destroyCharts("barras-mam", "estados-mam", "canvas-trafo-orig-mam", "canvas-trafo-dest-mam");
   const mamBody = document.getElementById("mam-body");
-  mamBody.style.display = "";
-  document.getElementById("mam-chevron").style.transform = "rotate(180deg)";
+  mamBody.style.display = "none";
+  document.getElementById("mam-chevron").style.transform = "";
 
   const nomDest = data.nombre_dest || "Destino";
   document.getElementById("lbl-estados-mam").textContent = `FU (%) ${nomDest} — mes a mes`;
-
-  renderMamCharts(data);
-  renderMamTrafos(data.trafo_orig_mam, data.trafo_dest_mam, data.nombre_orig, data.nombre_dest, data.ajustes_activos, data.misma_barra_se ?? false);
-  renderMamTable(data);
 
   // Evaluación equipos receptor dentro de la sección MAM
   const secMamVcc = document.getElementById("sec-vcc-receptor-mam");
@@ -3559,7 +3610,7 @@ function renderMamTrafos(trafoOrig, trafoDest, nomOrig="Origen", nomDest="Destin
   }
 }
 
-function renderMamTable(data) {
+function renderMamTable(data, headId, bodyId) {
   const tabla  = data.tabla_mam || [];
   const nO = data.nombre_orig || "Origen";
   const nD = data.nombre_dest || "Destino";
@@ -3576,7 +3627,7 @@ function renderMamTable(data) {
   const W_TH = "border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000";
   const W_TD = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
 
-  document.getElementById("tabla-mam-head").innerHTML =
+  document.getElementById(headId).innerHTML =
     `<tr>
       <th class="py-1" style="min-width:170px;white-space:nowrap">Métrica</th>
       ${tabla.map((r,i) => {
@@ -3591,18 +3642,18 @@ function renderMamTable(data) {
     </tr>`;
 
   const metricas = [
-    { key: "I_orig_antes",         lbl: `${nO} — Antes (A)`,          fu: false },
+    { key: "I_orig_antes",         lbl: `${nO} — Antes (A)`,             fu: false },
     { key: "I_orig_despues",       lbl: `${nO} — Después Mes a mes (A)`, fu: false },
     { key: "uso_orig_antes_pct",   lbl: `FU antes (%) ${nO}`,            fu: false },
-    { key: "uso_orig_despues_pct", lbl: `FU (%) ${nO} Mes a mes`,         fu: false },
+    { key: "uso_orig_despues_pct", lbl: `FU (%) ${nO} Mes a mes`,        fu: false },
     { key: "I_dest_antes",         lbl: `${nD} — Antes (A)`,             fu: false },
     { key: "I_dest_despues",       lbl: `${nD} — Perfil Mes a mes (A)`,  fu: false },
     { key: "uso_dest_antes_pct",   lbl: `FU antes (%) ${nD}`,            fu: false },
-    { key: "uso_dest_despues_pct", lbl: `FU (%) ${nD} Mes a mes`,         fu: true  },
-    { key: "estado_dest",          lbl: "Estado",                       isEstado: true },
+    { key: "uso_dest_despues_pct", lbl: `FU (%) ${nD} Mes a mes`,        fu: true  },
+    { key: "estado_dest",          lbl: "Estado",                         isEstado: true },
   ];
 
-  document.getElementById("tabla-mam-body").innerHTML = metricas.map(m => {
+  document.getElementById(bodyId).innerHTML = metricas.map(m => {
     const cells = tabla.map((row, colIdx) => {
       const v   = row[m.key];
       const est = row.estado_dest || "";
@@ -3620,6 +3671,101 @@ function renderMamTable(data) {
     }).join("");
     return `<tr><td class="fw-semibold small" style="white-space:nowrap;background:#f8f9fa">${m.lbl}</td>${cells}</tr>`;
   }).join("");
+}
+
+function renderTablaResumenEjecutivo(data) {
+  const sec = document.getElementById("sec-tabla-resumen");
+  if (!data.tabla_mam?.length) { if (sec) sec.style.display = "none"; return; }
+  renderMamTable(data, "tabla-resumen-head", "tabla-resumen-body");
+  if (sec) sec.style.display = "";
+}
+
+function renderTablaTrafosEjecutivo(data) {
+  const sec = document.getElementById("sec-tabla-trafos-ej");
+  if (!sec) return;
+
+  const trafoOrig = data.trafo_orig_mam;
+  const trafoDest = data.trafo_dest_mam;
+  const mismaBarra = data.misma_barra_se ?? false;
+  const nomOrig = data.nombre_orig || "Origen";
+  const nomDest = data.nombre_dest || "Destino";
+
+  const notaEl = document.getElementById("nota-misma-barra-ej");
+  if (notaEl) notaEl.style.display = mismaBarra ? "" : "none";
+
+  if (!trafoOrig && !trafoDest) {
+    sec.style.display = mismaBarra ? "" : "none";
+    document.getElementById("tabla-trafos-ej-head").innerHTML = "";
+    document.getElementById("tabla-trafos-ej-body").innerHTML = "";
+    return;
+  }
+
+  const tabla_mam = data.tabla_mam || [];
+  const ajOrig = new Set(Object.keys(data.ajustes_activos?.trafo_orig || {}));
+  const ajDest = new Set(Object.keys(data.ajustes_activos?.trafo_dest || {}));
+
+  const trafoLabel = t => {
+    if (!t) return "";
+    const parts = [t.nombre || t.numpos || "Trafo"];
+    if (t.kva) parts.push(`${t.kva} kVA`);
+    if (t.cn_trafo) parts.push(`CN=${fmt(t.cn_trafo,0)} A`);
+    return parts.join(" · ");
+  };
+
+  const estadoLabel = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_datos: "—" };
+  const badgeClass  = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico" };
+  const rowBg       = { viable: "#E8F7EE", prealerta: "#FEF3E2", critico: "#FCECEA" };
+
+  const worstIdx = tabla_mam.reduce((best, r, i) =>
+    (r.I_orig_antes || 0) > (tabla_mam[best]?.I_orig_antes || 0) ? i : best, 0);
+  const W_TH = "border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000";
+  const W_TD = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
+
+  document.getElementById("tabla-trafos-ej-head").innerHTML =
+    `<tr>
+      <th class="py-1" style="min-width:170px;white-space:nowrap">Métrica</th>
+      ${tabla_mam.map((r,i) => {
+        const isWorst = i === worstIdx;
+        const isAj    = ajOrig.has(r.mes) || ajDest.has(r.mes);
+        let st = "white-space:nowrap";
+        if (isWorst) st += ";" + W_TH;
+        else if (isAj) st += ";background:#fff3cd";
+        const ajMark = isAj ? ` <span title="Valor ajustado" style="color:#c07000;font-size:.75rem">✎</span>` : "";
+        return `<th class="py-1 text-center" style="${st}">${_mesLabel(r.mes)}${ajMark}</th>`;
+      }).join("")}
+    </tr>`;
+
+  const filas = [];
+  const _addTrafoFilas = (trafo, label, ajSet) => {
+    if (!trafo || trafo.sin_datos) return;
+    const datos = trafo.datos || [];
+    const byMes = Object.fromEntries(datos.map(d => [d.mes, d]));
+    filas.push({ lbl: `${label} — Antes (A)`,      key: "I_antes",  trafo, byMes, ajSet, fu: false });
+    filas.push({ lbl: `${label} — Después (A)`,     key: "I_despues", trafo, byMes, ajSet, fu: false });
+    if (trafo.cn_trafo) {
+      filas.push({ lbl: `FU (%) ${label}`,           key: "uso_pct",   trafo, byMes, ajSet, fu: true });
+    }
+  };
+
+  if (trafoOrig) _addTrafoFilas(trafoOrig, `Trafo ${nomOrig} — alivio`, ajOrig);
+  if (trafoDest) _addTrafoFilas(trafoDest, `Trafo ${nomDest} — carga`, ajDest);
+
+  document.getElementById("tabla-trafos-ej-body").innerHTML = filas.map(f => {
+    const cells = tabla_mam.map((r, colIdx) => {
+      const d   = f.byMes[r.mes] || {};
+      const v   = d[f.key];
+      const est = r.estado_dest || "";
+      const wst = colIdx === worstIdx ? W_TD : "";
+      const fuBg = f.fu ? (rowBg[est] || "") : "";
+      const st   = [fuBg ? `background:${fuBg}` : "", wst].filter(Boolean).join(";");
+      const suffix = f.key === "uso_pct" ? "%" : "";
+      const txt    = (typeof v === "number" && isFinite(v)) ? (v.toFixed(1) + suffix) : "—";
+      return `<td class="text-center" style="${st}">${txt}</td>`;
+    }).join("");
+    return `<tr><td class="fw-semibold small" style="white-space:nowrap;background:#f8f9fa">${f.lbl}</td>${cells}</tr>`;
+  }).join("");
+
+  sec.style.display = filas.length ? "" : "none";
 }
 
 // ── GUARDAR TRANSFERENCIA ─────────────────────────────────────────────────
