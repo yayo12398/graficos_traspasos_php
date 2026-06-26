@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.php  (~2131 L)                                             ║
+// ║  ÍNDICE DE index.php  (~2133 L)                                             ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  Formato respuesta: [Py] = jsonPy (JSON plano)  |  [Ok] = jsonOk {ok,data} ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -32,8 +32,8 @@ declare(strict_types=1);
 // ║                               nom_alim,sub,cn_trafo,barra_trafo) L.383      ║
 // ║  GET  /api/meses              [Py] meses disponibles en dfAlim   L.415      ║
 // ║  GET  /api/subestaciones      [Py] lista de subestaciones únicas L.534      ║
-// ║  GET  /api/datos              [Py] meses + lista nom_alim        L.2118     ║
-// ║  GET  /api/debug/status       [Py] estado caché, conteos dfAb   L.2094     ║
+// ║  GET  /api/datos              [Py] meses + lista nom_alim        L.2120     ║
+// ║  GET  /api/debug/status       [Py] estado caché, conteos dfAb   L.2096     ║
 // ║  POST /api/reload             [Ok] recarga caché dfAlim+dfAb+LZ L.686      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — FEEDER / ISLA                                                  ║
@@ -55,74 +55,74 @@ declare(strict_types=1);
 // ║  POST /api/descargar_html     [Py] genera reporte HTML descargable L.599    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — LÍMITE DE ZONA (LZ)                                            ║
-// ║  GET  /api/vecinos_lz/{numalim} [Py] dispositivos LZ del alim   L.987      ║
+// ║  GET  /api/vecinos_lz/{numalim} [Py] dispositivos LZ del alim   L.989      ║
 // ║                               con vecinos, viabilidad y troncal             ║
-// ║  GET  /api/corrimiento_candidatos/{numalim} [Py] vecinos LZ con L.1039     ║
+// ║  GET  /api/corrimiento_candidatos/{numalim} [Py] vecinos LZ con L.1041     ║
 // ║                               capacidad disponible, ord. remanente desc     ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — FEEDERS EN COMISIONAMIENTO                                     ║
-// ║  GET    /api/feeders_nuevos                  [Py] lista todos    L.1107     ║
-// ║  POST   /api/feeders_nuevos                  [Py] crea feeder    L.1112     ║
-// ║  GET    /api/feeders_nuevos/{nom}            [Py] detalle        L.1155     ║
-// ║  PUT    /api/feeders_nuevos/{nom}            [Py] actualiza      L.1228     ║
-// ║  DELETE /api/feeders_nuevos/{nom}            [Py] elimina        L.1240     ║
-// ║  GET    /api/feeders_nuevos/{nom}/informe    [Py] reporte HTML   L.1121     ║
-// ║  POST   /api/feeders_nuevos/{nom}/transferencias [Py] agrega     L.1246     ║
-// ║  GET    /api/feeders_nuevos/{nom}/transferencias/{idx} [Py]      L.1326     ║
-// ║  DELETE /api/feeders_nuevos/{nom}/transferencias/{idx} [Py]      L.1339     ║
-// ║  POST   /api/feeders_nuevos/{nom}/cambios_topologicos [Py]       L.1345     ║
-// ║  DELETE /api/feeders_nuevos/{nom}/cambios_topologicos/{idx} [Py] L.1353     ║
+// ║  GET    /api/feeders_nuevos                  [Py] lista todos    L.1109     ║
+// ║  POST   /api/feeders_nuevos                  [Py] crea feeder    L.1114     ║
+// ║  GET    /api/feeders_nuevos/{nom}            [Py] detalle        L.1157     ║
+// ║  PUT    /api/feeders_nuevos/{nom}            [Py] actualiza      L.1230     ║
+// ║  DELETE /api/feeders_nuevos/{nom}            [Py] elimina        L.1242     ║
+// ║  GET    /api/feeders_nuevos/{nom}/informe    [Py] reporte HTML   L.1123     ║
+// ║  POST   /api/feeders_nuevos/{nom}/transferencias [Py] agrega     L.1248     ║
+// ║  GET    /api/feeders_nuevos/{nom}/transferencias/{idx} [Py]      L.1328     ║
+// ║  DELETE /api/feeders_nuevos/{nom}/transferencias/{idx} [Py]      L.1341     ║
+// ║  POST   /api/feeders_nuevos/{nom}/cambios_topologicos [Py]       L.1347     ║
+// ║  DELETE /api/feeders_nuevos/{nom}/cambios_topologicos/{idx} [Py] L.1355     ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — AJUSTES DE DEMANDA                                             ║
-// ║  GET    /api/ajustes          [Py] todos los ajustes activos     L.1363     ║
+// ║  GET    /api/ajustes          [Py] todos los ajustes activos     L.1365     ║
 // ║                               → [{tipo,numalim,nombre,ajustes[]}]           ║
-// ║  GET    /api/ajustes/{tipo}/{numalim} [Py] ajustes de un feeder  L.1410     ║
-// ║  POST   /api/ajustes/{tipo}/{numalim} [Py] guarda {mes:val}      L.1415     ║
-// ║  DELETE /api/ajustes/{tipo}/{numalim}/{mes} [Py] elimina un mes  L.1421     ║
+// ║  GET    /api/ajustes/{tipo}/{numalim} [Py] ajustes de un feeder  L.1412     ║
+// ║  POST   /api/ajustes/{tipo}/{numalim} [Py] guarda {mes:val}      L.1417     ║
+// ║  DELETE /api/ajustes/{tipo}/{numalim}/{mes} [Py] elimina un mes  L.1423     ║
 // ║  tipo: "alim" | "trafo"                                                     ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — FICHAS DE EQUIPOS (equipos_config.json)                        ║
-// ║  GET    /api/equipos/config          [Py] todos los equipos conf. L.1432    ║
-// ║  GET    /api/equipos/config/{numpos} [Py] ficha de un equipo     L.1437     ║
-// ║  POST   /api/equipos/config/{numpos} [Py] crea/actualiza ficha   L.1445     ║
+// ║  GET    /api/equipos/config          [Py] todos los equipos conf. L.1434    ║
+// ║  GET    /api/equipos/config/{numpos} [Py] ficha de un equipo     L.1439     ║
+// ║  POST   /api/equipos/config/{numpos} [Py] crea/actualiza ficha   L.1447     ║
 // ║                               body: {corriente_a,tipo_limite,notas,...}     ║
-// ║  DELETE /api/equipos/config/{numpos} [Py] elimina ficha          L.1458     ║
-// ║  GET    /api/equipos/todos    [Ok] lista equipos del sistema      L.1465     ║
+// ║  DELETE /api/equipos/config/{numpos} [Py] elimina ficha          L.1460     ║
+// ║  GET    /api/equipos/todos    [Ok] lista equipos del sistema      L.1467     ║
 // ║                               sin ?q → solo configurados (rápido)           ║
 // ║                               ?q=TERM → búsqueda en índice, max ?limit=100  ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — CONFIG DE ALIMENTADORES (alimentadores_config.json)            ║
-// ║  GET    /api/alimentadores/config        [Py] todos guardados     L.1530    ║
-// ║  GET    /api/alimentadores/config/{nom}  [Py] config del alim     L.1535    ║
-// ║  POST   /api/alimentadores/config/{nom}  [Py] guarda conductores  L.1543    ║
+// ║  GET    /api/alimentadores/config        [Py] todos guardados     L.1532    ║
+// ║  GET    /api/alimentadores/config/{nom}  [Py] config del alim     L.1537    ║
+// ║  POST   /api/alimentadores/config/{nom}  [Py] guarda conductores  L.1545    ║
 // ║                               body: {conductores_intermedios:[]}            ║
-// ║  DELETE /api/alimentadores/config/{nom}  [Py] elimina config      L.1555    ║
-// ║  GET    /api/alimentadores/lista         [Ok] todos los nom_alim  L.1562    ║
-// ║  GET    /api/alimentadores/equipos/{nom}?numalim=N [Ok]           L.1574    ║
+// ║  DELETE /api/alimentadores/config/{nom}  [Py] elimina config      L.1557    ║
+// ║  GET    /api/alimentadores/lista         [Ok] todos los nom_alim  L.1564    ║
+// ║  GET    /api/alimentadores/equipos/{nom}?numalim=N [Ok]           L.1576    ║
 // ║                               → {nom_alim,equipos[],                        ║
 // ║                                  conductores_intermedios[],ajustes_demanda} ║
-// ║  POST   /api/alim/troncal_enriquecido [Py] troncal alim B+fracs. L.1618    ║
+// ║  POST   /api/alim/troncal_enriquecido [Py] troncal alim B+fracs. L.1620    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — VCC (Validación Capacidad de Conducción)                       ║
-// ║  GET  /api/vcc/equipos/{nom}?modo=equipos|tp [Py]                L.1642     ║
+// ║  GET  /api/vcc/equipos/{nom}?modo=equipos|tp [Py]                L.1644     ║
 // ║                               modo=equipos → upstream clasif.+fracción      ║
 // ║                               modo=tp      → TPs del feeder                 ║
-// ║  POST /api/vcc/punto          [Py] punto de conexión en topología L.1697    ║
+// ║  POST /api/vcc/punto          [Py] punto de conexión en topología L.1699    ║
 // ║                               body: {nom_alim,numpos}                       ║
-// ║  POST /api/vcc/evaluar        [Py] evaluación VCC completa        L.1710    ║
+// ║  POST /api/vcc/evaluar        [Py] evaluación VCC completa        L.1712    ║
 // ║                               (alias de /calcular, mismo body y respuesta)  ║
-// ║  POST /api/vcc/guardar        [Py] persiste evaluación en JSON    L.1948    ║
-// ║  POST /api/vcc/descargar_html [Py] genera reporte HTML descarg.   L.1961    ║
-// ║  GET  /api/vcc/historial_global [Py] historial de todas las VCC  L.1978    ║
-// ║  POST /api/vcc/calcular       [Py] evaluación VCC completa        L.1996    ║
+// ║  POST /api/vcc/guardar        [Py] persiste evaluación en JSON    L.1950    ║
+// ║  POST /api/vcc/descargar_html [Py] genera reporte HTML descarg.   L.1963    ║
+// ║  GET  /api/vcc/historial_global [Py] historial de todas las VCC  L.1980    ║
+// ║  POST /api/vcc/calcular       [Py] evaluación VCC completa        L.1998    ║
 // ║                               body: {nom_alim,numalim,cn_alim,              ║
 // ║                               kva_emp,kva_inst,tension,modo_punto,          ║
 // ║                               equipo_numpos,equipos_troncal_b,...}          ║
-// ║  POST /api/vcc/reporte        [Py] genera reporte VCC (legacy)    L.2058    ║
-// ║  GET  /api/vcc                [Ok] lista alims con evaluaciones   L.2066    ║
-// ║  GET  /api/vcc/{nom}          [Ok] evaluaciones de un alim        L.2071    ║
-// ║  POST /api/vcc/{nom}          [Ok] guarda evaluación en historial L.2076    ║
-// ║  DELETE /api/vcc/{nom}/{idx}  [Py] elimina registro del historial L.2088    ║
+// ║  POST /api/vcc/reporte        [Py] genera reporte VCC (legacy)    L.2060    ║
+// ║  GET  /api/vcc                [Ok] lista alims con evaluaciones   L.2068    ║
+// ║  GET  /api/vcc/{nom}          [Ok] evaluaciones de un alim        L.2073    ║
+// ║  POST /api/vcc/{nom}          [Ok] guarda evaluación en historial L.2078    ║
+// ║  DELETE /api/vcc/{nom}/{idx}  [Py] elimina registro del historial L.2090    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Verificar config.php ──────────────────────────────────────────────────────
@@ -847,7 +847,9 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         if ($trafoDestRowRaw) {
             $trafoDestRow = aplicarAjustesFila($trafoDestRowRaw, 'trafo', (int)$numalimTN);
             $trafoDest    = analizarTrafo($trafoDestRow, $acumActual + $deltaMax, 'carga', 0.90, $mesesSel);
-            $trafoDestMam = analizarTrafoMesAMes($trafoDestRow, $deltaInfo['serie_deltas'], 'carga', 0.90, $mesesSel);
+            // MAM: suma delta_acum de casos anteriores (offset fijo) + delta proporcional actual
+            $seriesDeltasAcum = array_map(fn($d) => $d + $acumActual, $deltaInfo['serie_deltas']);
+            $trafoDestMam = analizarTrafoMesAMes($trafoDestRow, $seriesDeltasAcum, 'carga', 0.90, $mesesSel);
         } else {
             $trafoDestRow = null;
             $trafoDest = $trafoDestMam = null;

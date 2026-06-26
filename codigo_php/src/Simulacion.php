@@ -34,8 +34,8 @@ declare(strict_types=1);
 // ║      → {cn_trafo, sin_datos, tabla:[{mes, I_antes, I_despues,                ║
 // ║          delta, uso_antes_pct, uso_despues_pct, estado}], ...}               ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  RESUMEN                                                          L.520–550  ║
-// ║    resumenEstados($tabSim)     conteo estados + mes más crítico     L.520    ║
+// ║  RESUMEN                                                          L.521–551  ║
+// ║    resumenEstados($tabSim)     conteo estados + mes más crítico     L.521    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /**
@@ -455,10 +455,11 @@ function analizarTrafoMesAMes(
     foreach ($mesCols as $mes) {
         $ant   = isset($trafoRow[$mes]) && is_numeric($trafoRow[$mes])
             ? (float)$trafoRow[$mes] : null;
-        $delta = isset($serieDeltas[$mes]) && is_numeric($serieDeltas[$mes])
-            ? (float)$serieDeltas[$mes] : 0.0;
+        // null cuando el mes no está en serie_deltas (origen sin datos): propaga incertidumbre
+        $delta = (isset($serieDeltas[$mes]) && is_numeric($serieDeltas[$mes]))
+            ? (float)$serieDeltas[$mes] : null;
 
-        if ($ant === null) {
+        if ($ant === null || $delta === null) {
             $des = null;
             $est = 'sin_datos';
             $uA  = null;
@@ -482,7 +483,7 @@ function analizarTrafoMesAMes(
             'mes'            => $mes,
             'I_antes'        => $ant !== null ? round($ant, 1) : null,
             'I_despues'      => $des !== null ? round($des, 1) : null,
-            'delta'          => round($delta, 2),
+            'delta'          => $delta !== null ? round($delta, 2) : null,
             'uso_antes_pct'  => $uA,
             'uso_despues_pct'=> $uD,
             'estado'         => $est,
