@@ -1,5 +1,58 @@
 <?php
 
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  ÍNDICE DE Reportes.php  (~1892 L)                                          ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  CONSTANTES                                                        L.56–84  ║
+// ║    _REP_CHARTJS_CDN, _REP_TD_GRANDE_KVA                                     ║
+// ║    _REP_CJS_ESTADO_BG/BRD, _REP_ETIQUETAS, _REP_MESES_ES                   ║
+// ║    _REP_ESTADO_BADGE_VCC, _REP_ESTADO_BG_VCC                                ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  HELPERS INTERNOS                                                 L.85–634  ║
+// ║    _repCss()                  bloque <style> inline del reporte    L.85     ║
+// ║    _repTipoEquipoTroncal($n)  {label,color} por prefijo numpos     L.169    ║
+// ║    _repHtmlTablaEquipos($eq)  tabla HTML equipos troncal           L.182    ║
+// ║    _repSafe($v)               convierte false→null, NaN→null       L.197    ║
+// ║    _h($v)                     htmlspecialchars shorthand           L.203    ║
+// ║    _repWorstIdx($vals)        índice del valor máximo en array     L.207    ║
+// ║    _repMesLbl($yyyymm)        'Ene 24' a partir de 'YYYY-MM'       L.216    ║
+// ║    _repTrafoLabel($trafo)     "Nombre · kVA · Barra"              L.228    ║
+// ║    _repTrafoLabelAlim($t,$n)  idem con nombre alimentador          L.238    ║
+// ║    _repTablaHtml($df,$o,$d)   tabla principal mes a mes traspaso   L.250    ║
+// ║    _repTdsTableHtml($det,$t)  tabla TDs involucrados               L.304    ║
+// ║    _repTablaTrafHtml($t,$n,$m,$a) tabla trafo mes a mes            L.332    ║
+// ║    _repTarjetaPeorCaso(...)   tarjeta peor caso Δ fijo             L.395    ║
+// ║    _repCjsBarras(...)         Chart.js barras I_antes/I_despues    L.444    ║
+// ║    _repCjsEstados(...)        Chart.js dona de estados             L.481    ║
+// ║    _repCjsTrafo(...)          Chart.js línea trafo I_antes/despues L.509    ║
+// ║    _repCjsFeederCarg(...)     Chart.js cargabilidad feeder nuevo   L.553    ║
+// ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.593    ║
+// ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.606    ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.635–888  ║
+// ║    generarReporteHtml($body,$ruta)                                 L.635    ║
+// ║      ← recibe cuerpo completo del POST /api/descargar_html                  ║
+// ║      → HTML autónomo con tabla mes a mes + gráficos Chart.js                ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.889–1174  ║
+// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.889    ║
+// ║      → HTML por feeder con tabla de transferencias + gráfico acum.          ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  REPORTE CADENA DE CORRIMIENTOS                                L.1175–1486  ║
+// ║    _repMesAbr($mes)           abreviación mes para tabla cadena    L.1175   ║
+// ║    _repCadPctColor($pct)      clase CSS según % uso                L.1183   ║
+// ║    _tablaFuPeriodosHtml($c)   tabla FU por períodos en cadena      L.1190   ║
+// ║    generarReporteCadenaHtml($casos,$ruta)                          L.1338   ║
+// ║      → HTML cadena de corrimientos con resumen + tabla por caso             ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  REPORTE VCC                                                   L.1487–1892  ║
+// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1487   ║
+// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1565   ║
+// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1655   ║
+// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1707   ║
+// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1751   ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
 const _REP_CHARTJS_CDN   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
 const _REP_TD_GRANDE_KVA = 300;
 const _REP_CJS_ESTADO_BG = [

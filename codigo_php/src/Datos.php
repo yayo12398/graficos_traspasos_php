@@ -1,6 +1,52 @@
 <?php
 declare(strict_types=1);
 
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  ÍNDICE DE Datos.php  (~865 L)                                              ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  CONSTANTES Y CONFIG                                                L.65–90 ║
+// ║    D_BASE, D_CACHE, D_CFG, TTL_AB, TTL_DEM, TTL_LZ                         ║
+// ║    TIPOS_INVERSION = ['DBC','REC','RTS']                                    ║
+// ║    _LZ_EXCEPCIONES  correcciones manuales de BD LZ                          ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  CONEXIÓN Y CACHÉ                                                 L.91–131  ║
+// ║    datosConectar()            → PDO MySQL (meyg)                   L.91     ║
+// ║    _cacheRuta($key)           ruta del archivo de caché            L.105    ║
+// ║    _cacheValida($key,$ttl)    true si caché existe y no expiró     L.110    ║
+// ║    _cacheCargar($key)         deserializa caché desde disco        L.116    ║
+// ║    _cacheGuardar($key,$data)  serializa y guarda caché en disco    L.121    ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  NORMALIZACIÓN DE FILAS                                          L.132–253  ║
+// ║    _normCol($s)               snake_case sin tildes                L.132    ║
+// ║    normalizarMes($v)          'YYYY-MM' o null                     L.148    ║
+// ║    _nomRapidaDeAlim($nombre)  quita prefijo "Alim."                L.173    ║
+// ║    _normalizarFilasAb($rows)  normaliza filas aguas_abajo crudas   L.186    ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  PIVOT / CARGA PRINCIPAL                                         L.254–473  ║
+// ║    pivotarAlim($rows)         wide table keyed by numalim          L.254    ║
+// ║    pivotarTrafos($rows)       wide table keyed by numalim trafo    L.310    ║
+// ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.368    ║
+// ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.451    ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.475–711  ║
+// ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.481    ║
+// ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.501    ║
+// ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.525    ║
+// ║    equiposEnIsla($dfAb,$tds,$raiz,$alim) DBC/REC/RTS en la isla   L.545    ║
+// ║      ↳ filtra por "todos sus TDs ⊆ island set" (topología real)            ║
+// ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.590    ║
+// ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.602    ║
+// ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.629    ║
+// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.645    ║
+// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.656    ║
+// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.675    ║
+// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.691    ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.712–865  ║
+// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.712    ║
+// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.810    ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
 /**
  * Datos.php — Carga y normalización de las tres fuentes de datos.
  *
@@ -503,19 +549,33 @@ function equiposEnIsla(array $dfAb, array $tds, string $equipoRaiz, string $nomA
     $numposSet = array_flip(array_map('trim', array_column($tds, 'numpos_td')));
     $raizNorm  = strtoupper(trim($equipoRaiz));
     $nomAlimUp = strtoupper(trim($nomAlim));
-    $vistos    = [];
-    $resultado = [];
 
+    // Construir índice: equipo → set de TDs que sirve (solo dentro del mismo alimentador).
+    // Un equipo es topológicamente downstream del punto de corte si y solo si
+    // TODOS sus TDs están dentro del island set. Si sirve algún TD fuera de la
+    // isla, es un equipo del camino común (upstream) y no tendrá inversión.
+    $eqTds = [];
     foreach ($dfAb as $row) {
         if (strtoupper($row['nom_alim'] ?? '') !== $nomAlimUp) continue;
-        if (!isset($numposSet[trim($row['numpos_td'] ?? '')])) continue;
         if (($row['nombre_equip'] ?? '') === 'cabecera') continue;
-        $nombre = strtoupper($row['nombre_equip'] ?? '');
-        if ($nombre === $raizNorm || isset($vistos[$nombre])) continue;
-        $vistos[$nombre] = true;
+        $nombre = strtoupper(trim($row['nombre_equip'] ?? ''));
+        if ($nombre === '') continue;
+        $td = trim($row['numpos_td'] ?? '');
+        if ($td === '') continue;
+        $eqTds[$nombre][$td] = true;
+    }
+
+    $resultado = [];
+    foreach ($eqTds as $nombre => $tdSet) {
+        if ($nombre === $raizNorm) continue;
         $tipo = null;
         foreach (TIPOS_INVERSION as $t) {
             if (str_starts_with($nombre, $t)) { $tipo = $t; break; }
+        }
+        if ($tipo === null) continue;
+        // Solo incluir si todos sus TDs están en la isla
+        foreach ($tdSet as $td => $_) {
+            if (!isset($numposSet[$td])) { $tipo = null; break; }
         }
         if ($tipo !== null) $resultado[] = ['nombre' => $nombre, 'tipo' => $tipo];
     }

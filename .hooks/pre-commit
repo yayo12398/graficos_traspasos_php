@@ -1,0 +1,25 @@
+#!/bin/sh
+# pre-commit: avisa si hay que actualizar índices de navegación ╔══╗
+
+FUENTES="codigo_php/index.php
+codigo_php/src/Datos.php
+codigo_php/src/Simulacion.php
+codigo_php/src/Reportes.php
+codigo_php/templates/index.html"
+
+MODIFICADOS=""
+for f in $FUENTES; do
+    if git diff --cached --name-only | grep -qF "$f"; then
+        MODIFICADOS="$MODIFICADOS\n   → $f"
+    fi
+done
+
+if [ -n "$MODIFICADOS" ]; then
+    printf "\n\033[33m⚠  Archivos fuente modificados en este commit:\033[0m\n"
+    printf "%b\n" "$MODIFICADOS"
+    printf "\n\033[33m   ¿Actualizaste los índices de navegación ╔══╗?\033[0m\n"
+    printf "   · Si ya lo hiciste  → el commit continúa normalmente.\n"
+    printf "   · Si no             → cancela con Ctrl+C y ejecuta /actualizar-indices\n\n"
+fi
+
+exit 0
