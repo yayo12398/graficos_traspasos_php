@@ -87,8 +87,10 @@ function acSetAlim(string $nom, array $body): array
             $tensionAlta = isset($a['tension_alta']) && is_numeric($a['tension_alta'])
                 ? (int)$a['tension_alta'] : 23;
             if (!$recAlta) continue;
+            $recBaja = trim((string)($a['rec_baja'] ?? ''));
             $autotrafos[] = [
                 'rec_alta'       => $recAlta,
+                'rec_baja'       => $recBaja ?: null,
                 'tension_alta'   => $tensionAlta,
                 'fecha_registro' => $a['fecha_registro'] ?? date('Y-m-d'),
             ];

@@ -5637,7 +5637,8 @@ async function vccRegistrarAutotrafo(recAlta, tensionAlta = 23) {
     const cn = el ? (parseFloat(el.value) || null) : null;
     if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
   });
-  const autotrafos = [{ rec_alta: recAlta, tension_alta: tensionAlta }];
+  const recBajaExist = state.alimConfig?.autotrafos?.[0]?.rec_baja ?? null;
+  const autotrafos = [{ rec_alta: recAlta, rec_baja: recBajaExist, tension_alta: tensionAlta }];
   spinner(true, "Guardando autotrafo...");
   try {
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
@@ -6720,7 +6721,15 @@ function vccTablaEquipos(equipos, deltaI) {
 
   // ── tabla legacy ──────────────────────────────────────────────────────────
   if (!hasEnfoques) {
-    const rows = equiposEval.map(eq => {
+    const dI23leg = equiposEval.find(e => (e.delta_I ?? deltaI) !== deltaI)?.delta_I ?? null;
+    const _atSepLeg = () => `<tr class="vcc-at-sep-row"><td colspan="6" style="padding:4px 8px;` +
+      `background:#fff9e6;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.77rem">` +
+      `<span class="badge bg-warning text-dark me-2">⚡ Autotrafo</span>` +
+      `<span class="text-muted">23 kV — ΔI = <b>${Number(dI23leg).toFixed(2)} A</b></span>` +
+      `<span class="text-muted mx-2">//</span>` +
+      `<span class="text-muted">12 kV — ΔI = <b>${Number(deltaI).toFixed(2)} A</b></span>` +
+      `</td></tr>`;
+    const rows = equiposEval.flatMap((eq, i, arr) => {
       const fuente  = eq.fuente_ajuste || "equipo";
       const cnStr   = eq.cn != null
         ? `${Number(eq.cn).toFixed(0)} A${_fuenteBadge(fuente)}` : "—";
@@ -6734,11 +6743,14 @@ function vccTablaEquipos(equipos, deltaI) {
       const nombreDisplay = eq.tipo === "conductor_intermedio"
         ? `<span class="text-muted">tramo</span> <code>${eq.nombre.replace("Conductor(","").replace(")","")}</code>`
         : `<code>${eq.nombre}</code>`;
-      return `<tr>
+      const mainRow = `<tr>
         <td>${nombreDisplay}</td><td>${TIPO_LBL[eq.tipo]||eq.tipo}</td>
         <td class="r">${cnStr}</td><td class="r">${dI} A${atMark}</td>
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
+      const prevDI = i > 0 ? (arr[i-1].delta_I ?? deltaI) : eqDeltaI;
+      const needSep = i > 0 && prevDI !== deltaI && eqDeltaI === deltaI && dI23leg !== null;
+      return needSep ? [_atSepLeg(), mainRow] : [mainRow];
     }).join("");
     return omitidosTxt + `<div style="overflow-x:auto"><table class="table table-sm tabla-sim tabla-vcc mb-0" style="font-size:.78rem">
       <thead><tr>
@@ -6780,7 +6792,16 @@ function vccTablaEquipos(equipos, deltaI) {
       <th class="r">% Ajuste</th>
     </tr>`;
 
-  const rows = equiposEval.flatMap(eq => {
+  const dI23dual = equiposEval.find(e => (e.delta_I ?? deltaI) !== deltaI)?.delta_I ?? null;
+  const _atSepDual = (prevDI) => `<tr class="vcc-at-sep-row"><td colspan="11" style="padding:4px 8px;` +
+    `background:#fff9e6;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.77rem">` +
+    `<span class="badge bg-warning text-dark me-2">⚡ Autotrafo</span>` +
+    `<span class="text-muted">23 kV — ΔI = <b>${Number(prevDI).toFixed(2)} A</b></span>` +
+    `<span class="text-muted mx-2">//</span>` +
+    `<span class="text-muted">12 kV — ΔI = <b>${Number(deltaI).toFixed(2)} A</b></span>` +
+    `</td></tr>`;
+
+  const rows = equiposEval.flatMap((eq, i, arr) => {
     const fuente = eq.fuente_ajuste || "equipo";
     const cn     = eq.cn != null
       ? `${Number(eq.cn).toFixed(0)}${_fuenteBadge(fuente)}` : "—";
@@ -6866,7 +6887,10 @@ function vccTablaEquipos(equipos, deltaI) {
       </td></tr>`;
     }
 
-    return [mainRow, serieRow].filter(Boolean);
+    const prevDI  = i > 0 ? (arr[i-1].delta_I ?? deltaI) : eqDI;
+    const atSep   = (i > 0 && prevDI !== deltaI && eqDI === deltaI && dI23dual !== null)
+      ? [_atSepDual(prevDI)] : [];
+    return [...atSep, mainRow, serieRow].filter(Boolean);
   }).join("");
 
   const hayAlivioEq = equiposEval.some(e =>
@@ -7470,32 +7494,54 @@ function renderCfgAlimDetalle(data) {
   // ─── Autotrafos ────────────────────────────────────────────
   {
     const nomAlim = _cfgAlimActual?.nom_alim ?? "";
+    const nomEsc  = nomAlim.replace(/'/g, "\\'");
     const eqsRec  = equipos.filter(e => /^REC/i.test(e.numpos));
-    let atHtml = '<div class="mb-3"><div class="d-flex align-items-center gap-2 mb-1">'
-      + '<span class="small fw-semibold">Autotrafo</span>'
-      + '<span class="text-muted small" style="font-size:.78rem">REC en el lado de alta tensión (23 kV)</span>'
-      + '</div>';
+    let atHtml = '<div class="mb-3"><div class="small fw-semibold mb-2">⚡ Autotransformador</div>';
     if (autotrafos.length) {
       const at = autotrafos[0];
-      const nomEsc = nomAlim.replace(/'/g, "\\'");
-      atHtml += `<div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff9e6;border:1px solid #ffc107">
-        <i class="bi bi-lightning-charge-fill text-warning"></i>
-        <span class="small">REC <code>${at.rec_alta}</code> — ${at.tension_alta} kV</span>
-        <span class="text-muted small">${at.fecha_registro ?? ""}</span>
-        <button class="btn btn-link btn-sm py-0 px-1 text-danger ms-auto"
-                onclick="cfgAlimEliminarAutotrafo('${nomEsc}')">× Eliminar</button>
+      const recBajaTxt = at.rec_baja
+        ? `<code>${at.rec_baja}</code>`
+        : `<span class="text-muted fst-italic">no configurado</span>`;
+      atHtml += `<div class="p-2 rounded mb-1" style="background:#fff9e6;border:1px solid #ffc107;font-size:.85rem">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div>
+            <div class="text-muted" style="font-size:.7rem">Lado 23 kV (alta)</div>
+            <code>${at.rec_alta}</code>
+          </div>
+          <div class="text-muted">↕</div>
+          <div>
+            <div class="text-muted" style="font-size:.7rem">Lado 12 kV (baja)</div>
+            ${recBajaTxt}
+          </div>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <span class="text-muted small">${at.fecha_registro ?? ""}</span>
+            <button class="btn btn-link btn-sm py-0 px-1 text-danger"
+                    onclick="cfgAlimEliminarAutotrafo('${nomEsc}')">× Eliminar</button>
+          </div>
+        </div>
       </div>`;
     } else if (eqsRec.length) {
-      const nomEsc  = nomAlim.replace(/'/g, "\\'");
       const opcsRec = eqsRec.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
-      atHtml += `<div class="d-flex gap-2 align-items-center flex-wrap">
-        <select id="cfg-at-rec-sel" class="form-select form-select-sm" style="width:auto">
-          <option value="">— seleccionar REC —</option>${opcsRec}
-        </select>
-        <button class="btn btn-sm btn-outline-warning"
-                onclick="cfgAlimRegistrarAutotrafo('${nomEsc}')">
-          <i class="bi bi-lightning-charge me-1"></i>Registrar autotrafo
-        </button>
+      atHtml += `<div class="p-2 rounded" style="background:#f8f9fa;border:1px solid #dee2e6;font-size:.84rem">
+        <div class="text-muted small mb-2">Selecciona los RECs que delimitan el autotrafo:</div>
+        <div class="d-flex gap-2 align-items-end flex-wrap">
+          <div>
+            <label class="form-label mb-1 small text-muted">Lado 23 kV (alta)</label>
+            <select id="cfg-at-rec-alta-sel" class="form-select form-select-sm" style="width:auto">
+              <option value="">— REC alta —</option>${opcsRec}
+            </select>
+          </div>
+          <div>
+            <label class="form-label mb-1 small text-muted">Lado 12 kV (baja)</label>
+            <select id="cfg-at-rec-baja-sel" class="form-select form-select-sm" style="width:auto">
+              <option value="">— REC baja —</option>${opcsRec}
+            </select>
+          </div>
+          <button class="btn btn-sm btn-outline-warning"
+                  onclick="cfgAlimRegistrarAutotrafo('${nomEsc}')">
+            <i class="bi bi-lightning-charge me-1"></i>Registrar
+          </button>
+        </div>
       </div>`;
     } else {
       atHtml += '<div class="text-muted small">Sin RECs en la base para este alimentador.</div>';
@@ -7525,14 +7571,16 @@ function renderCfgAlimDetalle(data) {
 }
 
 async function cfgAlimRegistrarAutotrafo(nomAlim) {
-  const sel = document.getElementById("cfg-at-rec-sel");
-  const recAlta = sel?.value ?? "";
-  if (!recAlta) return mostrarError("Selecciona un REC para el autotrafo.");
+  const selAlta = document.getElementById("cfg-at-rec-alta-sel");
+  const selBaja = document.getElementById("cfg-at-rec-baja-sel");
+  const recAlta = selAlta?.value ?? "";
+  const recBaja = selBaja?.value ?? "";
+  if (!recAlta) return mostrarError("Selecciona el REC del lado 23 kV (alta tensión).");
   spinner(true, "Guardando autotrafo...");
   try {
     const existing = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`).catch(() => ({}));
     const conductores = existing?.conductores_intermedios ?? [];
-    const autotrafos  = [{ rec_alta: recAlta, tension_alta: 23 }];
+    const autotrafos  = [{ rec_alta: recAlta, rec_baja: recBaja || null, tension_alta: 23 }];
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
