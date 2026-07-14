@@ -464,7 +464,10 @@ function evaluarEquipos(
         $cn       = isset($eq['cn']) && is_numeric($eq['cn']) ? (float)$eq['cn'] : null;
         $fraccion = array_key_exists('fraccion', $eq) ? $eq['fraccion'] : null;
         $ent      = $eq;
-        $ent['delta_I'] = $deltaI;
+        $deltaIEq = isset($eq['delta_I_override']) && is_numeric($eq['delta_I_override'])
+            ? (float)$eq['delta_I_override']
+            : $deltaI;
+        $ent['delta_I'] = $deltaIEq;
 
         // Sin CN válida → sin_cn
         if (!($cn && $cn > 0.0)) {
@@ -486,7 +489,7 @@ function evaluarEquipos(
             $iBaseA     = $alivioA_abs !== null
                 ? max(0.0, $iBaseAOrig - $alivioA_abs)
                 : $iBaseAOrig;
-            $iTotalA = $iBaseA + $deltaI;
+            $iTotalA = $iBaseA + $deltaIEq;
             $pctA    = round($iTotalA / $cn * 100.0, 1);
             $enfA    = [
                 'I_base'    => round($iBaseA,  2),
@@ -519,13 +522,13 @@ function evaluarEquipos(
                 $maxVal   = max($serieReco);
                 $mesMaxB  = (string)array_search($maxVal, $serieReco);
                 $iBaseB   = $maxVal;
-                $iTotalB  = round($iBaseB + $deltaI, 2);
+                $iTotalB  = round($iBaseB + $deltaIEq, 2);
                 $pctB     = round($iTotalB / $cn * 100.0, 1);
 
                 $serieDet = [];
                 ksort($serieReco);
                 foreach ($serieReco as $m => $v) {
-                    $iT      = round($v + $deltaI, 2);
+                    $iT      = round($v + $deltaIEq, 2);
                     $pctMes  = round($iT / $cn * 100.0, 1);
                     $serieDet[] = [
                         'mes'     => $m,
@@ -568,7 +571,7 @@ function evaluarEquipos(
             $ent['delta_pct'] = ($enfA ?? $enfB ?? [])['pct'] ?? null;
         } else {
             // Legacy: sin datos aguas_abajo → solo ratio ΔI/CN
-            $pctLeg          = round($deltaI / $cn * 100.0, 1);
+            $pctLeg          = round($deltaIEq / $cn * 100.0, 1);
             $ent['delta_pct'] = $pctLeg;
             $ent['estado']    = _vccClasif($pctLeg);
         }

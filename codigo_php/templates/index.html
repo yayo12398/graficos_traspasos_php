@@ -797,6 +797,11 @@
               <div id="vcc-alim-info" class="mt-2 text-muted small" style="display:none">
                 <i class="bi bi-info-circle me-1"></i>
                 <span id="vcc-alim-cn-txt"></span>
+                <span id="vcc-alim-at-badge" class="badge bg-warning text-dark ms-2"
+                      style="display:none;font-size:.7rem"
+                      title="Este alimentador tiene autotrafo configurado">
+                  ⚡ Autotrafo
+                </span>
               </div>
             </div>
           </div>
@@ -1303,7 +1308,7 @@
 
 <script>
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.html — bloque <script>  (~7810 L total)                    ║
+// ║  ÍNDICE DE index.html — bloque <script>  (~8063 L total)                    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  GLOBAL / INIT / CACHÉ                                         L.1532–1709  ║
 // ║    window.onerror  captura errores JS  |  state{}  global app  L.1532/1538  ║
@@ -1323,7 +1328,7 @@
 // ║    fmtMes(yyyymm)              'YYYY-MM' → 'Mes YY'             L.1723      ║
 // ║    _limiteAnioCorrido(meses)   calcula límite año corrido        L.1728      ║
 // ║    cargarEquiposConfig()       GET /api/equipos/config (todos)   L.1735      ║
-// ║    cargarConfigAlim(nom)       GET config de un alimentador      L.1742      ║
+// ║    cargarConfigAlim(nom)       GET config de un alimentador      L.1747      ║
 // ║    cargarMeses()               GET /api/meses → checkboxes       L.1751      ║
 // ║    _renderMeses(historico)     renderiza checkboxes de meses     L.1767      ║
 // ║    _aplicarVisibilidadMeses()  muestra/oculta por rango corrido  L.1791      ║
@@ -1422,110 +1427,115 @@
 // ║    descargarInformeFeeder(n)   GET informe HTML feeder           L.4959      ║
 // ║    descargarTransferencia(f,i) GET HTML de una transferencia     L.4978      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — PUNTO / ALIM A (inputs panel)                            L.5038–5581  ║
-// ║    vccGetNumpos/NuevoTp/ModoPunto/IdCliente/NombreCliente/Dir() L.5038–5043  ║
-// ║    vccInicializarSelect()      TomSelect numérico de punto VCC   L.5046      ║
-// ║    vccActualizarUIModo(modo)   muestra/oculta campos por modo    L.5114      ║
-// ║    vccCargarEquipos(nom,modo)  GET equipos alimentador A         L.5127      ║
-// ║    vccLimpiarPunto()           limpia selección de punto VCC     L.5190      ║
-// ║    vccBuscarPunto(numpos)      GET /api/vcc/punto/{numpos}       L.5212      ║
-// ║    vccRenderEquiposInputs(eqs) tabla inputs CN/tipo alim A       L.5264      ║
-// ║    _vccEqRow(eq)               fila equipo alim A                L.5294      ║
-// ║    _vccCondBtnRow/CondRow(...) fila botón/conductor intermedio   L.5331/5341 ║
-// ║    vccInsertarConductor(btn)   inserta fila conductor            L.5354      ║
-// ║    vccEliminarConductor(btn)   elimina fila conductor            L.5363      ║
-// ║    vccGuardarConfigAlim()      POST config conductores alim A    L.5553      ║
+// ║  VCC — PUNTO / ALIM A (inputs panel)                            L.5048–5670  ║
+// ║    vccGetNumpos/NuevoTp/ModoPunto/IdCliente/NombreCliente/Dir() L.5048–5053  ║
+// ║    vccInicializarSelect()      TomSelect numérico de punto VCC   L.5056      ║
+// ║    vccActualizarUIModo(modo)   muestra/oculta campos por modo    L.5124      ║
+// ║    vccCargarEquipos(nom,modo)  GET equipos alimentador A         L.5137      ║
+// ║    vccLimpiarPunto()           limpia selección de punto VCC     L.5200      ║
+// ║    vccBuscarPunto(numpos)      GET /api/vcc/punto/{numpos}       L.5222      ║
+// ║    vccRenderEquiposInputs(eqs) tabla inputs CN/tipo alim A       L.5274      ║
+// ║    _vccEqRow(eq,esAtBoundary,atTension) fila equipo alim A      L.5320      ║
+// ║    _vccAutotrafoSepRow(kv,rec) separador 23kV/12kV en tabla      L.5366      ║
+// ║    _vccCondBtnRow/CondRow(...) fila botón/conductor intermedio   L.5376/5386 ║
+// ║    vccInsertarConductor(btn)   inserta fila conductor            L.5399      ║
+// ║    vccEliminarConductor(btn)   elimina fila conductor            L.5408      ║
+// ║    vccGuardarConfigAlim()      POST config conductores+autotraf. L.5598      ║
+// ║    vccRegistrarAutotrafo(rec,kv) guarda autotrafo en config alim L.5626      ║
+// ║    vccEliminarAutotrafo()      elimina autotrafo de config alim  L.5651      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — ALIM B (receptor troncal)                                L.5375–5581  ║
-// ║    vccCargarEquiposB(nom,tr)   GET equipos alimentador B         L.5375      ║
-// ║    vccRenderEquiposBInputs(eqs,c) tabla inputs alim B            L.5400      ║
-// ║    _vccbEqRow/CondBtnRow/CondRow(.) filas alim B               L.5430–5471  ║
-// ║    vccbInsertarConductor/EliminarConductor(btn) conductores B    L.5483/5491 ║
-// ║    vccGuardarConfigAlimB()     POST config conductores alim B    L.5501      ║
-// ║    vccLeerCNsEquiposB()        lee CNs ingresados de alim B      L.5527      ║
+// ║  VCC — ALIM B (receptor troncal)                                L.5420–5671  ║
+// ║    vccCargarEquiposB(nom,tr)   GET equipos alimentador B         L.5420      ║
+// ║    vccRenderEquiposBInputs(eqs,c) tabla inputs alim B            L.5445      ║
+// ║    _vccbEqRow/CondBtnRow/CondRow(.) filas alim B               L.5475–5516  ║
+// ║    vccbInsertarConductor/EliminarConductor(btn) conductores B    L.5528/5536 ║
+// ║    vccGuardarConfigAlimB()     POST config conductores alim B    L.5546      ║
+// ║    vccLeerCNsEquiposB()        lee CNs ingresados de alim B      L.5572      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — TRASPASO SIMULTÁNEO (TSP)                                L.5582–5737  ║
-// ║    tspCargarEquiposB(n,nom,tr) GET equipos TSP alim B            L.5582      ║
-// ║    tspRenderEquiposBTabla(eqs) tabla equipos TSP alim B          L.5616      ║
-// ║    _tspEqBRow(eq)              fila equipo TSP alim B            L.5647      ║
-// ║    tspGuardarConfigAlimB()     POST config conductores TSP B     L.5674      ║
-// ║    tspLeerEquiposB()           lee equipos TSP alim B            L.5701      ║
-// ║    tspRefrescarCNsB()          recarga CNs desde config TSP B    L.5725      ║
+// ║  VCC — TRASPASO SIMULTÁNEO (TSP)                                L.5672–5827  ║
+// ║    tspCargarEquiposB(n,nom,tr) GET equipos TSP alim B            L.5672      ║
+// ║    tspRenderEquiposBTabla(eqs) tabla equipos TSP alim B          L.5706      ║
+// ║    _tspEqBRow(eq)              fila equipo TSP alim B            L.5737      ║
+// ║    tspGuardarConfigAlimB()     POST config conductores TSP B     L.5764      ║
+// ║    tspLeerEquiposB()           lee equipos TSP alim B            L.5791      ║
+// ║    tspRefrescarCNsB()          recarga CNs desde config TSP B    L.5815      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — MANIOBRA / LZ / DESTINO                                  L.5738–6085  ║
-// ║    vccToggleTraspaso()         muestra/oculta panel traspaso     L.5738      ║
-// ║    vccTraspasoModo(modo)       cambia modo de traspaso           L.5746      ║
-// ║    _vccPoblarAbreDropdown()    carga dropdown equipo que abre    L.5761      ║
-// ║    vccTraspasoAbreChange(eq)   onChange equipo que abre          L.5783      ║
-// ║    vccMostrarLzCierra(list)    auto/radio selector LZ cierra     L.5852      ║
-// ║    vccSeleccionarLz(lz)        selecciona LZ manualmente         L.5891      ║
-// ║    vccLzCierraChange(numpos)   onChange selección LZ             L.5897      ║
-// ║    vccTraspasoDestinoChange(n) onChange destino traspaso VCC     L.5906      ║
-// ║    _vccRenderDestinoManual(id) render inputs destino manual      L.5966      ║
-// ║    vccDestinoManualChange(sel) onChange destino manual           L.5995      ║
-// ║    vccGetTraspasoParams()      → body para evaluar traspaso      L.6014      ║
-// ║    vccLeerCNsEquipos()         lee CNs ingresados alim A         L.6042      ║
+// ║  VCC — MANIOBRA / LZ / DESTINO                                  L.5828–6175  ║
+// ║    vccToggleTraspaso()         muestra/oculta panel traspaso     L.5828      ║
+// ║    vccTraspasoModo(modo)       cambia modo de traspaso           L.5836      ║
+// ║    _vccPoblarAbreDropdown()    carga dropdown equipo que abre    L.5851      ║
+// ║    vccTraspasoAbreChange(eq)   onChange equipo que abre          L.5873      ║
+// ║    vccMostrarLzCierra(list)    auto/radio selector LZ cierra     L.5942      ║
+// ║    vccSeleccionarLz(lz)        selecciona LZ manualmente         L.5981      ║
+// ║    vccLzCierraChange(numpos)   onChange selección LZ             L.5987      ║
+// ║    vccTraspasoDestinoChange(n) onChange destino traspaso VCC     L.5996      ║
+// ║    _vccRenderDestinoManual(id) render inputs destino manual      L.6056      ║
+// ║    vccDestinoManualChange(sel) onChange destino manual           L.6085      ║
+// ║    vccGetTraspasoParams()      → body para evaluar traspaso      L.6104      ║
+// ║    vccLeerCNsEquipos()         lee CNs ingresados alim A         L.6132      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — FICHA EQUIPO / MESES                                     L.6086–6264  ║
-// ║    fichaAbrirModal(numpos,cb)  abre modal ficha equipo           L.6086      ║
-// ║    fichaToggleCampos()         muestra/oculta campos ficha       L.6142      ║
-// ║    _fichaDefaultTipo(numpos)   infiere tipo equipo por prefijo   L.6147      ║
-// ║    fichaGuardar()              POST /api/equipos/config/{n}      L.6155      ║
-// ║    fichaEliminar()             DELETE /api/equipos/config/{n}    L.6190      ║
-// ║    vccRenderMeses(historico)   checkboxes período VCC            L.6203      ║
-// ║    vccMesToggle(chk)           onChange mes VCC                  L.6225      ║
-// ║    vccMesesSeleccionados()     → array meses VCC marcados        L.6233      ║
-// ║    vccActualizarLblMeses()     actualiza label meses VCC         L.6236      ║
-// ║    vccToggleHistorico(activo)  activa período histórico VCC      L.6241      ║
-// ║    vccSelMeses(checked)        sel./desel. todos meses VCC       L.6253      ║
+// ║  VCC — FICHA EQUIPO / MESES                                     L.6176–6354  ║
+// ║    fichaAbrirModal(numpos,cb)  abre modal ficha equipo           L.6176      ║
+// ║    fichaToggleCampos()         muestra/oculta campos ficha       L.6232      ║
+// ║    _fichaDefaultTipo(numpos)   infiere tipo equipo por prefijo   L.6237      ║
+// ║    fichaGuardar()              POST /api/equipos/config/{n}      L.6245      ║
+// ║    fichaEliminar()             DELETE /api/equipos/config/{n}    L.6280      ║
+// ║    vccRenderMeses(historico)   checkboxes período VCC            L.6293      ║
+// ║    vccMesToggle(chk)           onChange mes VCC                  L.6315      ║
+// ║    vccMesesSeleccionados()     → array meses VCC marcados        L.6323      ║
+// ║    vccActualizarLblMeses()     actualiza label meses VCC         L.6326      ║
+// ║    vccToggleHistorico(activo)  activa período histórico VCC      L.6331      ║
+// ║    vccSelMeses(checked)        sel./desel. todos meses VCC       L.6343      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — EVALUAR / RESULTADOS                                     L.6265–6920  ║
-// ║    vccEvaluar()                POST /api/vcc/evaluar             L.6265      ║
-// ║    _vccEstadoEquipos(eqs)      HTML badge estado equipos         L.6309      ║
-// ║    _vccResumenHTML(pA,pT,n,e)  HTML resumen VCC por escenario    L.6316      ║
-// ║    _vccRenderReceptorEnEscenario(sfx,dest) bloque receptor       L.6344      ║
-// ║    vccRenderResultados(r,t,e,i) render resultado VCC completo    L.6402      ║
-// ║    initTooltips(container)     inicializa tooltips Bootstrap      L.6488      ║
-// ║    vccTablaFU(tabla,r,opts)    tabla FU transpuesta meses=cols   L.6499      ║
-// ║    vccTablaEquipos(eqs,dI)     tabla equipos upstream VCC        L.6595      ║
-// ║    vccGuardar()                POST /api/vcc/guardar             L.6789      ║
-// ║    vccEliminar(idx)            DELETE evaluación VCC             L.6850      ║
-// ║    vccDescargarHTML()          POST /api/vcc/descargar_html      L.6861      ║
+// ║  VCC — EVALUAR / RESULTADOS                                     L.6355–6956  ║
+// ║    vccEvaluar()                POST /api/vcc/evaluar             L.6355      ║
+// ║    _vccEstadoEquipos(eqs)      HTML badge estado equipos         L.6399      ║
+// ║    _vccResumenHTML(pA,pT,n,e)  HTML resumen VCC por escenario    L.6406      ║
+// ║    _vccRenderReceptorEnEscenario(sfx,dest) bloque receptor       L.6434      ║
+// ║    vccRenderResultados(r,t,e,i) render resultado VCC completo    L.6492      ║
+// ║    initTooltips(container)     inicializa tooltips Bootstrap      L.6578      ║
+// ║    vccTablaFU(tabla,r,opts)    tabla FU transpuesta meses=cols   L.6589      ║
+// ║    vccTablaEquipos(eqs,dI)     tabla equipos upstream VCC        L.6685      ║
+// ║    vccGuardar()                POST /api/vcc/guardar             L.6885      ║
+// ║    vccEliminar(idx)            DELETE evaluación VCC             L.6946      ║
+// ║    vccDescargarHTML()          POST /api/vcc/descargar_html      L.6957      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONFIGURACIÓN (tab)                                            L.6921–7457  ║
-// ║    cfgMostrar(seccion)         pill activa: equipos|alim|ajust   L.6921      ║
-// ║    cargarEquiposGlobal()       GET /api/equipos/todos            L.6941      ║
-// ║    filtrarEquiposGlobal()      filtro búsqueda ≥2 chars          L.6958      ║
-// ║    renderEquiposGlobal(l,b,q)  tabla equipos configurados        L.6981      ║
-// ║    cfgEliminarEquipo(numpos)   DELETE /api/equipos/config/{n}    L.7048      ║
-// ║    cargarAlimentadoresConfig() GET /api/alimentadores/config     L.7060      ║
-// ║    renderAlimentadoresConfig(d) lista feeders con conductores    L.7071      ║
-// ║    cfgToggleAlim(id,nom)       expande/colapsa fila alim.        L.7136      ║
-// ║    cfgCargarEquiposAlim(n,c,s) GET equipos de feeder (lazy)      L.7151      ║
-// ║    cfgEliminarAlim(nom)        DELETE config de alimentador      L.7201      ║
-// ║    cfgEliminarConductorAlim(n,i) DELETE conductor específico     L.7209      ║
-// ║    _cfgAlimGetNoms()           GET nom_alim de todos los alims   L.7227      ║
-// ║    cfgAlimBuscar(q)            búsqueda alimentador por nombre   L.7243      ║
-// ║    cfgAlimSeleccionar(nom)     GET detalle alim + render panel   L.7258      ║
-// ║    cfgAlimCerrarDetalle()      cierra panel detalle alim.        L.7288      ║
-// ║    cfgAlimFichaCallback()      callback ficha tras guardar       L.7294      ║
-// ║    renderCfgAlimDetalle(data)  render panel detalle alim.        L.7300      ║
-// ║    cargarAjustesAdmin()        GET /api/ajustes → tabla admin    L.7389      ║
-// ║    eliminarAjusteAdmin(t,n,m)  DELETE ajuste desde vista admin   L.7440      ║
+// ║  CONFIGURACIÓN (tab)                                            L.7017–7556  ║
+// ║    cfgMostrar(seccion)         pill activa: equipos|alim|ajust   L.7017      ║
+// ║    cargarEquiposGlobal()       GET /api/equipos/todos            L.7037      ║
+// ║    filtrarEquiposGlobal()      filtro búsqueda ≥2 chars          L.7054      ║
+// ║    renderEquiposGlobal(l,b,q)  tabla equipos configurados        L.7077      ║
+// ║    cfgEliminarEquipo(numpos)   DELETE /api/equipos/config/{n}    L.7144      ║
+// ║    cargarAlimentadoresConfig() GET /api/alimentadores/config     L.7156      ║
+// ║    renderAlimentadoresConfig(d) lista feeders con conductores    L.7167      ║
+// ║    cfgToggleAlim(id,nom)       expande/colapsa fila alim.        L.7232      ║
+// ║    cfgCargarEquiposAlim(n,c,s) GET equipos de feeder (lazy)      L.7247      ║
+// ║    cfgEliminarAlim(nom)        DELETE config de alimentador      L.7297      ║
+// ║    cfgEliminarConductorAlim(n,i) DELETE conductor específico     L.7305      ║
+// ║    _cfgAlimGetNoms()           GET nom_alim de todos los alims   L.7323      ║
+// ║    cfgAlimBuscar(q)            búsqueda alimentador por nombre   L.7339      ║
+// ║    cfgAlimSeleccionar(nom)     GET detalle alim + render panel   L.7354      ║
+// ║    cfgAlimCerrarDetalle()      cierra panel detalle alim.        L.7384      ║
+// ║    cfgAlimFichaCallback()      callback ficha tras guardar       L.7390      ║
+// ║    renderCfgAlimDetalle(data)  render panel detalle alim.        L.7396      ║
+// ║    cfgAlimRegistrarAutotrafo(nom) POST autotrafo en config alim  L.7522      ║
+// ║    cfgAlimEliminarAutotrafo(nom)  DELETE autotrafo de config alim L.7541     ║
+// ║    cargarAjustesAdmin()        GET /api/ajustes → tabla admin    L.7557      ║
+// ║    eliminarAjusteAdmin(t,n,m)  DELETE ajuste desde vista admin   L.7608      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HISTORIAL VCC / UTILIDADES / AJUSTES                          L.7458–7801  ║
-// ║    mostrarError(msg)           alerta global de error            L.7458      ║
-// ║    mostrarToast(msg)           toast temporal Bootstrap          L.7468      ║
-// ║    vccCargarHistorialGlobal()  GET historial evaluaciones VCC    L.7485      ║
-// ║    hvccFiltrar()               filtra historial por alim/estado  L.7503      ║
-// ║    hvccEstadoEv(ev)            → clase CSS según estado evaluc.  L.7518      ║
-// ║    hvccRenderTabla(evs)        renderiza tabla historial VCC     L.7526      ║
-// ║    hvccEliminar(nom,idx)       DELETE evaluación del historial   L.7594      ║
-// ║    hvccDescargar(nom,idx)      descarga HTML evaluación VCC      L.7608      ║
-// ║    renderAjustePanel(data)     panel ajuste datos anómalos 2×2   L.7630      ║
-// ║    recalcularConAjuste()       recalcula simulación con ajustes  L.7764      ║
-// ║    guardarAjustesEntidad(t,n,p,e) POST /api/ajustes/{tipo}/{n}   L.7775      ║
-// ║    eliminarAjuste(t,n,mes,e)   DELETE /api/ajustes/.../{mes}     L.7801      ║
+// ║  HISTORIAL VCC / UTILIDADES / AJUSTES                          L.7626–7969  ║
+// ║    mostrarError(msg)           alerta global de error            L.7626      ║
+// ║    mostrarToast(msg)           toast temporal Bootstrap          L.7636      ║
+// ║    vccCargarHistorialGlobal()  GET historial evaluaciones VCC    L.7653      ║
+// ║    hvccFiltrar()               filtra historial por alim/estado  L.7671      ║
+// ║    hvccEstadoEv(ev)            → clase CSS según estado evaluc.  L.7686      ║
+// ║    hvccRenderTabla(evs)        renderiza tabla historial VCC     L.7694      ║
+// ║    hvccEliminar(nom,idx)       DELETE evaluación del historial   L.7762      ║
+// ║    hvccDescargar(nom,idx)      descarga HTML evaluación VCC      L.7776      ║
+// ║    renderAjustePanel(data)     panel ajuste datos anómalos 2×2   L.7798      ║
+// ║    recalcularConAjuste()       recalcula simulación con ajustes  L.7932      ║
+// ║    guardarAjustesEntidad(t,n,p,e) POST /api/ajustes/{tipo}/{n}   L.7943      ║
+// ║    eliminarAjuste(t,n,mes,e)   DELETE /api/ajustes/.../{mes}     L.7969      ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Captura global de errores JS ──────────────────────────────────────────
@@ -1741,10 +1751,15 @@ async function cargarEquiposConfig() {
 
 async function cargarConfigAlim(nom) {
   state.alimConfig = null;
+  const atBadge = document.getElementById("vcc-alim-at-badge");
+  if (atBadge) atBadge.style.display = "none";
   if (!nom) return;
   try {
     const r = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`);
-    if (!r.error) state.alimConfig = r;
+    if (!r.error) {
+      state.alimConfig = r;
+      if (atBadge && r.autotrafos?.length) atBadge.style.display = "";
+    }
   } catch(e) { /* sin config guardada — normal */ }
 }
 
@@ -5269,16 +5284,29 @@ function vccRenderEquiposInputs(equipos) {
   }
   const sorted     = [...equipos].sort((a, b) => (b.fraccion ?? -1) - (a.fraccion ?? -1));
   const savedConds = state.alimConfig?.conductores_intermedios ?? [];
+  const atConfig   = state.alimConfig?.autotrafos?.[0] ?? null;
+  const atRecAlta  = atConfig?.rec_alta ?? null;
+  const atTension  = atConfig?.tension_alta ?? 23;
+
   const rows = [];
   sorted.forEach((eq, i) => {
-    rows.push(_vccEqRow(eq));
+    const esAtBoundary = eq.nombre === atRecAlta;
+    rows.push(_vccEqRow(eq, esAtBoundary, atTension));
     if (i < sorted.length - 1) {
       const next  = sorted[i + 1];
       const saved = savedConds.find(c => c.entre_b === eq.nombre && c.entre_a === next.nombre);
+      if (esAtBoundary) rows.push(_vccAutotrafoSepRow(atTension, atRecAlta));
       rows.push(_vccCondBtnRow(eq.nombre, next.nombre, eq.fraccion ?? null));
       if (saved) rows.push(_vccCondRow(eq.nombre, next.nombre, eq.fraccion ?? null, saved.corriente_a));
     }
   });
+
+  const atFooter = atConfig
+    ? `<span class="text-muted small ms-2">⚡ Autotrafo en <b>${atConfig.rec_alta}</b> (${atConfig.tension_alta} kV)
+        <button class="btn btn-link btn-sm py-0 px-1 text-danger" onclick="vccEliminarAutotrafo()"
+                title="Eliminar autotrafo">×</button></span>`
+    : "";
+
   cont.innerHTML =
     `<div style="overflow-x:auto">` +
     `<table class="table table-sm tabla-vcc mb-1" style="font-size:.82rem">` +
@@ -5286,12 +5314,15 @@ function vccRenderEquiposInputs(equipos) {
     `<th class="text-end">Fracc.</th><th class="text-end">kVA↓</th>` +
     `<th class="text-end">CN (A)</th><th></th></tr></thead>` +
     `<tbody>${rows.join("")}</tbody></table></div>` +
-    `<button class="btn btn-sm btn-outline-secondary mt-1" onclick="vccGuardarConfigAlim()">` +
-    `<i class="bi bi-floppy me-1"></i>Guardar configuración del alimentador</button>`;
+    `<div class="d-flex align-items-center gap-2 flex-wrap mt-1">` +
+    `<button class="btn btn-sm btn-outline-secondary" onclick="vccGuardarConfigAlim()">` +
+    `<i class="bi bi-floppy me-1"></i>Guardar configuración</button>` +
+    atFooter +
+    `</div>`;
   initTooltips(cont);
 }
 
-function _vccEqRow(eq) {
+function _vccEqRow(eq, esAtBoundary = false, atTension = 23) {
   const TIPO_BADGE = {
     reconectador: `<span class="badge bg-danger">REC</span>`,
     equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
@@ -5320,12 +5351,31 @@ function _vccEqRow(eq) {
     cnHtml = `<input type="number" class="form-control form-control-sm d-inline-block" style="width:68px"` +
       ` id="vcc-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">${tipoBadge}`;
   }
-  return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}">` +
-    `<td>${badge}</td><td class="font-monospace">${eq.nombre}</td>` +
+  const atBadge = esAtBoundary
+    ? ` <span class="badge bg-warning text-dark" style="font-size:.65rem" title="Rec en lado ${atTension} kV del autotrafo">⚡ AT</span>`
+    : "";
+  const atBtn = (eq.tipo === "reconectador" && !esAtBoundary)
+    ? `<button class="btn btn-link btn-sm p-0 text-warning ms-1"
+              onclick="vccRegistrarAutotrafo('${eq.nombre}', ${atTension})"
+              title="Registrar como rec ${atTension} kV del autotrafo">⚡</button>`
+    : "";
+  const rowStyle = esAtBoundary ? ' style="background:#fff9e6"' : "";
+  return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}"${rowStyle}>` +
+    `<td>${badge}</td><td class="font-monospace">${eq.nombre}${atBadge}</td>` +
     `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
     `<td class="text-end">${cnHtml}</td>` +
     `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
-      `onclick="fichaAbrirModal('${eq.nombre}')" title="Configurar equipo">⚙</button></td></tr>`;
+      `onclick="fichaAbrirModal('${eq.nombre}')" title="Configurar equipo">⚙</button>${atBtn}</td></tr>`;
+}
+
+function _vccAutotrafoSepRow(tensionAlta, recAlta) {
+  return `<tr class="vcc-at-sep-row">` +
+    `<td colspan="6" class="py-1 text-center" ` +
+    `style="background:#fff3cd;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.75rem">` +
+    `<i class="bi bi-lightning-charge-fill text-warning me-1"></i>` +
+    `<b>${tensionAlta} kV</b> — segmento alta tensión arriba de <code>${recAlta}</code>` +
+    ` · ΔI reducido a ${tensionAlta} kV` +
+    `</td></tr>`;
 }
 
 function _vccCondBtnRow(entreB, entreA, fraccion) {
@@ -5559,14 +5609,15 @@ async function vccGuardarConfigAlim() {
     const cn = el ? (parseFloat(el.value) || null) : null;
     if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
   });
+  const autotrafos = state.alimConfig?.autotrafos ?? [];
   spinner(true, "Guardando...");
   try {
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conductores_intermedios: conductores }),
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos }),
     });
-    state.alimConfig = { conductores_intermedios: conductores };
+    state.alimConfig = Object.assign({}, state.alimConfig ?? {}, { conductores_intermedios: conductores });
     const saveBtn = document.querySelector("#vcc-card-equipos button[onclick='vccGuardarConfigAlim()']");
     if (saveBtn) {
       const orig = saveBtn.innerHTML;
@@ -5574,6 +5625,50 @@ async function vccGuardarConfigAlim() {
       setTimeout(() => { saveBtn.innerHTML = orig; }, 2000);
     }
   } catch(e) { mostrarError("Error al guardar: " + e.message); }
+  finally { spinner(false); }
+}
+
+async function vccRegistrarAutotrafo(recAlta, tensionAlta = 23) {
+  const nom = state.vccAlimNom;
+  if (!nom) return;
+  const conductores = [];
+  document.querySelectorAll("tr.vcc-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vcc-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
+  });
+  const autotrafos = [{ rec_alta: recAlta, tension_alta: tensionAlta }];
+  spinner(true, "Guardando autotrafo...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos }),
+    });
+    state.alimConfig = Object.assign({}, state.alimConfig ?? {}, { conductores_intermedios: conductores, autotrafos });
+    const atBadge = document.getElementById("vcc-alim-at-badge");
+    if (atBadge) atBadge.style.display = "";
+    vccRenderEquiposInputs(state.vccEquipos);
+  } catch(e) { mostrarError("Error al guardar autotrafo: " + e.message); }
+  finally { spinner(false); }
+}
+
+async function vccEliminarAutotrafo() {
+  const nom = state.vccAlimNom;
+  if (!nom) return;
+  const conductores = (state.alimConfig?.conductores_intermedios ?? []);
+  spinner(true, "Eliminando autotrafo...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos: [] }),
+    });
+    state.alimConfig = Object.assign({}, state.alimConfig ?? {}, { autotrafos: [] });
+    const atBadge = document.getElementById("vcc-alim-at-badge");
+    if (atBadge) atBadge.style.display = "none";
+    vccRenderEquiposInputs(state.vccEquipos);
+  } catch(e) { mostrarError("Error al eliminar autotrafo: " + e.message); }
   finally { spinner(false); }
 }
 
@@ -6630,7 +6725,10 @@ function vccTablaEquipos(equipos, deltaI) {
       const cnStr   = eq.cn != null
         ? `${Number(eq.cn).toFixed(0)} A${_fuenteBadge(fuente)}` : "—";
       const dpctStr = eq.delta_pct != null ? `${Number(eq.delta_pct).toFixed(1)}%` : "—";
-      const dI      = deltaI != null ? Number(deltaI).toFixed(2) : "—";
+      const eqDeltaI = eq.delta_I ?? deltaI;
+      const dI       = eqDeltaI != null ? Number(eqDeltaI).toFixed(2) : "—";
+      const atMark   = eq.tension_kv_override != null && eq.tension_kv_override !== (deltaI > 0 ? null : null)
+        ? ` <span style="font-size:.65rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
       const bcls    = BADGE_CLS[eq.estado] || "bg-secondary";
       const blbl    = BADGE_LBL[eq.estado] || eq.estado;
       const nombreDisplay = eq.tipo === "conductor_intermedio"
@@ -6638,7 +6736,7 @@ function vccTablaEquipos(equipos, deltaI) {
         : `<code>${eq.nombre}</code>`;
       return `<tr>
         <td>${nombreDisplay}</td><td>${TIPO_LBL[eq.tipo]||eq.tipo}</td>
-        <td class="r">${cnStr}</td><td class="r">${dI} A</td>
+        <td class="r">${cnStr}</td><td class="r">${dI} A${atMark}</td>
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
     }).join("");
@@ -6686,7 +6784,10 @@ function vccTablaEquipos(equipos, deltaI) {
     const fuente = eq.fuente_ajuste || "equipo";
     const cn     = eq.cn != null
       ? `${Number(eq.cn).toFixed(0)}${_fuenteBadge(fuente)}` : "—";
-    const dI    = deltaI != null ? Number(deltaI).toFixed(2) : "—";
+    const eqDI  = eq.delta_I ?? deltaI;
+    const atTag = eq.tension_kv_override != null
+      ? ` <span style="font-size:.62rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
+    const dI    = eqDI != null ? Number(eqDI).toFixed(2) + atTag : "—";
     const tipo  = TIPO_LBL[eq.tipo] || eq.tipo;
     const est   = eq.estado || "sin_cn";
     const bcls  = BADGE_CLS[est] || "bg-secondary";
@@ -7298,11 +7399,12 @@ async function cfgAlimFichaCallback() {
 }
 
 function renderCfgAlimDetalle(data) {
-  const cont    = document.getElementById("cfg-alim-det-contenido");
-  const equipos = data.equipos ?? [];
-  const condInter   = data.conductores_intermedios ?? [];
-  const ajAlim  = Object.entries(data.ajustes_demanda?.alim  ?? {});
-  const ajTrafo = Object.entries(data.ajustes_demanda?.trafo ?? {});
+  const cont      = document.getElementById("cfg-alim-det-contenido");
+  const equipos   = data.equipos ?? [];
+  const condInter = data.conductores_intermedios ?? [];
+  const autotrafos = data.autotrafos ?? [];
+  const ajAlim    = Object.entries(data.ajustes_demanda?.alim  ?? {});
+  const ajTrafo   = Object.entries(data.ajustes_demanda?.trafo ?? {});
   const TIPO_LBL = { setpoint:"Setpoint", conductor:"Conductor", fusible:"Fusible" };
 
   let html = "";
@@ -7365,6 +7467,43 @@ function renderCfgAlimDetalle(data) {
     </div>`;
   }
 
+  // ─── Autotrafos ────────────────────────────────────────────
+  {
+    const nomAlim = _cfgAlimActual?.nom_alim ?? "";
+    const eqsRec  = equipos.filter(e => /^REC/i.test(e.numpos));
+    let atHtml = '<div class="mb-3"><div class="d-flex align-items-center gap-2 mb-1">'
+      + '<span class="small fw-semibold">Autotrafo</span>'
+      + '<span class="text-muted small" style="font-size:.78rem">REC en el lado de alta tensión (23 kV)</span>'
+      + '</div>';
+    if (autotrafos.length) {
+      const at = autotrafos[0];
+      const nomEsc = nomAlim.replace(/'/g, "\\'");
+      atHtml += `<div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff9e6;border:1px solid #ffc107">
+        <i class="bi bi-lightning-charge-fill text-warning"></i>
+        <span class="small">REC <code>${at.rec_alta}</code> — ${at.tension_alta} kV</span>
+        <span class="text-muted small">${at.fecha_registro ?? ""}</span>
+        <button class="btn btn-link btn-sm py-0 px-1 text-danger ms-auto"
+                onclick="cfgAlimEliminarAutotrafo('${nomEsc}')">× Eliminar</button>
+      </div>`;
+    } else if (eqsRec.length) {
+      const nomEsc  = nomAlim.replace(/'/g, "\\'");
+      const opcsRec = eqsRec.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
+      atHtml += `<div class="d-flex gap-2 align-items-center flex-wrap">
+        <select id="cfg-at-rec-sel" class="form-select form-select-sm" style="width:auto">
+          <option value="">— seleccionar REC —</option>${opcsRec}
+        </select>
+        <button class="btn btn-sm btn-outline-warning"
+                onclick="cfgAlimRegistrarAutotrafo('${nomEsc}')">
+          <i class="bi bi-lightning-charge me-1"></i>Registrar autotrafo
+        </button>
+      </div>`;
+    } else {
+      atHtml += '<div class="text-muted small">Sin RECs en la base para este alimentador.</div>';
+    }
+    atHtml += '</div>';
+    html += atHtml;
+  }
+
   // ─── Ajustes de demanda ────────────────────────────────────
   if (ajAlim.length || ajTrafo.length) {
     html += `<div class="mb-1"><div class="small fw-semibold mb-1">Ajustes de demanda activos</div>
@@ -7383,6 +7522,40 @@ function renderCfgAlimDetalle(data) {
   }
 
   cont.innerHTML = html;
+}
+
+async function cfgAlimRegistrarAutotrafo(nomAlim) {
+  const sel = document.getElementById("cfg-at-rec-sel");
+  const recAlta = sel?.value ?? "";
+  if (!recAlta) return mostrarError("Selecciona un REC para el autotrafo.");
+  spinner(true, "Guardando autotrafo...");
+  try {
+    const existing = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`).catch(() => ({}));
+    const conductores = existing?.conductores_intermedios ?? [];
+    const autotrafos  = [{ rec_alta: recAlta, tension_alta: 23 }];
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos }),
+    });
+    await cfgAlimSeleccionar(nomAlim);
+  } catch(e) { mostrarError("Error al registrar autotrafo: " + e.message); }
+  finally { spinner(false); }
+}
+
+async function cfgAlimEliminarAutotrafo(nomAlim) {
+  spinner(true, "Eliminando autotrafo...");
+  try {
+    const existing = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`).catch(() => ({}));
+    const conductores = existing?.conductores_intermedios ?? [];
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos: [] }),
+    });
+    await cfgAlimSeleccionar(nomAlim);
+  } catch(e) { mostrarError("Error al eliminar autotrafo: " + e.message); }
+  finally { spinner(false); }
 }
 
 // ── AJUSTES ADMIN ─────────────────────────────────────────────────────────

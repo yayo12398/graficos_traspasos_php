@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.php  (~2133 L)                                             ║
+// ║  ÍNDICE DE index.php  (~2175 L)                                             ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  Formato respuesta: [Py] = jsonPy (JSON plano)  |  [Ok] = jsonOk {ok,data} ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -32,8 +32,8 @@ declare(strict_types=1);
 // ║                               nom_alim,sub,cn_trafo,barra_trafo) L.383      ║
 // ║  GET  /api/meses              [Py] meses disponibles en dfAlim   L.415      ║
 // ║  GET  /api/subestaciones      [Py] lista de subestaciones únicas L.534      ║
-// ║  GET  /api/datos              [Py] meses + lista nom_alim        L.2120     ║
-// ║  GET  /api/debug/status       [Py] estado caché, conteos dfAb   L.2096     ║
+// ║  GET  /api/datos              [Py] meses + lista nom_alim        L.2166     ║
+// ║  GET  /api/debug/status       [Py] estado caché, conteos dfAb   L.2142     ║
 // ║  POST /api/reload             [Ok] recarga caché dfAlim+dfAb+LZ L.686      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — FEEDER / ISLA                                                  ║
@@ -94,35 +94,37 @@ declare(strict_types=1);
 // ║  ENDPOINTS — CONFIG DE ALIMENTADORES (alimentadores_config.json)            ║
 // ║  GET    /api/alimentadores/config        [Py] todos guardados     L.1532    ║
 // ║  GET    /api/alimentadores/config/{nom}  [Py] config del alim     L.1537    ║
-// ║  POST   /api/alimentadores/config/{nom}  [Py] guarda conductores  L.1545    ║
-// ║                               body: {conductores_intermedios:[]}            ║
+// ║  POST   /api/alimentadores/config/{nom}  [Py] guarda config       L.1545    ║
+// ║                               body: {conductores_intermedios:[],autotrafos[]} ║
 // ║  DELETE /api/alimentadores/config/{nom}  [Py] elimina config      L.1557    ║
 // ║  GET    /api/alimentadores/lista         [Ok] todos los nom_alim  L.1564    ║
 // ║  GET    /api/alimentadores/equipos/{nom}?numalim=N [Ok]           L.1576    ║
 // ║                               → {nom_alim,equipos[],                        ║
-// ║                                  conductores_intermedios[],ajustes_demanda} ║
-// ║  POST   /api/alim/troncal_enriquecido [Py] troncal alim B+fracs. L.1620    ║
+// ║                                  conductores_intermedios[],autotrafos[],    ║
+// ║                                  ajustes_demanda}                           ║
+// ║  POST   /api/alim/troncal_enriquecido [Py] troncal alim B+fracs. L.1621    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  ENDPOINTS — VCC (Validación Capacidad de Conducción)                       ║
-// ║  GET  /api/vcc/equipos/{nom}?modo=equipos|tp [Py]                L.1644     ║
+// ║  _autotrafoAplicar(up,conf,kva,kv) aplica delta_I por segmento   L.1644     ║
+// ║  GET  /api/vcc/equipos/{nom}?modo=equipos|tp [Py]                L.1682     ║
 // ║                               modo=equipos → upstream clasif.+fracción      ║
 // ║                               modo=tp      → TPs del feeder                 ║
-// ║  POST /api/vcc/punto          [Py] punto de conexión en topología L.1699    ║
+// ║  POST /api/vcc/punto          [Py] punto de conexión en topología L.1737    ║
 // ║                               body: {nom_alim,numpos}                       ║
-// ║  POST /api/vcc/evaluar        [Py] evaluación VCC completa        L.1712    ║
+// ║  POST /api/vcc/evaluar        [Py] evaluación VCC completa        L.1750    ║
 // ║                               (alias de /calcular, mismo body y respuesta)  ║
-// ║  POST /api/vcc/guardar        [Py] persiste evaluación en JSON    L.1950    ║
-// ║  POST /api/vcc/descargar_html [Py] genera reporte HTML descarg.   L.1963    ║
-// ║  GET  /api/vcc/historial_global [Py] historial de todas las VCC  L.1980    ║
-// ║  POST /api/vcc/calcular       [Py] evaluación VCC completa        L.1998    ║
+// ║  POST /api/vcc/guardar        [Py] persiste evaluación en JSON    L.1992    ║
+// ║  POST /api/vcc/descargar_html [Py] genera reporte HTML descarg.   L.2005    ║
+// ║  GET  /api/vcc/historial_global [Py] historial de todas las VCC  L.2022    ║
+// ║  POST /api/vcc/calcular       [Py] evaluación VCC completa        L.2040    ║
 // ║                               body: {nom_alim,numalim,cn_alim,              ║
 // ║                               kva_emp,kva_inst,tension,modo_punto,          ║
 // ║                               equipo_numpos,equipos_troncal_b,...}          ║
-// ║  POST /api/vcc/reporte        [Py] genera reporte VCC (legacy)    L.2060    ║
-// ║  GET  /api/vcc                [Ok] lista alims con evaluaciones   L.2068    ║
-// ║  GET  /api/vcc/{nom}          [Ok] evaluaciones de un alim        L.2073    ║
-// ║  POST /api/vcc/{nom}          [Ok] guarda evaluación en historial L.2078    ║
-// ║  DELETE /api/vcc/{nom}/{idx}  [Py] elimina registro del historial L.2090    ║
+// ║  POST /api/vcc/reporte        [Py] genera reporte VCC (legacy)    L.2106    ║
+// ║  GET  /api/vcc                [Ok] lista alims con evaluaciones   L.2114    ║
+// ║  GET  /api/vcc/{nom}          [Ok] evaluaciones de un alim        L.2119    ║
+// ║  POST /api/vcc/{nom}          [Ok] guarda evaluación en historial L.2124    ║
+// ║  DELETE /api/vcc/{nom}/{idx}  [Py] elimina registro del historial L.2136    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Verificar config.php ──────────────────────────────────────────────────────
@@ -1613,6 +1615,7 @@ if ($method === 'GET' && $a === 'alimentadores' && $b0 === 'equipos' && $b1 && !
         'numalim'                 => $numalim,
         'equipos'                 => $equipsList,
         'conductores_intermedios' => $condInter['conductores_intermedios'] ?? [],
+        'autotrafos'              => $condInter['autotrafos'] ?? [],
         'ajustes_demanda'         => $ajustesDemanda,
     ]);
 }
@@ -1635,6 +1638,43 @@ if ($method === 'POST' && $a === 'alim' && $b0 === 'troncal_enriquecido') {
 
     $enriched = enriquecerUpstreamConFraccion($dfAb, $nom, $upstream);
     jsonOk(['equipos' => $enriched]);
+}
+
+// ── Helper: aplica delta_I_override por equipo cuando hay autotrafo ──────────
+// Equipos con fraccion >= fraccion del rec_alta usan ΔI a tension_alta (23kV).
+// Equipos por debajo usan ΔI a la tensión de conexión del cliente.
+function _autotrafoAplicar(array $upstream, ?array $alimConf, float $kvaEmp, float $tensionKv): array
+{
+    $at = ($alimConf['autotrafos'] ?? [])[0] ?? null;
+    if (!$at) return $upstream;
+    $recAlta     = $at['rec_alta']    ?? '';
+    $tensionAlta = (float)($at['tension_alta'] ?? 23);
+    if (!$recAlta || $tensionAlta === $tensionKv) return $upstream;
+
+    $boundaryFrac = null;
+    foreach ($upstream as $eq) {
+        if (($eq['nombre'] ?? '') === $recAlta) {
+            $f = $eq['fraccion'] ?? null;
+            if ($f !== null && is_numeric($f)) $boundaryFrac = (float)$f;
+            break;
+        }
+    }
+    if ($boundaryFrac === null) return $upstream;
+
+    $dIAlta = deltaICliente($kvaEmp, $tensionAlta);
+    $dIBaja = deltaICliente($kvaEmp, $tensionKv);
+
+    return array_map(function (array $eq) use ($boundaryFrac, $dIAlta, $dIBaja, $tensionAlta, $tensionKv): array {
+        $frac = isset($eq['fraccion']) && is_numeric($eq['fraccion']) ? (float)$eq['fraccion'] : null;
+        if ($frac !== null && $frac >= $boundaryFrac) {
+            $eq['delta_I_override']    = $dIAlta;
+            $eq['tension_kv_override'] = $tensionAlta;
+        } else {
+            $eq['delta_I_override']    = $dIBaja;
+            $eq['tension_kv_override'] = $tensionKv;
+        }
+        return $eq;
+    }, $upstream);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1732,6 +1772,9 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
             $dfAb, $nomAlim,
             ($numpos ? buscarPuntoConexion($dfAb, $nomAlim, $numpos) : [])['upstream'] ?? []
           );
+    $alimConf  = acGetAlim($nomAlim);
+    $upstream  = _autotrafoAplicar($upstream, $alimConf, $kvaEmp, $tensionKv);
+    $autotrafo = ($alimConf['autotrafos'] ?? [])[0] ?? null;
     $deltaI    = deltaICliente($kvaEmp, $tensionKv);
     $mesesSel  = $b['meses_sel'] ?? [];
     $dtA       = (float)($b['delta_traspaso_a']   ?? 0);
@@ -1783,6 +1826,7 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
         'meses_sel'           => $mesesSel,
         'equipos_eval'        => $equipos,
         'delta_I'             => $deltaI,
+        'autotrafo'           => $autotrafo,
         'delta_traspaso_a'    => $dtA,
         'delta_traspaso_pct'  => $dtPct,
         'delta_traspaso_modo' => $b['delta_traspaso_modo'] ?? '',
@@ -2011,6 +2055,9 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'calcular' && !$b1) {
 
     $punto     = buscarPuntoConexion($dfAb, $nomAlim, $numpos);
     $upstream  = enriquecerUpstreamConFraccion($dfAb, $nomAlim, $punto['upstream'] ?? []);
+    $alimConf2 = acGetAlim($nomAlim);
+    $upstream  = _autotrafoAplicar($upstream, $alimConf2, $kvaEmp, $tensionKv);
+    $autotrafo2 = ($alimConf2['autotrafos'] ?? [])[0] ?? null;
     $deltaI    = deltaICliente($kvaEmp, $tensionKv);
     $mesesSel  = $b['meses_sel'] ?? [];
     $dtA       = (float)($b['delta_traspaso_a']   ?? 0);
@@ -2028,6 +2075,7 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'calcular' && !$b1) {
         'upstream'           => $upstream,
         'equipos_eval'       => $equipos,
         'delta_I'            => $deltaI,
+        'autotrafo'          => $autotrafo2,
         'kva_empalme'        => $kvaEmp,
         'tension_kv'         => $tensionKv,
         'n_tds_aguas_abajo'  => $punto['n_tds_aguas_abajo'] ?? 0,

@@ -78,8 +78,25 @@ function acSetAlim(string $nom, array $body): array
         ];
     }
 
-    $entry       = array_merge($existing, ['conductores_intermedios' => $conductores]);
-    $data[$nom]  = $entry;
+    $entry = array_merge($existing, ['conductores_intermedios' => $conductores]);
+
+    if (array_key_exists('autotrafos', $body)) {
+        $autotrafos = [];
+        foreach ($body['autotrafos'] ?? [] as $a) {
+            $recAlta     = trim((string)($a['rec_alta'] ?? ''));
+            $tensionAlta = isset($a['tension_alta']) && is_numeric($a['tension_alta'])
+                ? (int)$a['tension_alta'] : 23;
+            if (!$recAlta) continue;
+            $autotrafos[] = [
+                'rec_alta'       => $recAlta,
+                'tension_alta'   => $tensionAlta,
+                'fecha_registro' => $a['fecha_registro'] ?? date('Y-m-d'),
+            ];
+        }
+        $entry['autotrafos'] = $autotrafos;
+    }
+
+    $data[$nom] = $entry;
     _acSave($data);
     return $entry;
 }
