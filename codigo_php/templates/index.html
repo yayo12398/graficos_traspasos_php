@@ -5286,25 +5286,31 @@ function vccRenderEquiposInputs(equipos) {
   const savedConds = state.alimConfig?.conductores_intermedios ?? [];
   const atConfig   = state.alimConfig?.autotrafos?.[0] ?? null;
   const atRecAlta  = atConfig?.rec_alta ?? null;
+  const atRecBaja  = atConfig?.rec_baja ?? null;
   const atTension  = atConfig?.tension_alta ?? 23;
+  const atHasConf  = !!atRecAlta;
 
   const rows = [];
+  let belowAt = false;
   sorted.forEach((eq, i) => {
-    const esAtBoundary = eq.nombre === atRecAlta;
-    rows.push(_vccEqRow(eq, esAtBoundary, atTension));
+    const esAtBoundary  = eq.nombre === atRecAlta;
+    const esAtBaja      = eq.nombre === atRecBaja;
+    const puedeRegBaja  = belowAt && atHasConf && !atRecBaja;
+    rows.push(_vccEqRow(eq, esAtBoundary, atTension, esAtBaja, atHasConf, puedeRegBaja));
     if (i < sorted.length - 1) {
       const next  = sorted[i + 1];
       const saved = savedConds.find(c => c.entre_b === eq.nombre && c.entre_a === next.nombre);
-      if (esAtBoundary) rows.push(_vccAutotrafoSepRow(atTension, atRecAlta));
+      if (esAtBoundary) { rows.push(_vccAutotrafoSepRow(atTension, atRecAlta, atRecBaja)); belowAt = true; }
       rows.push(_vccCondBtnRow(eq.nombre, next.nombre, eq.fraccion ?? null));
       if (saved) rows.push(_vccCondRow(eq.nombre, next.nombre, eq.fraccion ?? null, saved.corriente_a));
     }
   });
 
   const atFooter = atConfig
-    ? `<span class="text-muted small ms-2">⚡ Autotrafo en <b>${atConfig.rec_alta}</b> (${atConfig.tension_alta} kV)
-        <button class="btn btn-link btn-sm py-0 px-1 text-danger" onclick="vccEliminarAutotrafo()"
-                title="Eliminar autotrafo">×</button></span>`
+    ? `<span class="text-muted small ms-2">⚡ Autotrafo: <b>${atConfig.rec_alta}</b> (23kV)` +
+      (atRecBaja ? ` / <b>${atRecBaja}</b> (12kV)` : ` <span class="text-warning" style="font-size:.75rem">[12kV pendiente]</span>`) +
+      `<button class="btn btn-link btn-sm py-0 px-1 text-danger ms-1" onclick="vccEliminarAutotrafo()"
+               title="Eliminar autotrafo">×</button></span>`
     : "";
 
   cont.innerHTML =
@@ -5322,7 +5328,7 @@ function vccRenderEquiposInputs(equipos) {
   initTooltips(cont);
 }
 
-function _vccEqRow(eq, esAtBoundary = false, atTension = 23) {
+function _vccEqRow(eq, esAtBoundary = false, atTension = 23, esAtBaja = false, atHasConf = false, puedeRegistrarBaja = false) {
   const TIPO_BADGE = {
     reconectador: `<span class="badge bg-danger">REC</span>`,
     equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
@@ -5352,14 +5358,27 @@ function _vccEqRow(eq, esAtBoundary = false, atTension = 23) {
       ` id="vcc-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">${tipoBadge}`;
   }
   const atBadge = esAtBoundary
-    ? ` <span class="badge bg-warning text-dark" style="font-size:.65rem" title="Rec en lado ${atTension} kV del autotrafo">⚡ AT</span>`
-    : "";
-  const atBtn = (eq.tipo === "reconectador" && !esAtBoundary)
-    ? `<button class="btn btn-link btn-sm p-0 text-warning ms-1"
-              onclick="vccRegistrarAutotrafo('${eq.nombre}', ${atTension})"
-              title="Registrar como rec ${atTension} kV del autotrafo">⚡</button>`
-    : "";
-  const rowStyle = esAtBoundary ? ' style="background:#fff9e6"' : "";
+    ? ` <span class="badge bg-warning text-dark" style="font-size:.65rem" title="REC lado ${atTension} kV del autotrafo">⚡ ${atTension}kV</span>`
+    : esAtBaja
+      ? ` <span class="badge bg-info text-white" style="font-size:.65rem" title="REC lado 12 kV del autotrafo">⚡ 12kV</span>`
+      : "";
+  let atBtn = "";
+  if (eq.tipo === "reconectador" && !esAtBoundary && !esAtBaja) {
+    if (puedeRegistrarBaja) {
+      atBtn = `<button class="btn btn-link btn-sm p-0 text-info ms-1"
+                onclick="vccRegistrarRecBaja('${eq.nombre}')"
+                title="Registrar como REC lado 12 kV del autotrafo">⬇⚡</button>`;
+    } else if (!atHasConf) {
+      atBtn = `<button class="btn btn-link btn-sm p-0 text-warning ms-1"
+                onclick="vccRegistrarAutotrafo('${eq.nombre}', ${atTension})"
+                title="Registrar como REC ${atTension} kV del autotrafo">⚡</button>`;
+    }
+  }
+  const rowStyle = esAtBoundary
+    ? ' style="background:#fff9e6"'
+    : esAtBaja
+      ? ' style="background:#e8f4ff"'
+      : "";
   return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}"${rowStyle}>` +
     `<td>${badge}</td><td class="font-monospace">${eq.nombre}${atBadge}</td>` +
     `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
@@ -5368,13 +5387,15 @@ function _vccEqRow(eq, esAtBoundary = false, atTension = 23) {
       `onclick="fichaAbrirModal('${eq.nombre}')" title="Configurar equipo">⚙</button>${atBtn}</td></tr>`;
 }
 
-function _vccAutotrafoSepRow(tensionAlta, recAlta) {
+function _vccAutotrafoSepRow(tensionAlta, recAlta, recBaja = null) {
+  const bajaInfo = recBaja
+    ? ` → <code>${recBaja}</code> (12 kV)`
+    : ` → <span class="text-warning" style="font-size:.72rem">[12 kV por asignar ⬇⚡]</span>`;
   return `<tr class="vcc-at-sep-row">` +
-    `<td colspan="6" class="py-1 text-center" ` +
+    `<td colspan="6" class="py-1 px-2" ` +
     `style="background:#fff3cd;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.75rem">` +
     `<i class="bi bi-lightning-charge-fill text-warning me-1"></i>` +
-    `<b>${tensionAlta} kV</b> — segmento alta tensión arriba de <code>${recAlta}</code>` +
-    ` · ΔI reducido a ${tensionAlta} kV` +
+    `<b>Autotrafo</b> — <code>${recAlta}</code> (${tensionAlta} kV)${bajaInfo}` +
     `</td></tr>`;
 }
 
@@ -5670,6 +5691,31 @@ async function vccEliminarAutotrafo() {
     if (atBadge) atBadge.style.display = "none";
     vccRenderEquiposInputs(state.vccEquipos);
   } catch(e) { mostrarError("Error al eliminar autotrafo: " + e.message); }
+  finally { spinner(false); }
+}
+
+async function vccRegistrarRecBaja(recBaja) {
+  const nom = state.vccAlimNom;
+  if (!nom) return;
+  const atConfig = state.alimConfig?.autotrafos?.[0];
+  if (!atConfig?.rec_alta) return mostrarError("Primero registra el REC del lado 23 kV.");
+  const conductores = [];
+  document.querySelectorAll("tr.vcc-cond-row").forEach(tr => {
+    const el = tr.querySelector(".vcc-cond-cn-input");
+    const cn = el ? (parseFloat(el.value) || null) : null;
+    if (cn) conductores.push({ entre_a: tr.dataset.entreA, entre_b: tr.dataset.entreB, corriente_a: cn });
+  });
+  const autotrafos = [{ ...atConfig, rec_baja: recBaja }];
+  spinner(true, "Guardando REC 12 kV...");
+  try {
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos }),
+    });
+    state.alimConfig = Object.assign({}, state.alimConfig ?? {}, { conductores_intermedios: conductores, autotrafos });
+    vccRenderEquiposInputs(state.vccEquipos);
+  } catch(e) { mostrarError("Error al guardar REC 12 kV: " + e.message); }
   finally { spinner(false); }
 }
 
