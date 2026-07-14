@@ -1850,11 +1850,12 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'evaluar' && !$b1) {
 
     // Escenario 2 — kVA instalado
     if (!empty($b['kva_instalado'])) {
-        $kvaInst    = (float)$b['kva_instalado'];
-        $dISens     = deltaICliente($kvaInst, $tensionKv);
-        $vccSens    = calcularVcc($dfAlim, $numalim, $trafoRow, $dISens, $mesesSel, $dtA, $dtPct);
+        $kvaInst      = (float)$b['kva_instalado'];
+        $dISens       = deltaICliente($kvaInst, $tensionKv);
+        $upstreamSens = _autotrafoAplicar($upstream, $alimConf, $kvaInst, $tensionKv);
+        $vccSens      = calcularVcc($dfAlim, $numalim, $trafoRow, $dISens, $mesesSel, $dtA, $dtPct);
         $eqSens = evaluarEquipos(
-            $upstream, $dISens, $cnAlim, $serieAlim['serie'], $mesesSel ?: null,
+            $upstreamSens, $dISens, $cnAlim, $serieAlim['serie'], $mesesSel ?: null,
             $serieAlivio, $alivioA_abs
         );
         $pctMaxSens = null; $mesMaxSens = '';
@@ -2092,10 +2093,11 @@ if ($method === 'POST' && $a === 'vcc' && $b0 === 'calcular' && !$b1) {
     ]);
 
     if (!empty($b['kva_instalado'])) {
-        $kvaInst    = (float)$b['kva_instalado'];
-        $deltaISens = deltaICliente($kvaInst, $tensionKv);
-        $vccSens    = calcularVcc($dfAlim, $numalim, $trafoRow, $deltaISens, $mesesSel, $dtA, $dtPct);
-        $equipSens  = evaluarEquipos($upstream, $deltaISens, $serieAlim['cn'], $serieAlim['serie'], $mesesSel ?: null);
+        $kvaInst      = (float)$b['kva_instalado'];
+        $deltaISens   = deltaICliente($kvaInst, $tensionKv);
+        $upstreamSens = _autotrafoAplicar($upstream, $alimConf2, $kvaInst, $tensionKv);
+        $vccSens      = calcularVcc($dfAlim, $numalim, $trafoRow, $deltaISens, $mesesSel, $dtA, $dtPct);
+        $equipSens    = evaluarEquipos($upstreamSens, $deltaISens, $serieAlim['cn'], $serieAlim['serie'], $mesesSel ?: null);
         $result['kva_instalado']     = $kvaInst;
         $result['delta_I_sens']      = $deltaISens;
         $result['tabla_alim_sens']   = $vccSens['tabla_alim']  ?? [];

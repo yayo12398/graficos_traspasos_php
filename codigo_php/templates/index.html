@@ -6727,7 +6727,7 @@ function vccTablaEquipos(equipos, deltaI) {
       const dpctStr = eq.delta_pct != null ? `${Number(eq.delta_pct).toFixed(1)}%` : "—";
       const eqDeltaI = eq.delta_I ?? deltaI;
       const dI       = eqDeltaI != null ? Number(eqDeltaI).toFixed(2) : "—";
-      const atMark   = eq.tension_kv_override != null && eq.tension_kv_override !== (deltaI > 0 ? null : null)
+      const atMark   = eq.tension_kv_override != null && eqDeltaI !== deltaI
         ? ` <span style="font-size:.65rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
       const bcls    = BADGE_CLS[eq.estado] || "bg-secondary";
       const blbl    = BADGE_LBL[eq.estado] || eq.estado;
@@ -6785,7 +6785,7 @@ function vccTablaEquipos(equipos, deltaI) {
     const cn     = eq.cn != null
       ? `${Number(eq.cn).toFixed(0)}${_fuenteBadge(fuente)}` : "—";
     const eqDI  = eq.delta_I ?? deltaI;
-    const atTag = eq.tension_kv_override != null
+    const atTag = eq.tension_kv_override != null && eqDI !== deltaI
       ? ` <span style="font-size:.62rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
     const dI    = eqDI != null ? Number(eqDI).toFixed(2) + atTag : "—";
     const tipo  = TIPO_LBL[eq.tipo] || eq.tipo;
