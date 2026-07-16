@@ -173,23 +173,32 @@ function renderAlimentadoresConfig(data) {
       : '';
 
     // Capa 2a: sección AT compacta en fila expandida (todos los ATRs)
-    const atSection = autotrafos.length ? `<div class="px-3 pb-2">
-      <div class="small fw-semibold text-muted mb-1">⚡ Autotrafo${autotrafos.length > 1 ? "s" : ""}</div>
-      <div class="d-flex flex-wrap gap-2">
-        ${autotrafos.map(at => {
-          const bajaTxt = at.rec_baja
-            ? `<code>${at.rec_baja}</code> <span class="text-muted" style="font-size:.75rem">(12 kV)</span>`
-            : `<span class="text-muted fst-italic" style="font-size:.78rem">12 kV por asignar</span>`;
-          return `<div class="d-inline-flex align-items-center gap-2 px-2 py-1 rounded"
-                       style="background:#fff9e6;border:1px solid #ffc107;font-size:.83rem">
-            <code>${at.rec_alta}</code>
-            <span class="text-muted" style="font-size:.75rem">(${at.tension_alta ?? 23} kV)</span>
-            <span class="text-muted">↕</span>
-            ${bajaTxt}
-          </div>`;
-        }).join("")}
+    const atCards = autotrafos.map(at => {
+      const bajaTxt = at.rec_baja
+        ? `<code>${at.rec_baja}</code> <span class="text-muted" style="font-size:.75rem">(12 kV)</span>`
+        : `<span class="text-muted fst-italic" style="font-size:.78rem">12 kV por asignar</span>`;
+      const recAltaE = at.rec_alta.replace(/'/g, "\\'");
+      return `<div class="d-inline-flex align-items-center gap-2 px-2 py-1 rounded"
+                   style="background:#fff9e6;border:1px solid #ffc107;font-size:.83rem">
+        <code>${at.rec_alta}</code>
+        <span class="text-muted" style="font-size:.75rem">(${at.tension_alta ?? 23} kV)</span>
+        <span class="text-muted">↕</span>
+        ${bajaTxt}
+        <button class="btn btn-link btn-sm py-0 px-1 text-danger ms-1"
+                onclick="event.stopPropagation();cfgAlimEliminarATRLista('${nomE}','${recAltaE}')"
+                title="Eliminar ATR">× Eliminar</button>
+      </div>`;
+    }).join("");
+    const atSection = `<div class="px-3 pb-2">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="small fw-semibold text-muted">⚡ Autotrafo${autotrafos.length !== 1 ? "s" : ""}</span>
+        <button class="btn btn-link btn-sm py-0 px-1 text-warning" style="font-size:.78rem"
+                onclick="event.stopPropagation();cfgAlimSeleccionar('${nomE}')"
+                title="Abrir panel para agregar ATR">＋ Agregar</button>
       </div>
-    </div>` : '';
+      ${autotrafos.length ? `<div class="d-flex flex-wrap gap-2">${atCards}</div>`
+        : `<span class="text-muted small fst-italic">Sin autotrafos configurados.</span>`}
+    </div>`;
 
     const condRows = conds.map((c, i) =>
       `<tr>
@@ -212,7 +221,10 @@ function renderAlimentadoresConfig(data) {
       : `<div class="text-muted small fst-italic px-1">Sin conductores intermedios.</div>`;
     return `
       <tr style="cursor:pointer" onclick="cfgToggleAlim('${id}','${nomE}')">
-        <td class="fw-semibold font-monospace">${nom}${atBadge}</td>
+        <td class="fw-semibold font-monospace">
+          <span class="text-primary" style="cursor:pointer;text-decoration:underline dotted"
+                onclick="event.stopPropagation();cfgAlimSeleccionar('${nomE}')"
+                title="Abrir panel de gestión (ATRs, equipos)">${nom}</span>${atBadge}</td>
         <td class="text-muted small">${nConds} conductor${nConds !== 1 ? "es" : ""}</td>
         <td class="text-muted small"><i class="bi bi-cpu me-1"></i><span class="cfg-alim-eq-badge-${safeId}">equipos</span></td>
         <td>
@@ -278,6 +290,7 @@ async function cfgCargarEquiposAlim(nom, cont, safeId) {
         + '<div class="text-muted small fst-italic">Sin equipos en la base.</div>';
       return;
     }
+    const nomEsc  = nom.replace(/'/g, "\\'");
     const eqRows = equipos.map(eq => {
       const np      = (eq.numpos || "").replace(/'/g, "\\'");
       const lzBadge = eq.es_lz
@@ -292,7 +305,7 @@ async function cfgCargarEquiposAlim(nom, cont, safeId) {
         <td class="small">${tipo}</td>
         <td class="text-end small">${cn}</td>
         <td><button class="btn btn-link btn-sm p-0 text-secondary"
-          onclick="fichaAbrirModal('${np}', cfgAlimFichaCallback)"
+          onclick="fichaAbrirModal('${np}', ()=>_cfgAlimFichaListCb('${nomEsc}','${safeId}'))"
           title="${btnTitle}">${btnIcon}</button></td>
       </tr>`;
     }).join("");
@@ -305,6 +318,22 @@ async function cfgCargarEquiposAlim(nom, cont, safeId) {
     cont.innerHTML = '<div class="small fw-semibold text-muted mb-1">Equipos</div>'
       + `<div class="text-danger small">Error: ${e.message}</div>`;
   }
+}
+
+async function cfgAlimEliminarATRLista(nom, recAlta) {
+  spinner(true, "Eliminando autotrafo...");
+  try {
+    const existing    = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`).catch(() => ({}));
+    const conductores = existing?.conductores_intermedios ?? [];
+    const autotrafos  = (existing?.autotrafos ?? []).filter(at => at.rec_alta !== recAlta);
+    await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conductores_intermedios: conductores, autotrafos }),
+    });
+    await cargarAlimentadoresConfig();
+  } catch(e) { mostrarError("Error al eliminar autotrafo: " + e.message); }
+  finally { spinner(false); }
 }
 
 async function cfgEliminarAlim(nom) {
@@ -370,6 +399,7 @@ async function cfgAlimSeleccionar(nomAlim) {
 
   const det = document.getElementById("cfg-alim-detalle");
   det.classList.remove("d-none");
+  det.scrollIntoView({ behavior: "smooth", block: "start" });
   document.getElementById("cfg-alim-det-nom").textContent = nomAlim;
   document.getElementById("cfg-alim-det-meta").textContent = "";
   document.getElementById("cfg-alim-det-contenido").innerHTML =
@@ -406,6 +436,12 @@ async function cfgAlimFichaCallback() {
   await cfgAlimSeleccionar(_cfgAlimActual.nom_alim);
 }
 
+async function _cfgAlimFichaListCb(nom, safeId) {
+  await cargarEquiposConfig();
+  const cont = document.getElementById("cfg-alim-eq-" + safeId);
+  if (cont) { delete cont.dataset.loaded; cfgCargarEquiposAlim(nom, cont, safeId); }
+}
+
 function renderCfgAlimDetalle(data) {
   const cont      = document.getElementById("cfg-alim-det-contenido");
   const equipos   = data.equipos ?? [];
@@ -417,6 +453,87 @@ function renderCfgAlimDetalle(data) {
 
   let html = "";
 
+  // ─── Autotrafos ────────────────────────────────────────────
+  {
+    const nomAlim = _cfgAlimActual?.nom_alim ?? "";
+    const nomEsc  = nomAlim.replace(/'/g, "\\'");
+    const eqsRec  = equipos.filter(e => /^REC/i.test(e.numpos));
+    let atHtml = '<div class="mb-3"><div class="small fw-semibold mb-2">⚡ Autotransformadores</div>';
+    autotrafos.forEach((at) => {
+      const recBajaTxt = at.rec_baja
+        ? `<code>${at.rec_baja}</code>`
+        : `<span class="text-muted fst-italic">no configurado</span>`;
+      const recAltaEsc = at.rec_alta.replace(/'/g, "\\'");
+      const tpsDiv = autotrafos.length === 1
+        ? `<div id="cfg-at-tps-info" class="mt-2 pt-2" style="border-top:1px solid #ffe082;font-size:.8rem"><span class="text-muted">Cargando TPs…</span></div>`
+        : '';
+      const atTipo      = at.tipo ?? 'reductor';
+      const atTipoLabel = atTipo === 'elevador' ? '↑ Elevador 12→23 kV' : '↓ Reductor 23→12 kV';
+      const [labelAlta, labelBaja] = atTipo === 'elevador'
+        ? [`Lado ${at.tension_alta ?? 23} kV (alta / downstream)`, 'Lado 12 kV (baja / upstream)']
+        : [`Lado ${at.tension_alta ?? 23} kV (alta / upstream)`,   'Lado 12 kV (baja / downstream)'];
+      // Para elevador mostramos primero baja (upstream) luego alta (downstream)
+      const pairHtml = atTipo === 'elevador'
+        ? `<div><div class="text-muted" style="font-size:.7rem">${labelBaja}</div>${recBajaTxt}</div>
+           <div class="text-muted">↕</div>
+           <div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div><code>${at.rec_alta}</code></div>`
+        : `<div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div><code>${at.rec_alta}</code></div>
+           <div class="text-muted">↕</div>
+           <div><div class="text-muted" style="font-size:.7rem">${labelBaja}</div>${recBajaTxt}</div>`;
+      atHtml += `<div class="p-2 rounded mb-1" style="background:#fff9e6;border:1px solid #ffc107;font-size:.85rem">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          ${pairHtml}
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark" style="font-size:.65rem;font-weight:500">${atTipoLabel}</span>
+            <span class="text-muted small">${at.fecha_registro ?? ""}</span>
+            <button class="btn btn-link btn-sm py-0 px-1 text-danger"
+                    onclick="cfgAlimEliminarAutotrafo('${nomEsc}', '${recAltaEsc}')">× Eliminar</button>
+          </div>
+        </div>
+        ${tpsDiv}
+      </div>`;
+    });
+    if (eqsRec.length) {
+      const opcsRec = eqsRec.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
+      const addLabel = autotrafos.length ? 'Agregar otro autotrafo:' : 'Selecciona los RECs que delimitan el autotrafo:';
+      atHtml += `<div class="p-2 rounded mt-1" style="background:#f8f9fa;border:1px solid #dee2e6;font-size:.84rem">
+        <div class="text-muted small mb-2">${addLabel}</div>
+        <div class="d-flex gap-2 align-items-end flex-wrap">
+          <div>
+            <label class="form-label mb-1 small text-muted">Tipo</label>
+            <select id="cfg-at-tipo-sel" class="form-select form-select-sm" style="width:auto"
+                    onchange="cfgAtTipoChange()">
+              <option value="reductor">↓ Reductor 23→12 kV</option>
+              <option value="elevador">↑ Elevador 12→23 kV</option>
+            </select>
+          </div>
+          <div id="cfg-at-div-alta" style="order:1">
+            <label id="cfg-at-label-alta" class="form-label mb-1 small text-muted">Lado 23 kV — alta (upstream ↑)</label>
+            <select id="cfg-at-rec-alta-sel" class="form-select form-select-sm" style="width:auto">
+              <option value="">— REC alta —</option>${opcsRec}
+            </select>
+          </div>
+          <div id="cfg-at-div-baja" style="order:2">
+            <label id="cfg-at-label-baja" class="form-label mb-1 small text-muted">Lado 12 kV — baja (downstream ↓)</label>
+            <select id="cfg-at-rec-baja-sel" class="form-select form-select-sm" style="width:auto">
+              <option value="">— REC baja —</option>${opcsRec}
+            </select>
+          </div>
+          <div style="order:3">
+            <button class="btn btn-sm btn-outline-warning"
+                    onclick="cfgAlimRegistrarAutotrafo('${nomEsc}')">
+              <i class="bi bi-lightning-charge me-1"></i>Registrar
+            </button>
+          </div>
+        </div>
+      </div>`;
+    } else if (!autotrafos.length) {
+      atHtml += '<div class="text-muted small">Sin RECs en la base para este alimentador.</div>';
+    }
+    atHtml += '</div>';
+    html += atHtml;
+  }
+
   // ─── Equipos ───────────────────────────────────────────────
   const confEq = equipos.filter(e => e.tiene_config).length;
   html += '<div class="mb-3">'
@@ -427,14 +544,17 @@ function renderCfgAlimDetalle(data) {
   if (!equipos.length) {
     html += '<div class="text-muted small">Sin equipos en la base.</div>';
   } else {
-    // Mapa rec_alta → fila separadora para todos los ATRs configurados
+    // Mapa upstream_rec → fila separadora (reductor: upstream=alta; elevador: upstream=baja)
     const atSepRowMap = {};
     for (const at of autotrafos) {
       if (!at.rec_alta) continue;
+      const atTipo    = at.tipo ?? 'reductor';
+      const upstream  = atTipo === 'elevador' ? at.rec_baja : at.rec_alta;
+      if (!upstream) continue;
       const bajaInfo = at.rec_baja
         ? ` → <code>${at.rec_baja}</code> (12 kV)`
         : ` → <span class="text-warning" style="font-size:.72rem">[12 kV por asignar ⬇⚡]</span>`;
-      atSepRowMap[at.rec_alta] =
+      atSepRowMap[upstream] =
         `<tr><td colspan="4" class="py-1 px-2" style="background:#fff3cd;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.75rem">` +
         `<i class="bi bi-lightning-charge-fill text-warning me-1"></i>` +
         `<b>Autotrafo</b> — <code>${at.rec_alta}</code> (${at.tension_alta ?? 23} kV)${bajaInfo}</td></tr>`;
@@ -486,86 +606,6 @@ function renderCfgAlimDetalle(data) {
         <tbody>${ciRows}</tbody>
       </table></div>
     </div>`;
-  }
-
-  // ─── Autotrafos ────────────────────────────────────────────
-  {
-    const nomAlim = _cfgAlimActual?.nom_alim ?? "";
-    const nomEsc  = nomAlim.replace(/'/g, "\\'");
-    const eqsRec  = equipos.filter(e => /^REC/i.test(e.numpos));
-    let atHtml = '<div class="mb-3"><div class="small fw-semibold mb-2">⚡ Autotransformadores</div>';
-    // Listar todos los ATRs existentes
-    autotrafos.forEach((at, idx) => {
-      const recBajaTxt = at.rec_baja
-        ? `<code>${at.rec_baja}</code>`
-        : `<span class="text-muted fst-italic">no configurado</span>`;
-      const recAltaEsc = at.rec_alta.replace(/'/g, "\\'");
-      const tpsDiv = autotrafos.length === 1
-        ? `<div id="cfg-at-tps-info" class="mt-2 pt-2" style="border-top:1px solid #ffe082;font-size:.8rem"><span class="text-muted">Cargando TPs…</span></div>`
-        : '';
-      const atTipo      = at.tipo ?? 'reductor';
-      const atTipoLabel = atTipo === 'elevador' ? '↑ Elevador 12→23 kV' : '↓ Reductor 23→12 kV';
-      const [labelAlta, labelBaja] = atTipo === 'elevador'
-        ? [`Lado ${at.tension_alta ?? 23} kV (alta / downstream)`, 'Lado 12 kV (baja / upstream)']
-        : [`Lado ${at.tension_alta ?? 23} kV (alta / upstream)`,   'Lado 12 kV (baja / downstream)'];
-      atHtml += `<div class="p-2 rounded mb-1" style="background:#fff9e6;border:1px solid #ffc107;font-size:.85rem">
-        <div class="d-flex align-items-center gap-3 flex-wrap">
-          <div>
-            <div class="text-muted" style="font-size:.7rem">${labelAlta}</div>
-            <code>${at.rec_alta}</code>
-          </div>
-          <div class="text-muted">↕</div>
-          <div>
-            <div class="text-muted" style="font-size:.7rem">${labelBaja}</div>
-            ${recBajaTxt}
-          </div>
-          <div class="ms-auto d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark" style="font-size:.65rem;font-weight:500">${atTipoLabel}</span>
-            <span class="text-muted small">${at.fecha_registro ?? ""}</span>
-            <button class="btn btn-link btn-sm py-0 px-1 text-danger"
-                    onclick="cfgAlimEliminarAutotrafo('${nomEsc}', '${recAltaEsc}')">× Eliminar</button>
-          </div>
-        </div>
-        ${tpsDiv}
-      </div>`;
-    });
-    // Form para agregar nuevo ATR (siempre visible si hay RECs)
-    if (eqsRec.length) {
-      const opcsRec = eqsRec.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
-      const addLabel = autotrafos.length ? 'Agregar otro autotrafo:' : 'Selecciona los RECs que delimitan el autotrafo:';
-      atHtml += `<div class="p-2 rounded mt-1" style="background:#f8f9fa;border:1px solid #dee2e6;font-size:.84rem">
-        <div class="text-muted small mb-2">${addLabel}</div>
-        <div class="d-flex gap-2 align-items-end flex-wrap">
-          <div>
-            <label class="form-label mb-1 small text-muted">Tipo</label>
-            <select id="cfg-at-tipo-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="reductor">↓ Reductor 23→12 kV</option>
-              <option value="elevador">↑ Elevador 12→23 kV</option>
-            </select>
-          </div>
-          <div>
-            <label class="form-label mb-1 small text-muted">Lado 23 kV (alta)</label>
-            <select id="cfg-at-rec-alta-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="">— REC alta —</option>${opcsRec}
-            </select>
-          </div>
-          <div>
-            <label class="form-label mb-1 small text-muted">Lado 12 kV (baja)</label>
-            <select id="cfg-at-rec-baja-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="">— REC baja —</option>${opcsRec}
-            </select>
-          </div>
-          <button class="btn btn-sm btn-outline-warning"
-                  onclick="cfgAlimRegistrarAutotrafo('${nomEsc}')">
-            <i class="bi bi-lightning-charge me-1"></i>Registrar
-          </button>
-        </div>
-      </div>`;
-    } else if (!autotrafos.length) {
-      atHtml += '<div class="text-muted small">Sin RECs en la base para este alimentador.</div>';
-    }
-    atHtml += '</div>';
-    html += atHtml;
   }
 
   // ─── Ajustes de demanda ────────────────────────────────────
@@ -625,6 +665,26 @@ async function cfgCargarTpsAt(nomAlim) {
   }
 }
 
+function cfgAtTipoChange() {
+  const tipo   = document.getElementById("cfg-at-tipo-sel")?.value ?? "reductor";
+  const lAlta  = document.getElementById("cfg-at-label-alta");
+  const lBaja  = document.getElementById("cfg-at-label-baja");
+  const dAlta  = document.getElementById("cfg-at-div-alta");
+  const dBaja  = document.getElementById("cfg-at-div-baja");
+  if (!lAlta || !lBaja || !dAlta || !dBaja) return;
+  if (tipo === "elevador") {
+    lAlta.textContent  = "Lado 23 kV — alta (downstream ↓)";
+    lBaja.textContent  = "Lado 12 kV — baja (upstream ↑)";
+    dBaja.style.order  = "1";
+    dAlta.style.order  = "2";
+  } else {
+    lAlta.textContent  = "Lado 23 kV — alta (upstream ↑)";
+    lBaja.textContent  = "Lado 12 kV — baja (downstream ↓)";
+    dAlta.style.order  = "1";
+    dBaja.style.order  = "2";
+  }
+}
+
 async function cfgAlimRegistrarAutotrafo(nomAlim) {
   const selAlta = document.getElementById("cfg-at-rec-alta-sel");
   const selBaja = document.getElementById("cfg-at-rec-baja-sel");
@@ -632,6 +692,7 @@ async function cfgAlimRegistrarAutotrafo(nomAlim) {
   const recAlta = selAlta?.value ?? "";
   const recBaja = selBaja?.value ?? "";
   const tipo    = selTipo?.value ?? "reductor";
+  console.log('[ATR-REG] nomAlim=', nomAlim, ' | selAlta=', selAlta, ' | recAlta=', recAlta, ' | tipo=', tipo);
   if (!recAlta) return mostrarError("Selecciona el REC del lado 23 kV (alta tensión).");
   spinner(true, "Guardando autotrafo...");
   try {

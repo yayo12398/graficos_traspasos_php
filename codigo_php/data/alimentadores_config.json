@@ -1,14 +1,4 @@
 {
-    "CAMILA": {
-        "conductores_intermedios": [
-            {
-                "entre_a": "CLB62066",
-                "entre_b": "CLB2051662",
-                "corriente_a": 150,
-                "fecha_registro": "2026-06-23"
-            }
-        ]
-    },
     "MONASTERIO": {
         "conductores_intermedios": []
     },
@@ -57,10 +47,11 @@
         "conductores_intermedios": [],
         "autotrafos": [
             {
-                "rec_alta": "REC62873",
-                "rec_baja": "REC97054",
+                "rec_alta": "REC97054",
+                "rec_baja": "REC62873",
                 "tension_alta": 23,
-                "fecha_registro": "2026-07-15"
+                "tipo": "elevador",
+                "fecha_registro": "2026-07-16"
             }
         ]
     }
