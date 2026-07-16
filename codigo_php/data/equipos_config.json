@@ -91,5 +91,104 @@
         "notas": "",
         "fecha_registro": "2026-06-25",
         "historial": []
+    },
+    "REC101595": {
+        "corriente_a": 215,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-14",
+        "historial": []
+    },
+    "REC101596": {
+        "corriente_a": 115,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-14",
+        "historial": []
+    },
+    "REC95811": {
+        "corriente_a": 320,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-14",
+        "historial": []
+    },
+    "REC90361": {
+        "corriente_a": 400,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-14",
+        "historial": []
+    },
+    "REC108740": {
+        "corriente_a": 270,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-14",
+        "historial": []
+    },
+    "REC111685": {
+        "corriente_a": 140,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-15",
+        "historial": []
+    },
+    "REC97451": {
+        "corriente_a": 265,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-15",
+        "historial": []
+    },
+    "REC97452": {
+        "corriente_a": 265,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "PMDG 3000 kW",
+        "fecha_registro": "2026-07-15",
+        "historial": []
+    },
+    "REC97450": {
+        "corriente_a": 280,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-15",
+        "historial": []
+    },
+    "REC62873": {
+        "corriente_a": 480,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-15",
+        "historial": []
+    },
+    "REC97054": {
+        "corriente_a": 210,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-15",
+        "historial": []
     }
 }

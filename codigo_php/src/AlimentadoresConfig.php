@@ -92,6 +92,7 @@ function acSetAlim(string $nom, array $body): array
                 'rec_alta'       => $recAlta,
                 'rec_baja'       => $recBaja ?: null,
                 'tension_alta'   => $tensionAlta,
+                'tipo'           => in_array($a['tipo'] ?? '', ['elevador', 'reductor']) ? $a['tipo'] : 'reductor',
                 'fecha_registro' => $a['fecha_registro'] ?? date('Y-m-d'),
             ];
         }

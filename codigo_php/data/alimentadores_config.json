@@ -24,5 +24,44 @@
                 "fecha_registro": "2026-06-25"
             }
         ]
+    },
+    "AGU.CLARAS": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC101596",
+                "rec_baja": "REC101595",
+                "tension_alta": 23,
+                "fecha_registro": "2026-07-14"
+            }
+        ]
+    },
+    "CHORRILLOS": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC111685",
+                "rec_baja": "REC97451",
+                "tension_alta": 23,
+                "fecha_registro": "2026-07-15"
+            },
+            {
+                "rec_alta": "REC97450",
+                "rec_baja": "REC97452",
+                "tension_alta": 23,
+                "fecha_registro": "2026-07-15"
+            }
+        ]
+    },
+    "LA POSADA": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC62873",
+                "rec_baja": "REC97054",
+                "tension_alta": 23,
+                "fecha_registro": "2026-07-15"
+            }
+        ]
     }
 }
