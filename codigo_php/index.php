@@ -265,7 +265,9 @@ if ($uri === '/') {
         $bJson = json_encode($_basePath, JSON_UNESCAPED_UNICODE);
         $shim  = "<script>(function(){var b={$bJson},f=window.fetch.bind(window);" .
                  "window.fetch=function(u,o){if(typeof u==='string'&&u.startsWith('/api/'))u=b+u;return f(u,o);};}());</script>";
-        $html  = (string) file_get_contents($htmlFile);
+        ob_start();
+        include $htmlFile;
+        $html = (string) ob_get_clean();
         echo str_replace('</head>', $shim . '</head>', $html);
         exit;
     }
