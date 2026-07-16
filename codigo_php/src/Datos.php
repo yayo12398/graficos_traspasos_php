@@ -2,49 +2,49 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Datos.php  (~865 L)                                              ║
+// ║  ÍNDICE DE Datos.php  (852 L)                                               ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONSTANTES Y CONFIG                                                L.65–90 ║
-// ║    D_BASE, D_CACHE, D_CFG, TTL_AB, TTL_DEM, TTL_LZ                         ║
+// ║  CONSTANTES Y CONFIG                                                L.65–88 ║
+// ║    require_once ../conexion.php (db() singleton)                   L.65     ║
+// ║    D_BASE, D_CACHE, TTL_AB, TTL_DEM, TTL_LZ                       L.69     ║
 // ║    TIPOS_INVERSION = ['DBC','REC','RTS']                                    ║
 // ║    _LZ_EXCEPCIONES  correcciones manuales de BD LZ                          ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONEXIÓN Y CACHÉ                                                 L.91–131  ║
-// ║    datosConectar()            → PDO MySQL (meyg)                   L.91     ║
-// ║    _cacheRuta($key)           ruta del archivo de caché            L.105    ║
-// ║    _cacheValida($key,$ttl)    true si caché existe y no expiró     L.110    ║
-// ║    _cacheCargar($key)         deserializa caché desde disco        L.116    ║
-// ║    _cacheGuardar($key,$data)  serializa y guarda caché en disco    L.121    ║
+// ║  CACHÉ                                                            L.90–116  ║
+// ║    _cacheRuta($key)           ruta del archivo de caché            L.92     ║
+// ║    _cacheValida($key,$ttl)    true si caché existe y no expiró     L.97     ║
+// ║    _cacheCargar($key)         deserializa caché desde disco        L.103    ║
+// ║    _cacheGuardar($key,$data)  serializa y guarda caché en disco    L.108    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  NORMALIZACIÓN DE FILAS                                          L.132–253  ║
-// ║    _normCol($s)               snake_case sin tildes                L.132    ║
-// ║    normalizarMes($v)          'YYYY-MM' o null                     L.148    ║
-// ║    _nomRapidaDeAlim($nombre)  quita prefijo "Alim."                L.173    ║
-// ║    _normalizarFilasAb($rows)  normaliza filas aguas_abajo crudas   L.186    ║
+// ║  NORMALIZACIÓN DE FILAS                                          L.117–240  ║
+// ║    _normCol($s)               snake_case sin tildes                L.119    ║
+// ║    normalizarMes($v)          'YYYY-MM' o null                     L.135    ║
+// ║    _nomRapidaDeAlim($nombre)  quita prefijo "Alim."                L.160    ║
+// ║    _normalizarFilasAb($rows)  normaliza filas aguas_abajo crudas   L.173    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  PIVOT / CARGA PRINCIPAL                                         L.254–473  ║
-// ║    pivotarAlim($rows)         wide table keyed by numalim          L.254    ║
-// ║    pivotarTrafos($rows)       wide table keyed by numalim trafo    L.310    ║
-// ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.368    ║
-// ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.451    ║
+// ║  PIVOT / CARGA PRINCIPAL                                         L.241–467  ║
+// ║    pivotarAlim($rows)         wide table keyed by numalim          L.241    ║
+// ║    pivotarTrafos($rows)       wide table keyed by numalim trafo    L.297    ║
+// ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.355    ║
+// ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.438    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.475–711  ║
-// ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.481    ║
-// ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.501    ║
-// ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.525    ║
-// ║    equiposEnIsla($dfAb,$tds,$raiz,$alim) DBC/REC/RTS en la isla   L.545    ║
+// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.468–698  ║
+// ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.468    ║
+// ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.488    ║
+// ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.512    ║
+// ║    equiposEnIsla($dfAb,$tds,$raiz,$alim) DBC/REC/RTS en la isla   L.532    ║
 // ║      ↳ filtra por "todos sus TDs ⊆ island set" (topología real)            ║
-// ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.590    ║
-// ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.602    ║
-// ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.629    ║
-// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.645    ║
-// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.656    ║
-// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.675    ║
-// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.691    ║
+// ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.577    ║
+// ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.589    ║
+// ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.616    ║
+// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.632    ║
+// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.643    ║
+// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.662    ║
+// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.678    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.712–865  ║
-// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.712    ║
-// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.810    ║
+// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.699–852  ║
+// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.699    ║
+// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.797    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /**
@@ -62,11 +62,12 @@ declare(strict_types=1);
  *   TTL demandas    : 30 días  (~500 alimentadores / ~90 trafos)
  */
 
+require_once __DIR__ . '/../conexion.php';
+
 // ─── Rutas y constantes ───────────────────────────────────────────────────
 
 define('D_BASE',  dirname(__DIR__));
 define('D_CACHE', D_BASE . '/data/cache');
-define('D_CFG',   D_BASE . '/config.php');
 
 const TTL_AB          = 604800;   // 7 días en segundos
 const TTL_DEM         = 2592000;  // 30 días en segundos
@@ -85,20 +86,6 @@ const _LZ_EXCEPCIONES = [
 ];
 
 @mkdir(D_CACHE, 0755, true);
-
-// ─── Conexión PDO ─────────────────────────────────────────────────────────
-
-function datosConectar(): PDO
-{
-    $cfg = require D_CFG;
-    $c   = $cfg['mysql_cuadrilla'];
-    $dsn = "mysql:host={$c['host']};dbname={$c['database']};charset={$c['charset']};connect_timeout=20";
-    return new PDO($dsn, $c['user'], $c['password'], [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        Pdo\Mysql::ATTR_INIT_COMMAND => "SET NAMES utf8mb4",
-    ]);
-}
 
 // ─── Caché (PHP serialize — equivalente al PKL de Python) ─────────────────
 
@@ -374,7 +361,7 @@ function cargarAguasAbajo(bool $force = false): array
     }
 
     error_log("[INFO] aguas_abajo: consultando MySQL...");
-    $pdo  = datosConectar();
+    $pdo  = db();
     $stmt = $pdo->query("SELECT * FROM meyg.maniobras_rapidas_aguas_abajo");
     unset($pdo); // Liberar conexión antes de procesar
 
@@ -457,7 +444,7 @@ function cargarDemandas(bool $force = false): array
     }
 
     error_log("[INFO] demandas: consultando MySQL...");
-    $pdo = datosConectar();
+    $pdo = db();
 
     $rowsAlim  = $pdo->query("SELECT * FROM meyg.dem_maximas")->fetchAll();
     $rowsTrafo = $pdo->query("SELECT * FROM meyg.dem_maximas_trafos")->fetchAll();
@@ -721,7 +708,7 @@ function cargarLimiteZona(bool $force = false): array
     }
 
     error_log('[INFO] limite_zona: consultando MySQL...');
-    $pdo  = datosConectar();
+    $pdo  = db();
     $rows = $pdo->query(
         'SELECT NUMALIM_LZ, NUMALIM, NUMPOS_LZ, NUMPOS_troncal FROM meyg.maniobras_rapidas_limite_zona'
     )->fetchAll(PDO::FETCH_ASSOC);
