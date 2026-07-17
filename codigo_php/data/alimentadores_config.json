@@ -54,5 +54,24 @@
                 "fecha_registro": "2026-07-16"
             }
         ]
+    },
+    "VIZCAYA": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": null,
+                "rec_baja": "REC110180",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-17"
+            },
+            {
+                "rec_alta": null,
+                "rec_baja": "REC110181",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-17"
+            }
+        ]
     }
 }

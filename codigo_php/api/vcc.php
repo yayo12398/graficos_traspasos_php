@@ -4,10 +4,10 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── Helper: aplica delta_I_override por equipo cuando hay autotrafo ──────────
-// Equipos con fraccion >= fraccion del rec_alta usan ΔI a tension_alta (23kV).
+// Equipos con fraccion >= fraccion del boundary usan ΔI a tension_alta (23kV).
 // Equipos por debajo usan ΔI a la tensión de conexión del cliente.
-// Devuelve el ATR cuyo rec_alta aparece en el upstream dado, o null si ninguno coincide.
-// Soporta múltiples ATRs en ramas paralelas: solo uno puede estar en el camino real del cliente.
+// Devuelve el ATR cuyo rec_alta (o rec_baja si no hay rec_alta) aparece en el upstream.
+// Soporta ATRs sin rec_alta: feeder que nace en alta tensión, identificado solo por rec_baja.
 function _autotrafoEncontrar(array $upstream, ?array $alimConf): ?array
 {
     $autotrafos = $alimConf['autotrafos'] ?? [];
@@ -16,6 +16,10 @@ function _autotrafoEncontrar(array $upstream, ?array $alimConf): ?array
     foreach ($upstream as $eq) { if (isset($eq['nombre'])) $nombresUp[$eq['nombre']] = true; }
     foreach ($autotrafos as $at) {
         if (($at['rec_alta'] ?? '') !== '' && isset($nombresUp[$at['rec_alta']])) return $at;
+    }
+    // Fallback: ATR sin rec_alta (feeder nace en alta) — se identifica por rec_baja en upstream
+    foreach ($autotrafos as $at) {
+        if (($at['rec_alta'] ?? '') === '' && ($at['rec_baja'] ?? '') !== '' && isset($nombresUp[$at['rec_baja']])) return $at;
     }
     return null;
 }
@@ -28,10 +32,10 @@ function _autotrafoAplicar(array $upstream, ?array $alimConf, float $kvaEmp, flo
     $recBaja     = $at['rec_baja']    ?? '';
     $tensionAlta = (float)($at['tension_alta'] ?? 23);
     $tipo        = $at['tipo'] ?? 'reductor';
-    if (!$recAlta || $tensionAlta === $tensionKv) return $upstream;
+    if ($tensionAlta === $tensionKv) return $upstream;
 
-    // Elevador (12→23kV): boundary en rec_baja (upstream trunk); reductor: boundary en rec_alta
-    $boundaryRef  = ($tipo === 'elevador') ? $recBaja : $recAlta;
+    // Elevador: boundary en rec_baja (trunk 12kV). Reductor: boundary en rec_alta si existe, sino rec_baja.
+    $boundaryRef  = ($tipo === 'elevador') ? $recBaja : ($recAlta ?: $recBaja);
     $boundaryFrac = null;
     foreach ($upstream as $eq) {
         if (($eq['nombre'] ?? '') === $boundaryRef) {

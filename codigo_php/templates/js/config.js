@@ -174,18 +174,21 @@ function renderAlimentadoresConfig(data) {
 
     // Capa 2a: sección AT compacta en fila expandida (todos los ATRs)
     const atCards = autotrafos.map(at => {
-      const bajaTxt = at.rec_baja
+      const bajaTxt   = at.rec_baja
         ? `<code>${at.rec_baja}</code> <span class="text-muted" style="font-size:.75rem">(12 kV)</span>`
         : `<span class="text-muted fst-italic" style="font-size:.78rem">12 kV por asignar</span>`;
-      const recAltaE = at.rec_alta.replace(/'/g, "\\'");
+      const altaTxt   = at.rec_alta
+        ? `<code>${at.rec_alta}</code>`
+        : `<span class="text-muted fst-italic" style="font-size:.78rem">feeder en alta</span>`;
+      const recBajaE  = (at.rec_baja ?? '').replace(/'/g, "\\'");
       return `<div class="d-inline-flex align-items-center gap-2 px-2 py-1 rounded"
                    style="background:#fff9e6;border:1px solid #ffc107;font-size:.83rem">
-        <code>${at.rec_alta}</code>
+        ${altaTxt}
         <span class="text-muted" style="font-size:.75rem">(${at.tension_alta ?? 23} kV)</span>
         <span class="text-muted">↕</span>
         ${bajaTxt}
         <button class="btn btn-link btn-sm py-0 px-1 text-danger ms-1"
-                onclick="event.stopPropagation();cfgAlimEliminarATRLista('${nomE}','${recAltaE}')"
+                onclick="event.stopPropagation();cfgAlimEliminarATRLista('${nomE}','${recBajaE}')"
                 title="Eliminar ATR">× Eliminar</button>
       </div>`;
     }).join("");
@@ -320,12 +323,12 @@ async function cfgCargarEquiposAlim(nom, cont, safeId) {
   }
 }
 
-async function cfgAlimEliminarATRLista(nom, recAlta) {
+async function cfgAlimEliminarATRLista(nom, recBaja) {
   spinner(true, "Eliminando autotrafo...");
   try {
     const existing    = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`).catch(() => ({}));
     const conductores = existing?.conductores_intermedios ?? [];
-    const autotrafos  = (existing?.autotrafos ?? []).filter(at => at.rec_alta !== recAlta);
+    const autotrafos  = (existing?.autotrafos ?? []).filter(at => at.rec_baja !== recBaja);
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -463,7 +466,10 @@ function renderCfgAlimDetalle(data) {
       const recBajaTxt = at.rec_baja
         ? `<code>${at.rec_baja}</code>`
         : `<span class="text-muted fst-italic">no configurado</span>`;
-      const recAltaEsc = at.rec_alta.replace(/'/g, "\\'");
+      const recAltaTxt = at.rec_alta
+        ? `<code>${at.rec_alta}</code>`
+        : `<span class="text-muted fst-italic" style="font-size:.78rem">feeder en alta (sin REC)</span>`;
+      const recBajaEsc = (at.rec_baja ?? '').replace(/'/g, "\\'");
       const tpsDiv = autotrafos.length === 1
         ? `<div id="cfg-at-tps-info" class="mt-2 pt-2" style="border-top:1px solid #ffe082;font-size:.8rem"><span class="text-muted">Cargando TPs…</span></div>`
         : '';
@@ -476,8 +482,8 @@ function renderCfgAlimDetalle(data) {
       const pairHtml = atTipo === 'elevador'
         ? `<div><div class="text-muted" style="font-size:.7rem">${labelBaja}</div>${recBajaTxt}</div>
            <div class="text-muted">↕</div>
-           <div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div><code>${at.rec_alta}</code></div>`
-        : `<div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div><code>${at.rec_alta}</code></div>
+           <div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div>${recAltaTxt}</div>`
+        : `<div><div class="text-muted" style="font-size:.7rem">${labelAlta}</div>${recAltaTxt}</div>
            <div class="text-muted">↕</div>
            <div><div class="text-muted" style="font-size:.7rem">${labelBaja}</div>${recBajaTxt}</div>`;
       atHtml += `<div class="p-2 rounded mb-1" style="background:#fff9e6;border:1px solid #ffc107;font-size:.85rem">
@@ -487,7 +493,7 @@ function renderCfgAlimDetalle(data) {
             <span class="badge bg-warning text-dark" style="font-size:.65rem;font-weight:500">${atTipoLabel}</span>
             <span class="text-muted small">${at.fecha_registro ?? ""}</span>
             <button class="btn btn-link btn-sm py-0 px-1 text-danger"
-                    onclick="cfgAlimEliminarAutotrafo('${nomEsc}', '${recAltaEsc}')">× Eliminar</button>
+                    onclick="cfgAlimEliminarAutotrafo('${nomEsc}', '${recBajaEsc}')">× Eliminar</button>
           </div>
         </div>
         ${tpsDiv}
@@ -508,9 +514,9 @@ function renderCfgAlimDetalle(data) {
             </select>
           </div>
           <div id="cfg-at-div-alta" style="order:1">
-            <label id="cfg-at-label-alta" class="form-label mb-1 small text-muted">Lado 23 kV — alta (upstream ↑)</label>
+            <label id="cfg-at-label-alta" class="form-label mb-1 small text-muted">Lado 23 kV — alta (opcional si feeder nace en alta)</label>
             <select id="cfg-at-rec-alta-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="">— REC alta —</option>${opcsRec}
+              <option value="">Sin REC (feeder nace en alta)</option>${opcsRec}
             </select>
           </div>
           <div id="cfg-at-div-baja" style="order:2">
@@ -544,20 +550,22 @@ function renderCfgAlimDetalle(data) {
   if (!equipos.length) {
     html += '<div class="text-muted small">Sin equipos en la base.</div>';
   } else {
-    // Mapa upstream_rec → fila separadora (reductor: upstream=alta; elevador: upstream=baja)
+    // Mapa upstream_rec → fila separadora (reductor: upstream=alta o baja si sin alta; elevador: upstream=baja)
     const atSepRowMap = {};
     for (const at of autotrafos) {
-      if (!at.rec_alta) continue;
-      const atTipo    = at.tipo ?? 'reductor';
-      const upstream  = atTipo === 'elevador' ? at.rec_baja : at.rec_alta;
+      const atTipo   = at.tipo ?? 'reductor';
+      const upstream = atTipo === 'elevador' ? at.rec_baja : (at.rec_alta || at.rec_baja);
       if (!upstream) continue;
+      const altaInfo = at.rec_alta
+        ? `<code>${at.rec_alta}</code> (${at.tension_alta ?? 23} kV)`
+        : `<span class="fst-italic">${at.tension_alta ?? 23} kV (feeder en alta)</span>`;
       const bajaInfo = at.rec_baja
         ? ` → <code>${at.rec_baja}</code> (12 kV)`
         : ` → <span class="text-warning" style="font-size:.72rem">[12 kV por asignar ⬇⚡]</span>`;
       atSepRowMap[upstream] =
         `<tr><td colspan="4" class="py-1 px-2" style="background:#fff3cd;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.75rem">` +
         `<i class="bi bi-lightning-charge-fill text-warning me-1"></i>` +
-        `<b>Autotrafo</b> — <code>${at.rec_alta}</code> (${at.tension_alta ?? 23} kV)${bajaInfo}</td></tr>`;
+        `<b>Autotrafo</b> — ${altaInfo}${bajaInfo}</td></tr>`;
     }
     let eqRows = "";
     for (const eq of equipos) {
@@ -692,14 +700,13 @@ async function cfgAlimRegistrarAutotrafo(nomAlim) {
   const recAlta = selAlta?.value ?? "";
   const recBaja = selBaja?.value ?? "";
   const tipo    = selTipo?.value ?? "reductor";
-  console.log('[ATR-REG] nomAlim=', nomAlim, ' | selAlta=', selAlta, ' | recAlta=', recAlta, ' | tipo=', tipo);
-  if (!recAlta) return mostrarError("Selecciona el REC del lado 23 kV (alta tensión).");
+  if (!recBaja) return mostrarError("Selecciona el REC del lado 12 kV (baja tensión).");
   spinner(true, "Guardando autotrafo...");
   try {
     const existing    = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`).catch(() => ({}));
     const conductores = existing?.conductores_intermedios ?? [];
     const autotrafos  = [...(existing?.autotrafos ?? []),
-                         { rec_alta: recAlta, rec_baja: recBaja || null, tension_alta: 23, tipo }];
+                         { rec_alta: recAlta || null, rec_baja: recBaja, tension_alta: 23, tipo }];
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -710,12 +717,12 @@ async function cfgAlimRegistrarAutotrafo(nomAlim) {
   finally { spinner(false); }
 }
 
-async function cfgAlimEliminarAutotrafo(nomAlim, recAlta) {
+async function cfgAlimEliminarAutotrafo(nomAlim, recBaja) {
   spinner(true, "Eliminando autotrafo...");
   try {
     const existing    = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`).catch(() => ({}));
     const conductores = existing?.conductores_intermedios ?? [];
-    const autotrafos  = (existing?.autotrafos ?? []).filter(at => at.rec_alta !== recAlta);
+    const autotrafos  = (existing?.autotrafos ?? []).filter(at => at.rec_baja !== recBaja);
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlim)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

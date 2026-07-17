@@ -136,20 +136,26 @@ function renderEquipos(equipos) {
     return { value: e.nombre, text: nom, label: `${_eqIcon(nom)} ${nom}${pctStr}${atSfx}` };
   });
 
-  // Separadores: reductor → después de rec_alta; elevador → después de rec_baja
+  // Separadores: reductor → después de rec_alta (o antes de rec_baja si sin alta); elevador → después de rec_baja
   const sepInserts = [];
   for (const at of autotrafos) {
-    if (!at.rec_alta) continue;
-    const tipo   = at.tipo ?? 'reductor';
-    const alta   = at.rec_alta.trim().toUpperCase();
-    const tens   = at.tension_alta ?? 23;
-    const anchor = tipo === 'elevador' ? (at.rec_baja ?? '').trim().toUpperCase() : alta;
-    const label  = tipo === 'elevador'
+    const tipo  = at.tipo ?? 'reductor';
+    const tens  = at.tension_alta ?? 23;
+    const label = tipo === 'elevador'
       ? `⚡ Autotrafo — 12kV arriba · ${tens}kV abajo`
       : `⚡ Autotrafo — ${tens}kV arriba · 12kV abajo`;
-    if (!anchor) continue;
-    const idx = opts.findIndex(o => o.text === anchor);
-    if (idx >= 0) sepInserts.push({ idx, label, alta });
+    if (at.rec_alta) {
+      const alta   = at.rec_alta.trim().toUpperCase();
+      const anchor = tipo === 'elevador' ? (at.rec_baja ?? '').trim().toUpperCase() : alta;
+      if (!anchor) continue;
+      const idx = opts.findIndex(o => o.text === anchor);
+      if (idx >= 0) sepInserts.push({ idx, label, alta });
+    } else if (at.rec_baja && tipo === 'reductor') {
+      // Sin rec_alta: feeder nace en alta — separador justo antes de rec_baja
+      const bajaKey = at.rec_baja.trim().toUpperCase();
+      const bajaIdx = opts.findIndex(o => o.text === bajaKey);
+      if (bajaIdx > 0) sepInserts.push({ idx: bajaIdx - 1, label, alta: bajaKey });
+    }
   }
   sepInserts.sort((a, b) => b.idx - a.idx);
   for (const { idx, label, alta } of sepInserts) {

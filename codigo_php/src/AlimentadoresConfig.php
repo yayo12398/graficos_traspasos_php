@@ -84,13 +84,14 @@ function acSetAlim(string $nom, array $body): array
         $autotrafos = [];
         foreach ($body['autotrafos'] ?? [] as $a) {
             $recAlta     = trim((string)($a['rec_alta'] ?? ''));
+            $recBaja     = trim((string)($a['rec_baja'] ?? ''));
             $tensionAlta = isset($a['tension_alta']) && is_numeric($a['tension_alta'])
                 ? (int)$a['tension_alta'] : 23;
-            if (!$recAlta) continue;
-            $recBaja = trim((string)($a['rec_baja'] ?? ''));
+            // Requiere al menos rec_baja; rec_alta es opcional (feeder nace en alta)
+            if (!$recBaja) continue;
             $autotrafos[] = [
-                'rec_alta'       => $recAlta,
-                'rec_baja'       => $recBaja ?: null,
+                'rec_alta'       => $recAlta ?: null,
+                'rec_baja'       => $recBaja,
                 'tension_alta'   => $tensionAlta,
                 'tipo'           => in_array($a['tipo'] ?? '', ['elevador', 'reductor']) ? $a['tipo'] : 'reductor',
                 'fecha_registro' => $a['fecha_registro'] ?? date('Y-m-d'),

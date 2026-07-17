@@ -190,5 +190,23 @@
         "notas": "",
         "fecha_registro": "2026-07-15",
         "historial": []
+    },
+    "REC110180": {
+        "corriente_a": 230,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-17",
+        "historial": []
+    },
+    "REC110181": {
+        "corriente_a": 216,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-17",
+        "historial": []
     }
 }

@@ -49,20 +49,26 @@ async function vccCargarEquipos(nomAlim, modo = "equipos") {
         const atSfx  = atKv != null ? ` · ⚡ ${atKv}kV` : '';
         return { value: e.numpos, text: e.numpos, nom, label: `${icon} ${e.numpos}${pctStr}${atSfx}` };
       });
-      // Separadores: reductor → después de rec_alta; elevador → después de rec_baja
+      // Separadores: reductor → después de rec_alta (o justo antes de rec_baja si sin alta); elevador → después de rec_baja
       const sepInserts = [];
       for (const at of autotrafos) {
-        if (!at.rec_alta) continue;
-        const tipo   = at.tipo ?? 'reductor';
-        const alta   = at.rec_alta.trim().toUpperCase();
-        const tens   = at.tension_alta ?? 23;
-        const anchor = tipo === 'elevador' ? (at.rec_baja ?? '').trim().toUpperCase() : alta;
-        const label  = tipo === 'elevador'
+        const tipo  = at.tipo ?? 'reductor';
+        const tens  = at.tension_alta ?? 23;
+        const label = tipo === 'elevador'
           ? `⚡ Autotrafo — 12kV arriba · ${tens}kV abajo`
           : `⚡ Autotrafo — ${tens}kV arriba · 12kV abajo`;
-        if (!anchor) continue;
-        const idx = opts.findIndex(o => o.nom === anchor);
-        if (idx >= 0) sepInserts.push({ idx, label, alta });
+        if (at.rec_alta) {
+          const alta   = at.rec_alta.trim().toUpperCase();
+          const anchor = tipo === 'elevador' ? (at.rec_baja ?? '').trim().toUpperCase() : alta;
+          if (!anchor) continue;
+          const idx = opts.findIndex(o => o.nom === anchor);
+          if (idx >= 0) sepInserts.push({ idx, label, alta });
+        } else if (at.rec_baja && tipo === 'reductor') {
+          // Sin rec_alta: feeder nace en alta — separador justo antes de rec_baja
+          const bajaKey = at.rec_baja.trim().toUpperCase();
+          const bajaIdx = opts.findIndex(o => o.nom === bajaKey);
+          if (bajaIdx > 0) sepInserts.push({ idx: bajaIdx - 1, label, alta: bajaKey });
+        }
       }
       sepInserts.sort((a, b) => b.idx - a.idx);
       for (const { idx, label, alta } of sepInserts) {
@@ -194,13 +200,16 @@ function vccRenderEquiposInputs(equipos) {
     return;
   }
   const savedConds = state.alimConfig?.conductores_intermedios ?? [];
-  // Detectar el ATR relevante: aquel cuyo rec_alta aparece en el upstream actual
+  // Detectar el ATR relevante: por rec_alta en upstream; si no hay rec_alta, por rec_baja
   const _nombresUp = new Set(equipos.map(e => e.nombre));
-  const atConfig   = (state.alimConfig?.autotrafos ?? []).find(at => at.rec_alta && _nombresUp.has(at.rec_alta)) ?? null;
+  const atConfig   = (state.alimConfig?.autotrafos ?? []).find(at =>
+    (at.rec_alta && _nombresUp.has(at.rec_alta)) ||
+    (!at.rec_alta && at.rec_baja && _nombresUp.has(at.rec_baja))
+  ) ?? null;
   const atRecAlta  = atConfig?.rec_alta ?? null;
   const atRecBaja  = atConfig?.rec_baja ?? null;
   const atTension  = atConfig?.tension_alta ?? 23;
-  const atHasConf  = !!atRecAlta;
+  const atHasConf  = !!atConfig;
 
   // Sort desc por fraccion; en empate: rec_alta antes que rec_baja antes que otros
   const _atPrio = nom =>
@@ -227,10 +236,11 @@ function vccRenderEquiposInputs(equipos) {
     }
   });
 
+  const atAltaLabel = atRecAlta ?? `${atTension}kV (feeder en alta)`;
   const atFooter = atConfig
-    ? `<span class="text-muted small ms-2">⚡ Autotrafo: <b>${atConfig.rec_alta}</b> (${atTension}kV)` +
+    ? `<span class="text-muted small ms-2">⚡ Autotrafo: <b>${atAltaLabel}</b>` +
       (atRecBaja ? ` / <b>${atRecBaja}</b> (12kV)` : ` <span class="text-warning" style="font-size:.75rem">[12kV pendiente]</span>`) +
-      `<button class="btn btn-link btn-sm py-0 px-1 text-danger ms-1" onclick="vccEliminarAutotrafo('${atRecAlta}')"
+      `<button class="btn btn-link btn-sm py-0 px-1 text-danger ms-1" onclick="vccEliminarAutotrafo('${atRecBaja}')"
                title="Eliminar autotrafo">×</button></span>`
     : "";
 
@@ -596,11 +606,11 @@ async function vccRegistrarAutotrafo(recAlta, tensionAlta = 23) {
   finally { spinner(false); }
 }
 
-async function vccEliminarAutotrafo(recAlta) {
+async function vccEliminarAutotrafo(recBaja) {
   const nom = state.vccAlimNom;
   if (!nom) return;
   const conductores = (state.alimConfig?.conductores_intermedios ?? []);
-  const autotrafos  = (state.alimConfig?.autotrafos ?? []).filter(at => at.rec_alta !== recAlta);
+  const autotrafos  = (state.alimConfig?.autotrafos ?? []).filter(at => at.rec_baja !== recBaja);
   spinner(true, "Eliminando autotrafo...");
   try {
     await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nom)}`, {
