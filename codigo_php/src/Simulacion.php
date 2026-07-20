@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Simulacion.php  (~550 L)                                         ║
+// ║  ÍNDICE DE Simulacion.php  (~556 L)                                         ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  Flujo: infoIsla → calcularDelta → simular/simularMesAMes                   ║
 // ║         → analizarTrafo/analizarTrafoMesAMes → resumenEstados                ║
@@ -19,23 +19,23 @@ declare(strict_types=1);
 // ║      → {delta_max,serie_deltas,mes_peor,I_orig_antes,I_orig_despues}        ║
 // ║    clasificarMes($iPost,$cn,$umbral) viable|prealerta|critico|sin_datos L.205║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  SIMULACIÓN MENSUAL                                               L.230–337  ║
+// ║  SIMULACIÓN MENSUAL                                               L.230–342  ║
 // ║    simular($serieOrig,$serieDest,$cnOrig,$cnDest,$p,$mesesFiltro)  L.230    ║
 // ║      → tabla peor caso (delta fijo = deltaMax todos los meses)               ║
-// ║    simularMesAMes($orig,$dest,$cnO,$cnD,$p,$filtro)                L.273    ║
+// ║    simularMesAMes($orig,$dest,$cnO,$cnD,$p,$filtro)                L.275    ║
 // ║      → tabla proporcional (delta = p × I_orig[mes])                          ║
-// ║    serieVacia($meses)          serie con nulls para meses dados     L.319    ║
+// ║    serieVacia($meses)          serie con nulls para meses dados     L.324    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  TRAFOS                                                           L.338–519  ║
-// ║    analizarTrafo($row,$delta,$modo,$umbral,$mesesFiltro)           L.338     ║
+// ║  TRAFOS                                                           L.343–524  ║
+// ║    analizarTrafo($row,$delta,$modo,$umbral,$mesesFiltro)           L.343     ║
 // ║      → resumen trafo (peor mes, pct_max, estado global)                      ║
 // ║      ↳ retorna clave 'tabla' (no 'datos') con array de registros por mes     ║
-// ║    analizarTrafoMesAMes($row,$serieDeltas,$modo,$umbral,$filtro)   L.429     ║
+// ║    analizarTrafoMesAMes($row,$serieDeltas,$modo,$umbral,$filtro)   L.434     ║
 // ║      → {cn_trafo, sin_datos, tabla:[{mes, I_antes, I_despues,                ║
 // ║          delta, uso_antes_pct, uso_despues_pct, estado}], ...}               ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  RESUMEN                                                          L.521–551  ║
-// ║    resumenEstados($tabSim)     conteo estados + mes más crítico     L.521    ║
+// ║  RESUMEN                                                          L.526–556  ║
+// ║    resumenEstados($tabSim)     conteo estados + mes más crítico     L.526    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /**

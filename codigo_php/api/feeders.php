@@ -99,7 +99,8 @@ if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'equipos' && !$b2) {
 
 // ── POST /api/isla/preview ─────────────────────────────────────────────────────
 // Body: {nom_alim_orig, tipo_isla?, equipo_nombre?, tds_numpos?}
-// Retorna Python flat: {n_td, kva_isla, kva_feeder, p_pct, clientes, detalle_tds}
+// Retorna Python flat: {n_td, kva_isla, kva_feeder, p_pct, clientes, detalle_tds,
+//                       v_lz, atr_boundary}
 if ($method === 'POST' && $a === 'isla' && $b0 === 'preview' && !$b1) {
     $b       = bodyJson();
     $nomAlim = $b['nom_alim_orig'] ?? $b['nom_alim_origen'] ?? '';
@@ -112,10 +113,43 @@ if ($method === 'POST' && $a === 'isla' && $b0 === 'preview' && !$b1) {
     $eqsTrsp      = ($_eqAbreP !== '' && ($b['tipo_isla'] ?? 'equipo') === 'equipo')
         ? equiposEnIsla($dfAb, $tds, $_eqAbreP, $nomAlim)
         : [];
+
+    // Detectar si la isla está en zona de baja tensión (aguas abajo de ATR)
+    $vLzPreview   = 23.0;
+    $atrBoundary  = null;
+    $alimCfgPrev  = acGetAlim($nomAlim);
+    if ($alimCfgPrev && !empty($alimCfgPrev['autotrafos'])) {
+        $nomUpPrev   = strtoupper(trim($nomAlim));
+        $tdSetPrev   = [];
+        foreach ($tds as $_tr) {
+            $td = trim((string)($_tr['numpos_td'] ?? ''));
+            if ($td !== '') $tdSetPrev[$td] = true;
+        }
+        foreach ($alimCfgPrev['autotrafos'] as $_at) {
+            $tipo  = $_at['tipo'] ?? 'reductor';
+            $bound = strtoupper(trim($tipo === 'elevador'
+                ? ($_at['rec_baja'] ?? '')
+                : (($_at['rec_alta'] ?? '') ?: ($_at['rec_baja'] ?? ''))));
+            if ($bound === '') continue;
+            foreach ($dfAb as $_row) {
+                if (strtoupper(trim($_row['nom_alim']    ?? '')) !== $nomUpPrev) continue;
+                if (strtoupper(trim($_row['numpos_equip'] ?? '')) !== $bound)    continue;
+                $td = trim($_row['numpos_td'] ?? '');
+                if ($td !== '' && isset($tdSetPrev[$td])) {
+                    $vLzPreview  = $tipo === 'elevador' ? (float)($_at['tension_alta'] ?? 23) : 12.0;
+                    $atrBoundary = $bound;
+                    break 2;
+                }
+            }
+        }
+    }
+
     $previewOut   = $previewIsla;
     unset($previewOut['detalle_tds']);
     $previewOut['equipos_traspasados'] = $eqsTrsp;
     $previewOut['detalle_tds']         = $previewIsla['detalle_tds'] ?? [];
+    $previewOut['v_lz']                = $vLzPreview;
+    $previewOut['atr_boundary']        = $atrBoundary;
     jsonPy($previewOut);
 }
 

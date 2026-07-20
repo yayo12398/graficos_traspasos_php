@@ -362,12 +362,14 @@ async function _fetchPreview() {
     document.getElementById("prev-pct").textContent = data.p_pct != null ? `${data.p_pct.toFixed(1)}%` : "—";
     document.getElementById("isla-preview").style.display = "";
     _mostrarAlertaInversion(data.equipos_traspasados || []);
+    _mostrarAlertaZonaATR(data.v_lz, data.atr_boundary);
   } catch { ocultarPreviewIsla(); }
 }
 
 function ocultarPreviewIsla() {
   document.getElementById("isla-preview").style.display = "none";
   _mostrarAlertaInversion([]);
+  _mostrarAlertaZonaATR(23, null);
 }
 
 function _mostrarAlertaInversion(equipos) {
@@ -377,6 +379,14 @@ function _mostrarAlertaInversion(equipos) {
     `<span class="badge bg-warning text-dark me-1">${e.tipo}</span><code>${e.nombre}</code>`
   ).join("  ");
   document.getElementById("alerta-inversion-equipos").innerHTML = " " + badges;
+  alerta.style.display = "";
+}
+
+function _mostrarAlertaZonaATR(vLz, boundary) {
+  const alerta = document.getElementById("alerta-zona-atr");
+  if (!alerta) return;
+  if (!vLz || vLz >= 23) { alerta.style.display = "none"; return; }
+  document.getElementById("alerta-zona-atr-equipo").textContent = boundary ? `(${boundary})` : "";
   alerta.style.display = "";
 }
 
