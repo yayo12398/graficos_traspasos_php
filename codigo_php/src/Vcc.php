@@ -301,6 +301,35 @@ function calcularFraccionReco(array $dfAb, string $nomAlim, string $numposEquip)
 }
 
 /**
+ * Comprueba si equipX está topológicamente aguas abajo de boundary en el alimentador nomAlim.
+ * Criterio (red radial): TDs(equipX) ⊆ TDs(boundary) y equipX ≠ boundary.
+ * Si equipX = boundary, retorna false (el equipo de borde pertenece a la zona determinada
+ * por la lógica del ATR — alta o baja — no se considera "aguas abajo de sí mismo").
+ */
+function equipoEsAguasAbajoDe(array $dfAb, string $nomAlim, string $boundary, string $equipX): bool
+{
+    if ($boundary === '' || $equipX === '' || $boundary === $equipX) return false;
+    $nom   = strtoupper(trim($nomAlim));
+    $bound = trim($boundary);
+    $xEq   = trim($equipX);
+    $tdsBound = [];
+    $tdsX     = [];
+    foreach ($dfAb as $row) {
+        if (strtoupper(trim($row['nom_alim'] ?? '')) !== $nom) continue;
+        $eq = trim($row['numpos_equip'] ?? '');
+        $td = trim($row['numpos_td']    ?? '');
+        if ($td === '') continue;
+        if ($eq === $bound) $tdsBound[$td] = true;
+        if ($eq === $xEq)   $tdsX[$td]     = true;
+    }
+    if (empty($tdsX)) return false;
+    foreach (array_keys($tdsX) as $td) {
+        if (!isset($tdsBound[$td])) return false;
+    }
+    return true;
+}
+
+/**
  * Añade datos de fracción de potencia a reconectadores y equipos_sub del listado upstream.
  * Los equipos de tipo 'otro' se dejan sin modificar.
  *
@@ -514,7 +543,9 @@ function evaluarEquipos(
                 $recoOrig = $vf * $fraccion;
                 $serieRecoOrig[$mes] = round($recoOrig, 2);
                 $delta   = $serieAlivio  ? ($serieAlivio[$mes]  ?? 0.0) : 0.0;
-                $adicion = $serieAdicion ? ($serieAdicion[$mes] ?? 0.0) : 0.0;
+                $adicion = isset($eq['serie_adicion_override'])
+                    ? (float)($eq['serie_adicion_override'][$mes] ?? 0.0)
+                    : ($serieAdicion ? ($serieAdicion[$mes] ?? 0.0) : 0.0);
                 $serieReco[$mes] = round(max(0.0, $recoOrig - $delta + $adicion), 2);
             }
 

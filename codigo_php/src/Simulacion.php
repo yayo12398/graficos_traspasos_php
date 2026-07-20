@@ -234,15 +234,17 @@ function simular(
     float|null $cnDestino,
     float      $deltaMax,
     float      $umbral = 0.90,
+    float      $deltaMaxOrig = 0.0,  // si >0, usa este delta para descuento en origen (ATR: V_A ≠ V_B)
 ): array {
     [$orig, $dest, $meses] = _simReindexar($serieOrigen, $serieDestino);
+    $dOrig = $deltaMaxOrig > 0.0 ? $deltaMaxOrig : $deltaMax;
 
     $tabla = [];
     foreach ($meses as $mes) {
         $iOA = $orig[$mes];    // I origen antes
         $iDA = $dest[$mes];    // I destino antes
 
-        $iOD = $iOA !== null ? max(0.0, round($iOA - $deltaMax, 1)) : null;  // origen después
+        $iOD = $iOA !== null ? max(0.0, round($iOA - $dOrig,   1)) : null;  // origen después
         $iDD = $iDA !== null ? round($iDA + $deltaMax, 1)           : null;  // destino después
 
         $tabla[] = [
@@ -277,7 +279,8 @@ function simularMesAMes(
     float|null $cnDestino,
     float      $p,
     float      $umbral = 0.90,
-    array      $serieDelta = [],  // si se pasa, usa esta serie para delta×p en vez de serieOrigen
+    array      $serieDelta = [],   // si se pasa, usa esta serie para delta×p en vez de serieOrigen
+    float      $pOrig = 0.0,       // si >0, usa este p para descuento en origen (ATR: V_A ≠ V_B)
 ): array {
     [$orig, $dest, $meses] = _simReindexar($serieOrigen, $serieDestino);
 
@@ -290,8 +293,10 @@ function simularMesAMes(
         $iOAD  = $serieDelta ? ($serieDelta[$mes] ?? $iOA) : $iOA;
         // null cuando origen no tiene datos: propaga incertidumbre al destino (igual que NaN en pandas)
         $delta = $iOAD !== null ? $iOAD * $p : null;
+        // Descuento en origen: usa pOrig si hay diferencia de tensión A≠B, de lo contrario igual que B
+        $deltaOrig = ($pOrig > 0.0 && $iOAD !== null) ? $iOAD * $pOrig : $delta;
 
-        $iOD = $iOA !== null ? max(0.0, round($iOA - $delta, 1)) : null;
+        $iOD = $iOA !== null ? max(0.0, round($iOA - $deltaOrig, 1)) : null;
         $iDD = ($iDA !== null && $delta !== null) ? round($iDA + $delta, 1) : null;
 
         $tabla[] = [

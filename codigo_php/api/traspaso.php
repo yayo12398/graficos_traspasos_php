@@ -226,10 +226,91 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     $deltaMax  = $deltaInfo['delta_max'];
     $isla['mes_peor'] = $deltaInfo['mes_peor'] ?? '';
 
-    // simular(): deltaMax limpio + serieOrig ajustada → I_orig_antes muestra carga real de B
-    $dfSim    = filtrarMeses(simular($serieOrig, $serieDest, $cnOrig, $cnDest, $deltaMax), $mesesSel);
-    // simularMesAMes(): display desde ajustada, delta calculado desde limpia
-    $dfSimMam = filtrarMeses(simularMesAMes($serieOrig, $serieDest, $cnOrig, $cnDest, (float)($isla['p'] ?? 0.0), 0.90, $serieOrigClean), $mesesSel);
+    // ── Corrección ATR: tensión en el LZ (lado A) y tensión de conexión de B ────
+    // serie_deltas = I_trunk_A × p  (unidades 23 kV siempre).
+    // Si la isla de A está en zona de baja tensión (aguas abajo de un ATR de A),
+    // la corriente real en B = serie_deltas × (23 / V_eq), donde V_eq depende de
+    // la posición topológica de cada equipo respecto al ATR de A o de B.
+    $alimConfA  = acGetAlim($nomOrig);
+    $alimConfBc = ($tipoDest === 'excel' && $nomDest !== '') ? acGetAlim($nomDest) : null;
+
+    // V_lz: tensión física en el LZ (determinada topológicamente por ATR de A).
+    // Se verifica si algún TD de la isla es aguas abajo del borde del ATR de A.
+    // No depende de equipo_abre; usa los TDs reales de la isla.
+    $vLz = 23.0;
+    if ($alimConfA && !empty($alimConfA['autotrafos'])) {
+        $nomOrigUp = strtoupper(trim($nomOrig));
+        $tdIslandSet = [];
+        foreach ($tds as $_tdRow) {
+            $td = trim((string)($_tdRow['numpos_td'] ?? ''));
+            if ($td !== '') $tdIslandSet[$td] = true;
+        }
+        foreach ($alimConfA['autotrafos'] as $_atA) {
+            $atATipo  = $_atA['tipo'] ?? 'reductor';
+            $atABound = strtoupper(trim($atATipo === 'elevador'
+                ? ($_atA['rec_baja'] ?? '')
+                : (($_atA['rec_alta'] ?? '') ?: ($_atA['rec_baja'] ?? ''))));
+            if ($atABound === '') continue;
+            foreach ($dfAb as $_row) {
+                if (strtoupper(trim($_row['nom_alim']    ?? '')) !== $nomOrigUp) continue;
+                if (strtoupper(trim($_row['numpos_equip'] ?? '')) !== $atABound)  continue;
+                $td = trim($_row['numpos_td'] ?? '');
+                if ($td !== '' && isset($tdIslandSet[$td])) {
+                    $vLz = $atATipo === 'elevador' ? (float)($_atA['tension_alta'] ?? 23) : 12.0;
+                    break 2;
+                }
+            }
+        }
+    }
+
+    // V_se_B: tensión a la que B conecta con el LZ.
+    // Si B tiene ATR registrado en el path upstream → su SE está en zona de alta (23 kV).
+    // Si no tiene ATR en path → B conecta directamente al nivel del LZ (V_lz).
+    $atB  = null;
+    $vSeB = $vLz;
+    if ($alimConfBc && !empty($alimConfBc['autotrafos'])) {
+        $nombresRawBUp = array_map('strtoupper', array_column($b['equipos_b'] ?? [], 'nombre'));
+        foreach ($alimConfBc['autotrafos'] as $_at) {
+            $ra = strtoupper(trim($_at['rec_alta'] ?? ''));
+            $rb = strtoupper(trim($_at['rec_baja'] ?? ''));
+            if ($ra !== '' && in_array($ra, $nombresRawBUp, true)) { $atB = $_at; break; }
+        }
+        if (!$atB) {
+            foreach ($alimConfBc['autotrafos'] as $_at) {
+                $ra = strtoupper(trim($_at['rec_alta'] ?? ''));
+                $rb = strtoupper(trim($_at['rec_baja'] ?? ''));
+                if ($ra === '' && $rb !== '' && in_array($rb, $nombresRawBUp, true)) { $atB = $_at; break; }
+            }
+        }
+        if ($atB) $vSeB = 23.0;
+    }
+
+    // Factores de escala para análisis de cabecera/trafo de B
+    $scaleFeederB    = 23.0 / $vSeB;
+    $deltaMaxB       = round($deltaMax * $scaleFeederB, 2);
+    $pForB           = $isla['p'] * $scaleFeederB;
+    $serieAdicionBSc = abs($scaleFeederB - 1.0) > 0.001
+        ? array_map(fn($v) => round((float)$v * $scaleFeederB, 4), $deltaInfo['serie_deltas'])
+        : $deltaInfo['serie_deltas'];
+
+    // simular(): deltaMax limpio + serieOrig ajustada → I_orig_antes muestra carga real de B.
+    // Si hay corrección ATR (V_A ≠ V_B), origen descuenta con deltaMax original (23 kV equiv.),
+    // destino recibe deltaMaxB escalado al nivel de tensión de B.
+    $atrScale    = abs($scaleFeederB - 1.0) > 0.001;
+    $dfSim    = filtrarMeses(simular(
+        $serieOrig, $serieDest, $cnOrig, $cnDest,
+        $deltaMaxB,
+        0.90,
+        $atrScale ? $deltaMax : 0.0
+    ), $mesesSel);
+    // simularMesAMes(): mismo principio — pOrig para descuento en A, pForB para adición en B.
+    $dfSimMam = filtrarMeses(simularMesAMes(
+        $serieOrig, $serieDest, $cnOrig, $cnDest,
+        $pForB,
+        0.90,
+        $serieOrigClean,
+        $atrScale ? $isla['p'] : 0.0
+    ), $mesesSel);
     $resumen  = resumenEstados($dfSim);
 
     $trafoOrigRowRaw = trafoDeFeeder($dfTrafo, $nOrig);
@@ -249,8 +330,8 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     if ($tipoDest === 'excel') {
         $trafoDestRowRaw = trafoDeFeeder($dfTrafo, $nDest);
         $trafoDestRow    = $trafoDestRowRaw ? aplicarAjustesFila($trafoDestRowRaw, 'trafo', $nDest) : null;
-        $trafoDest       = $trafoDestRow ? analizarTrafo($trafoDestRow, $deltaMax, 'carga', 0.90, $mesesSel) : null;
-        $trafoDestMam    = $trafoDestRow ? analizarTrafoMesAMes($trafoDestRow, $deltaInfo['serie_deltas'], 'carga', 0.90, $mesesSel) : null;
+        $trafoDest       = $trafoDestRow ? analizarTrafo($trafoDestRow, $deltaMaxB, 'carga', 0.90, $mesesSel) : null;
+        $trafoDestMam    = $trafoDestRow ? analizarTrafoMesAMes($trafoDestRow, $serieAdicionBSc, 'carga', 0.90, $mesesSel) : null;
         $numalimTrafoOrig = $trafoOrigRow ? ($nOrig ?? null) : null;
         $numalimTrafoDest = $trafoDestRow ? ($nDest ?? null) : null;
     } else {
@@ -335,6 +416,52 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                 ]);
             }
         }
+        // ── Corrección de tensión por equipo (VCC equipos B) ─────────────────
+        // Corriente en equipo = serie_deltas × (23 / V_eq).
+        // V_eq se determina topológicamente: posición del equipo relativa al ATR de B.
+        // Si B no tiene ATR en el path upstream, todos los equipos están al nivel del LZ (V_lz).
+        if ($atB) {
+            // B tiene ATR en el path: corrección por zona (alta / baja)
+            $atBTipo      = $atB['tipo'] ?? 'reductor';
+            $atBRecAlta   = $atB['rec_alta'] ?? '';
+            $atBRecBaja   = $atB['rec_baja'] ?? '';
+            $atBTensAlta  = (float)($atB['tension_alta'] ?? 23);
+            $atBBoundary  = $atBTipo === 'elevador' ? $atBRecBaja : ($atBRecAlta ?: $atBRecBaja);
+            // Si boundary = rec_alta → el recloser de borde está en zona de alta (23 kV)
+            // Si boundary = rec_baja → el recloser de borde está en zona de baja (12 kV)
+            $boundaryIsHigh = ($atBBoundary === $atBRecAlta && $atBRecAlta !== '');
+
+            foreach ($equiposBEval as &$_eqB) {
+                $nB = $_eqB['nombre'] ?? '';
+                if ($nB === $atBBoundary) {
+                    $vEq = $boundaryIsHigh ? $atBTensAlta : 12.0;
+                } else {
+                    $isDown = equipoEsAguasAbajoDe($dfAb, $nomDest, $atBBoundary, $nB);
+                    // Elevador: downstream de rec_baja = zona de alta (23 kV, salida del ATR)
+                    // Reductor: downstream de rec_alta/rec_baja = zona de baja (12 kV, salida)
+                    $vEq = ($atBTipo === 'elevador')
+                        ? ($isDown ? $atBTensAlta : 12.0)
+                        : ($isDown ? 12.0 : $atBTensAlta);
+                }
+                $scale = 23.0 / $vEq;
+                if (abs($scale - 1.0) > 0.001) {
+                    $sc = [];
+                    foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scale, 4);
+                    $_eqB['serie_adicion_override'] = $sc;
+                }
+            }
+            unset($_eqB);
+        } elseif (abs($vLz - 23.0) > 0.001) {
+            // Sin ATR de B en path: todos los equipos están al nivel del LZ
+            $scaleLz = 23.0 / $vLz;
+            foreach ($equiposBEval as &$_eqB) {
+                $sc = [];
+                foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scaleLz, 4);
+                $_eqB['serie_adicion_override'] = $sc;
+            }
+            unset($_eqB);
+        }
+
         if ($equiposBEval) {
             $vccAlimBEquipos = evaluarEquipos(
                 equipos:      $equiposBEval,
