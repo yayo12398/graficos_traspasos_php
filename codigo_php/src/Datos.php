@@ -243,6 +243,8 @@ function pivotarAlim(array $rows): array
     $meta     = [];
     $pivot    = [];
     $allMeses = [];
+    $cnMes    = [];   // mes más reciente con CN numérico, por numalim
+    $ceMes    = [];   // idem para CE
 
     foreach ($rows as $raw) {
         $r  = array_change_key_case($raw, CASE_UPPER);
@@ -258,9 +260,19 @@ function pivotarAlim(array $rows): array
                 'subestacion'=> trim((string)($r['SUBESTACION'] ?? '')),
                 'barra_alim' => $alim,
                 'nom_rapida' => _nomRapidaDeAlim($alim),
-                'cn'         => is_numeric($r['CN']  ?? null) ? (float)$r['CN']  : null,
-                'ce'         => is_numeric($r['CE']  ?? null) ? (float)$r['CE']  : null,
+                'cn'         => null,
+                'ce'         => null,
             ];
+        }
+        // CN/CE pueden cambiar en el tiempo (re-clasificación del alimentador):
+        // tomar el valor del mes más reciente con dato, no el de la primera fila.
+        if (is_numeric($r['CN'] ?? null) && $mes >= ($cnMes[$nm] ?? '')) {
+            $cnMes[$nm] = $mes;
+            $meta[$nm]['cn'] = (float)$r['CN'];
+        }
+        if (is_numeric($r['CE'] ?? null) && $mes >= ($ceMes[$nm] ?? '')) {
+            $ceMes[$nm] = $mes;
+            $meta[$nm]['ce'] = (float)$r['CE'];
         }
 
         $allMeses[$mes] = true;
@@ -299,6 +311,8 @@ function pivotarTrafos(array $rows): array
     $meta     = [];
     $pivot    = [];
     $allMeses = [];
+    $cnMes    = [];   // mes más reciente con CN numérico, por numalim
+    $ceMes    = [];   // idem para CE
 
     foreach ($rows as $raw) {
         $r  = array_change_key_case($raw, CASE_UPPER);
@@ -312,9 +326,19 @@ function pivotarTrafos(array $rows): array
                 'numalim'   => $nm,
                 'barra_alim'=> trim((string)($r['ALIMENTADOR'] ?? '')),
                 'barra'     => trim((string)($r['BARRA']       ?? '')),
-                'cn'        => is_numeric($r['CN']  ?? null) ? (float)$r['CN']  : null,
-                'ce'        => is_numeric($r['CE']  ?? null) ? (float)$r['CE']  : null,
+                'cn'        => null,
+                'ce'        => null,
             ];
+        }
+        // CN/CE pueden cambiar en el tiempo (re-clasificación del trafo):
+        // tomar el valor del mes más reciente con dato, no el de la primera fila.
+        if (is_numeric($r['CN'] ?? null) && $mes >= ($cnMes[$nm] ?? '')) {
+            $cnMes[$nm] = $mes;
+            $meta[$nm]['cn'] = (float)$r['CN'];
+        }
+        if (is_numeric($r['CE'] ?? null) && $mes >= ($ceMes[$nm] ?? '')) {
+            $ceMes[$nm] = $mes;
+            $meta[$nm]['ce'] = (float)$r['CE'];
         }
 
         $allMeses[$mes] = true;

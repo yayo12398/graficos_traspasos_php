@@ -42,9 +42,11 @@ const state = {
   vccEquiposTroncalB: [], // equipos_troncal del receptor para el LZ elegido
   vccKvaIsla:       null, // kVA isla calculada (de isla/preview)
   // config equipos receptor (traspaso tab)
-  troncalBNomAlim:  null, // nom_alim del receptor activo en panel equipos B
-  equiposConfigB:   {},   // {numpos: entry} — cache de equipos_config para alim B
-  alimConfigB:      null, // config del receptor (conductores_intermedios)
+  troncalBNomAlim:      null, // nom_alim del receptor activo en panel equipos B
+  troncalBEnriquecido:  [],   // [{nombre, tipo, fraccion, cn, kva_down, ...}] — troncal B con fracciones
+  equiposBDisponibles:  null, // catálogo de equipos del receptor para troncal manual (forzado)
+  equiposConfigB:       {},   // {numpos: entry} — cache de equipos_config para alim B
+  alimConfigB:          null, // config del receptor (conductores_intermedios)
 };
 
 // TomSelect instances
@@ -82,6 +84,30 @@ async function cargarEstadoCache() {
     const d = await apiFetch('/api/debug/status');
     actualizarLabelesCache(d);
   } catch(e) { /* silencioso en carga inicial */ }
+  try {
+    const t = await apiFetch('/api/telecontrol/status');
+    actualizarLabelTlc(t.data ?? t);
+  } catch(e) { /* silencioso */ }
+}
+
+function actualizarLabelTlc(d) {
+  const fmt = s => {
+    if (!s) return '—';
+    const dt = new Date(s.includes('T') ? s : s.replace(' ', 'T'));
+    return dt.toLocaleDateString('es-CL', {day:'2-digit', month:'2-digit', year:'2-digit'})
+           + ' ' + dt.toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit'});
+  };
+  const lbl = document.getElementById('lbl-cache-tlc');
+  if (!lbl) return;
+  if (!d?.existe) {
+    lbl.textContent = 'TLC: —';
+    lbl.style.color = 'var(--enel-amber, #f5a623)';
+    lbl.title = 'Caché TLC no generado — haz clic en ↺ para generar';
+  } else {
+    lbl.textContent = 'TLC: ' + fmt(d.mtime);
+    lbl.title = `Telecontrol: ${d.n_equipos} equipos, ${d.n_frg_alim} alim. FRG — actualizado: ${d.mtime}`;
+    lbl.style.color = '';
+  }
 }
 
 function actualizarLabelesCache(d) {
@@ -93,16 +119,27 @@ function actualizarLabelesCache(d) {
   };
   const lblT = document.getElementById('lbl-cache-topo');
   const lblD = document.getElementById('lbl-cache-dem');
+  const lblL = document.getElementById('lbl-cache-lz');
   const topoStr = d.cache_ab_mtime  || null;
   const demStr  = d.cache_dem_mtime || null;
+  const lzStr   = d.cache_lz_mtime  || null;
   lblT.textContent = 'Topol: ' + fmt(topoStr);
   lblT.title = 'Topología (aguas abajo) — actualizado: ' + (topoStr || '—');
   lblD.textContent = 'Dem: ' + fmt(demStr);
   lblD.title = 'Demandas (alimentadores y trafos) — actualizado: ' + (demStr || '—');
+  if (lblL) {
+    lblL.textContent = 'LZ: ' + fmt(lzStr);
+    lblL.title = 'Límite de zona — actualizado: ' + (lzStr || '—');
+  }
   // Resaltar en ámbar si la topología tiene más de 3 días
   if (topoStr) {
     const dias = (Date.now() - new Date(topoStr.replace(' ', 'T'))) / 86400000;
     lblT.style.color = dias > 3 ? 'var(--enel-amber)' : '';
+  }
+  // LZ en ámbar si supera su TTL (7 días)
+  if (lblL && lzStr) {
+    const diasLz = (Date.now() - new Date(lzStr.replace(' ', 'T'))) / 86400000;
+    lblL.style.color = diasLz > 7 ? 'var(--enel-amber)' : '';
   }
 }
 
@@ -128,6 +165,30 @@ async function recargarCache() {
   } finally {
     btn.disabled = false;
     ico.classList.remove('spin-anim');
+  }
+}
+
+async function recargarTlc() {
+  const btn = document.getElementById('btn-reload-tlc');
+  const ico = document.getElementById('ico-reload-tlc');
+  if (btn) btn.disabled = true;
+  if (ico) ico.classList.add('spin-anim');
+  spinner(true, 'Actualizando datos de telecontrol...');
+  try {
+    const r = await apiFetch('/api/telecontrol/refresh', {method: 'POST'});
+    spinner(false);
+    const data = r.data ?? r;
+    actualizarLabelTlc({ existe: true, mtime: data.generado, n_equipos: data.n_equipos, n_frg_alim: data.n_frg_alim });
+    // Recargar dropdowns para reflejar nuevos flags FRG/TLC
+    await inicializarOrigenSelect();
+    await cargarDestinos();
+    dbg(`✓ TLC actualizado: ${data.n_equipos} equipos, ${data.n_frg_alim} alim. FRG`, 'ok');
+  } catch(e) {
+    spinner(false);
+    dbg('✗ Error al actualizar TLC: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (ico) ico.classList.remove('spin-anim');
   }
 }
 
@@ -313,4 +374,92 @@ function mostrarErrorSim(msg) {
 function ocultarErrorSim() {
   const el = document.getElementById("error-simulacion");
   if (el) el.style.display = "none";
+}
+
+// ── COPIAR TABLAS AL PORTAPAPELES (Excel / correo) ─────────────────────────
+// Serializa una <table> del DOM a text/html (con formato) + text/plain (TSV).
+// Excel y Outlook toman el HTML; cualquier otro destino recibe el TSV.
+async function copiarTablaEl(tabla, btn) {
+  if (!tabla) return;
+
+  // Clon limpio: quita botones/controles inyectados, conserva estilos inline.
+  const clon = tabla.cloneNode(true);
+  clon.querySelectorAll(".no-copy, .btn-copiar-tabla, button, input").forEach(e => e.remove());
+  const html = `<table style="border-collapse:collapse" border="1" cellpadding="4">${clon.innerHTML}</table>`;
+
+  // TSV desde las filas visibles (para pegado en columnas).
+  const tsv = [...clon.querySelectorAll("tr")].map(tr =>
+    [...tr.querySelectorAll("th,td")]
+      .map(c => (c.innerText || c.textContent || "").replace(/\s+/g, " ").trim())
+      .join("\t")
+  ).join("\n");
+
+  const feedback = ok => {
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = ok ? '<i class="bi bi-check2"></i> Copiada' : '<i class="bi bi-x"></i>';
+      setTimeout(() => { btn.innerHTML = orig; }, 1600);
+    }
+    if (ok) mostrarToast("Tabla copiada — pégala en Excel o el correo");
+  };
+
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html":  new Blob([html], { type: "text/html"  }),
+        "text/plain": new Blob([tsv],  { type: "text/plain" }),
+      }),
+    ]);
+    feedback(true);
+  } catch (e) {
+    // Fallback: solo texto plano (navegadores sin ClipboardItem o sin permiso).
+    try {
+      await navigator.clipboard.writeText(tsv);
+      feedback(true);
+    } catch (_) {
+      feedback(false);
+      if (typeof mostrarError === "function") mostrarError("No se pudo copiar la tabla.");
+    }
+  }
+}
+
+// Inyecta una barra con botón "Copiar" encima de cada <table> con datos
+// dentro de `container`. Idempotente: no duplica si ya se agregó.
+function agregarBotonesCopia(container) {
+  if (!container) return;
+  container.querySelectorAll("table").forEach(tabla => {
+    if (tabla.dataset.copiaLista) return;      // ya tiene botón
+    if (!tabla.querySelector("tbody td, td")) return;  // tabla vacía → omitir
+    tabla.dataset.copiaLista = "1";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-secondary btn-copiar-tabla no-copy py-0 px-2";
+    btn.style.fontSize = ".72rem";
+    btn.title = "Copiar tabla al portapapeles (Excel / correo)";
+    btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copiar';
+    btn.onclick = () => copiarTablaEl(tabla, btn);
+
+    const bar = document.createElement("div");
+    bar.className = "d-flex justify-content-end mb-1 no-copy";
+    bar.appendChild(btn);
+    tabla.parentNode.insertBefore(bar, tabla);
+  });
+}
+
+// ── EQUIPOS DE BORDE DE ATR ────────────────────────────────────────────────
+// Prefijos de equipos que pueden delimitar un autotransformador, en orden de
+// prioridad (para el selector de config y el botón rápido de registro).
+const AT_PREFIJOS = ["REC", "CLB", "DBC", "ABB", "ORM", "SCH", "VIS"];
+function _atBordePrio(numpos) {
+  const u = (numpos || "").toUpperCase();
+  const i = AT_PREFIJOS.findIndex(p => u.startsWith(p));
+  return i < 0 ? 99 : i;
+}
+function _esBordeATR(numpos) { return _atBordePrio(numpos) < 99; }
+
+// Escapa texto libre del usuario para insertarlo como HTML.
+function _escHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

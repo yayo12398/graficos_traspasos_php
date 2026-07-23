@@ -460,7 +460,10 @@ function renderCfgAlimDetalle(data) {
   {
     const nomAlim = _cfgAlimActual?.nom_alim ?? "";
     const nomEsc  = nomAlim.replace(/'/g, "\\'");
-    const eqsRec  = equipos.filter(e => /^REC/i.test(e.numpos));
+    // Equipos que pueden delimitar un ATR (borde). Prefijos en init.js (AT_PREFIJOS).
+    const eqsBorde = equipos
+      .filter(e => _esBordeATR(e.numpos))
+      .sort((a, b) => _atBordePrio(a.numpos) - _atBordePrio(b.numpos) || String(a.numpos).localeCompare(String(b.numpos)));
     let atHtml = '<div class="mb-3"><div class="small fw-semibold mb-2">⚡ Autotransformadores</div>';
     autotrafos.forEach((at) => {
       const recBajaTxt = at.rec_baja
@@ -468,7 +471,7 @@ function renderCfgAlimDetalle(data) {
         : `<span class="text-muted fst-italic">no configurado</span>`;
       const recAltaTxt = at.rec_alta
         ? `<code>${at.rec_alta}</code>`
-        : `<span class="text-muted fst-italic" style="font-size:.78rem">feeder en alta (sin REC)</span>`;
+        : `<span class="text-muted fst-italic" style="font-size:.78rem">feeder en alta (sin equipo)</span>`;
       const recBajaEsc = (at.rec_baja ?? '').replace(/'/g, "\\'");
       const tpsDiv = autotrafos.length === 1
         ? `<div id="cfg-at-tps-info" class="mt-2 pt-2" style="border-top:1px solid #ffe082;font-size:.8rem"><span class="text-muted">Cargando TPs…</span></div>`
@@ -499,9 +502,9 @@ function renderCfgAlimDetalle(data) {
         ${tpsDiv}
       </div>`;
     });
-    if (eqsRec.length) {
-      const opcsRec = eqsRec.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
-      const addLabel = autotrafos.length ? 'Agregar otro autotrafo:' : 'Selecciona los RECs que delimitan el autotrafo:';
+    if (eqsBorde.length) {
+      const opcsBorde = eqsBorde.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
+      const addLabel = autotrafos.length ? 'Agregar otro autotrafo:' : 'Selecciona los equipos que delimitan el autotrafo:';
       atHtml += `<div class="p-2 rounded mt-1" style="background:#f8f9fa;border:1px solid #dee2e6;font-size:.84rem">
         <div class="text-muted small mb-2">${addLabel}</div>
         <div class="d-flex gap-2 align-items-end flex-wrap">
@@ -516,13 +519,13 @@ function renderCfgAlimDetalle(data) {
           <div id="cfg-at-div-alta" style="order:1">
             <label id="cfg-at-label-alta" class="form-label mb-1 small text-muted">Lado 23 kV — alta (opcional si feeder nace en alta)</label>
             <select id="cfg-at-rec-alta-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="">Sin REC (feeder nace en alta)</option>${opcsRec}
+              <option value="">Sin equipo (feeder nace en alta)</option>${opcsBorde}
             </select>
           </div>
           <div id="cfg-at-div-baja" style="order:2">
             <label id="cfg-at-label-baja" class="form-label mb-1 small text-muted">Lado 12 kV — baja (downstream ↓)</label>
             <select id="cfg-at-rec-baja-sel" class="form-select form-select-sm" style="width:auto">
-              <option value="">— REC baja —</option>${opcsRec}
+              <option value="">— equipo baja —</option>${opcsBorde}
             </select>
           </div>
           <div style="order:3">

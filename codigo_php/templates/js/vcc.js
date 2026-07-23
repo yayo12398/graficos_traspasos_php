@@ -293,16 +293,19 @@ function _vccEqRow(eq, esAtBoundary = false, atTension = 23, esAtBaja = false, a
     : esAtBaja
       ? ` <span class="badge bg-info text-white" style="font-size:.65rem" title="REC lado 12 kV del autotrafo">⚡ 12kV</span>`
       : "";
+  const tlcBadge = eq.tlc
+    ? ` <span style="font-size:.65rem;color:#198754;font-weight:700">[TLC]</span>`
+    : "";
   let atBtn = "";
-  if (eq.tipo === "reconectador" && !esAtBoundary && !esAtBaja) {
+  if (_esBordeATR(eq.nombre) && !esAtBoundary && !esAtBaja) {
     if (puedeRegistrarBaja) {
       atBtn = `<button class="btn btn-link btn-sm p-0 text-info ms-1"
                 onclick="vccRegistrarRecBaja('${eq.nombre}', '${atRecAltaNom}')"
-                title="Registrar como REC lado 12 kV del autotrafo">⬇⚡</button>`;
+                title="Registrar como equipo lado 12 kV del autotrafo">⬇⚡</button>`;
     } else if (!atHasConf) {
       atBtn = `<button class="btn btn-link btn-sm p-0 text-warning ms-1"
                 onclick="vccRegistrarAutotrafo('${eq.nombre}', ${atTension})"
-                title="Registrar como REC ${atTension} kV del autotrafo">⚡</button>`;
+                title="Registrar como equipo ${atTension} kV del autotrafo">⚡</button>`;
     }
   }
   const rowStyle = esAtBoundary
@@ -311,7 +314,7 @@ function _vccEqRow(eq, esAtBoundary = false, atTension = 23, esAtBaja = false, a
       ? ' style="background:#e8f4ff"'
       : "";
   return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}"${rowStyle}>` +
-    `<td>${badge}</td><td class="font-monospace">${eq.nombre}${atBadge}</td>` +
+    `<td>${badge}</td><td class="font-monospace">${eq.nombre}${atBadge}${tlcBadge}</td>` +
     `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
     `<td class="text-end">${cnHtml}</td>` +
     `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
@@ -630,7 +633,7 @@ async function vccRegistrarRecBaja(recBaja, recAlta) {
   const nom = state.vccAlimNom;
   if (!nom) return;
   const atConfig = (state.alimConfig?.autotrafos ?? []).find(at => at.rec_alta === recAlta);
-  if (!atConfig?.rec_alta) return mostrarError("Primero registra el REC del lado 23 kV.");
+  if (!atConfig?.rec_alta) return mostrarError("Primero registra el equipo del lado 23 kV.");
   const conductores = [];
   document.querySelectorAll("tr.vcc-cond-row").forEach(tr => {
     const el = tr.querySelector(".vcc-cond-cn-input");
@@ -660,33 +663,94 @@ async function tspCargarEquiposB(numalimDest, nomAlimB, equiposTroncal) {
   if (!numalimDest || !nomAlimB) {
     if (panel) panel.style.display = "none";
     state.troncalBNomAlim = null;
+    state.troncalBEnriquecido = [];
     return;
   }
   state.troncalBNomAlim = nomAlimB;
   const cont = document.getElementById("equipos-b-tabla");
+  state.equiposConfigB = state.equiposConfig;
   try {
-    let equipos;
+    const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
+    state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
+
     if (equiposTroncal?.length) {
+      // ── Modo automático: troncal desde la tabla LZ, enriquecido con fracciones ──
       const r = await apiFetch("/api/alim/troncal_enriquecido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nom_alim: nomAlimB, equipos: equiposTroncal }),
       });
-      equipos = r.data?.equipos ?? [];
+      state.troncalBEnriquecido = r.data?.equipos ?? [];
+      state.equiposBDisponibles = null;
+      tspRenderEquiposBTabla(state.troncalBEnriquecido);
     } else {
+      // ── Modo manual (traspaso forzado): panel vacío + selector para agregar ──
+      // La composición del troncal es efímera (no se persiste); solo el CN de cada
+      // equipo se guarda vía ⚙ → equipos_config.
       const r = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlimB)}?modo=equipos`);
-      equipos = Array.isArray(r) ? r : [];
+      state.equiposBDisponibles = Array.isArray(r) ? r : [];
+      state.troncalBEnriquecido = [];
+      tspRenderManualB();
     }
-    state.equiposConfigB = state.equiposConfig;
-    const alimCfgR = await apiFetch(`/api/alimentadores/config/${encodeURIComponent(nomAlimB)}`).catch(() => null);
-    state.alimConfigB = (alimCfgR && alimCfgR.ok !== false) ? alimCfgR : null;
-
-    tspRenderEquiposBTabla(equipos);
     if (panel) panel.style.display = "";
   } catch(e) {
     if (cont) cont.innerHTML = `<p class="text-danger small"><i class="bi bi-x-circle me-1"></i>Error al cargar equipos: ${e.message}</p>`;
     if (panel) panel.style.display = "";
   }
+}
+
+// Panel de troncal manual (traspaso forzado): selector para agregar equipos del
+// receptor + tabla de los agregados. No persiste la composición (solo CN por equipo).
+function tspRenderManualB() {
+  const cont = document.getElementById("equipos-b-tabla");
+  if (!cont) return;
+  const added       = state.troncalBEnriquecido || [];
+  const disponibles = (state.equiposBDisponibles || [])
+    .filter(e => !added.some(a => a.nombre === e.nombre));
+
+  const opts = disponibles.map(e => {
+    const fr = e.fraccion != null ? ` (${(e.fraccion * 100).toFixed(1)}%)` : "";
+    return `<option value="${e.nombre}">${e.nombre}${fr}</option>`;
+  }).join("");
+
+  const filas = added.length
+    ? added.map(eq => _tspEqBRow(eq, true)).join("")
+    : `<tr><td colspan="6" class="text-muted small text-center py-2">Sin equipos agregados — usa el selector para añadir el camino del receptor.</td></tr>`;
+
+  cont.innerHTML =
+    `<div class="alert alert-warning py-2 px-3 small mb-2">
+       <i class="bi bi-exclamation-triangle me-1"></i>
+       <strong>Troncal manual (traspaso forzado).</strong> La base no registra el troncal de este receptor.
+       Agrega los equipos del camino; las fracciones se calculan desde aguas_abajo.
+       <span class="text-muted d-block mt-1">Esta composición no se guarda — solo el CN de cada equipo (⚙).</span>
+     </div>
+     <select class="form-select form-select-sm mb-2" id="tsp-b-add-select"
+             onchange="tspAgregarEquipoB(this.value); this.value='';">
+       <option value="">+ Agregar equipo del receptor…</option>${opts}
+     </select>
+     <div style="overflow-x:auto">
+       <table class="table table-sm tabla-vcc mb-1" style="font-size:.82rem">
+         <thead><tr><th>Tipo</th><th>NUMPOS</th>
+           <th class="text-end">Fracc.</th><th class="text-end">kVA↓</th>
+           <th class="text-end">CN (A)</th><th></th></tr></thead>
+         <tbody>${filas}</tbody>
+       </table>
+     </div>`;
+  initTooltips(cont);
+}
+
+function tspAgregarEquipoB(nombre) {
+  if (!nombre) return;
+  const eq = (state.equiposBDisponibles || []).find(e => e.nombre === nombre);
+  if (!eq) return;
+  if ((state.troncalBEnriquecido || []).some(e => e.nombre === nombre)) return;
+  state.troncalBEnriquecido = [...(state.troncalBEnriquecido || []), eq];
+  tspRenderManualB();
+}
+
+function tspQuitarEquipoB(nombre) {
+  state.troncalBEnriquecido = (state.troncalBEnriquecido || []).filter(e => e.nombre !== nombre);
+  tspRenderManualB();
 }
 
 function tspRenderEquiposBTabla(equipos) {
@@ -720,12 +784,8 @@ function tspRenderEquiposBTabla(equipos) {
   initTooltips(cont);
 }
 
-function _tspEqBRow(eq) {
-  const TIPO_BADGE = {
-    reconectador: `<span class="badge bg-danger">REC</span>`,
-    equipo_sub:   `<span class="badge bg-primary">Sub</span>`,
-  };
-  const badge    = TIPO_BADGE[eq.tipo] || `<span class="badge bg-secondary">${eq.tipo||'?'}</span>`;
+function _tspEqBRow(eq, removable = false) {
+  const badge    = _badgeTipoEquipo(eq.nombre);
   const fracHtml = eq.fraccion != null
     ? `${(eq.fraccion * 100).toFixed(1)}%` : `<span class="text-muted">—</span>`;
   const kvaHtml  = eq.kva_down != null
@@ -739,12 +799,15 @@ function _tspEqBRow(eq) {
         cfg.tipo_limite === "setpoint" ? "SP" : cfg.tipo_limite === "fusible" ? "Fus" : "Cond"})</span>` : "";
   const cnHtml = `<input type="number" class="form-control form-control-sm d-inline-block" style="width:68px"` +
     ` id="b-cn-${eq.nombre}" placeholder="A" min="1" value="${cnPrefill}">${tipoBadge}`;
+  const removeBtn = removable
+    ? ` <button class="btn btn-link btn-sm p-0 text-danger" onclick="tspQuitarEquipoB('${eq.nombre}')" title="Quitar del troncal"><i class="bi bi-trash"></i></button>`
+    : "";
   return `<tr class="vcc-eq-row" data-nombre="${eq.nombre}" data-fraccion="${eq.fraccion ?? ''}">` +
     `<td>${badge}</td><td class="font-monospace">${eq.nombre}</td>` +
     `<td class="text-end">${fracHtml}${warnHtml}</td><td class="text-end">${kvaHtml}</td>` +
     `<td class="text-end">${cnHtml}</td>` +
-    `<td><button class="btn btn-link btn-sm p-0 text-secondary" ` +
-      `onclick="fichaAbrirModal('${eq.nombre}', () => tspRefrescarCNsB())" title="Configurar equipo">⚙</button></td></tr>`;
+    `<td class="text-nowrap"><button class="btn btn-link btn-sm p-0 text-secondary" ` +
+      `onclick="fichaAbrirModal('${eq.nombre}', () => tspRefrescarCNsB())" title="Configurar equipo">⚙</button>${removeBtn}</td></tr>`;
 }
 
 async function tspGuardarConfigAlimB() {
@@ -897,7 +960,7 @@ function vccTraspasoAbreChange(equipoAbre) {
     lz.vecinos?.forEach(v => {
       if (!v.viable) return;
       if (!destMap.has(v.numalim)) destMap.set(v.numalim, { nom_alim: v.nom_alim, lzList: [] });
-      destMap.get(v.numalim).lzList.push({ numpos_lz: lz.numpos_lz, equipos_troncal: v.equipos_troncal, tipo: lz.tipo ?? '' });
+      destMap.get(v.numalim).lzList.push({ numpos_lz: lz.numpos_lz, equipos_troncal: v.equipos_troncal, tipo: lz.tipo ?? '', tlc: lz.tlc ?? false });
     });
   });
 
@@ -930,12 +993,10 @@ function vccMostrarLzCierra(lzList) {
   if (!panel) return;
   if (!lzList?.length) { panel.style.display = "none"; return; }
 
-  const TIPO_LBL = { bilateral: "Bilateral", subterraneo_3ramas: "3 ramas" };
-  const _badge = lz => {
-    const lbl = TIPO_LBL[lz.tipo] || lz.tipo || '';
-    const cls = lz.tipo === "subterraneo_3ramas" ? "bg-warning text-dark" : "bg-success text-white";
-    return lbl ? ` <span class="badge ${cls} ms-1">${lbl}</span>` : '';
-  };
+  // Solo se etiqueta el subterráneo de 3 ramas; "bilateral" (por defecto) se omite.
+  const _badge = lz => lz.tipo === "subterraneo_3ramas"
+    ? ` <span class="badge bg-warning text-dark ms-1">3 ramas</span>`
+    : '';
 
   // Auto-seleccionar el primero
   vccSeleccionarLz(lzList[0]);
@@ -945,7 +1006,7 @@ function vccMostrarLzCierra(lzList) {
     panel.innerHTML =
       `<div class="small"><i class="bi bi-toggle-on me-1 text-primary"></i>` +
       `<span class="text-muted">Equipo que cierra:</span> ` +
-      `<code class="ms-1">${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}</div>`;
+      `<code class="ms-1">${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}${_lzTlcBadge(lz)}</div>`;
   } else {
     const opts = lzList.map((lz, i) =>
       `<div class="form-check form-check-inline mb-0">
@@ -954,7 +1015,7 @@ function vccMostrarLzCierra(lzList) {
                ${i === 0 ? "checked" : ""}
                onchange="vccLzCierraChange('${lz.numpos_lz}')">
         <label class="form-check-label small" for="vcc-lz-radio-${lz.numpos_lz}">
-          <code>${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}
+          <code>${lz.numpos_lz || "cabecera"}</code>${_badge(lz)}${_lzTlcBadge(lz)}
         </label>
       </div>`
     ).join("");
@@ -1004,7 +1065,7 @@ async function vccTraspasoDestinoChange(numalimDestStr) {
   // Calcular isla automáticamente
   const equipoAbre = document.getElementById("vcc-traspaso-eq-abre")?.value;
   if (equipoAbre && state.vccAlimIdx) {
-    spinner(true, "Calculando isla...");
+    spinner(true, "Calculando segmento...");
     try {
       const r = await apiFetch("/api/isla/preview", {
         method: "POST",
@@ -1559,6 +1620,8 @@ function vccRenderResultados(r, tension, kvaEmp, kvaInst) {
 
   document.getElementById("vcc-resultados").classList.remove("d-none");
   initTooltips(document.getElementById("vcc-resultados"));
+  // Botón "Copiar" en tablas de equipos/alimentador y trafos
+  agregarBotonesCopia(document.getElementById("vcc-resultados"));
 }
 
 // ─── inicializar tooltips Bootstrap en un contenedor ─────────────────────
@@ -1685,7 +1748,8 @@ function vccTablaEquipos(equipos, deltaI) {
   if (!equiposEval.length)
     return omitidosTxt + "<p class='text-muted small'>Ningún equipo tiene ajuste vigente configurado.</p>";
 
-  const TIPO_LBL  = { reconectador: "Reconectador", equipo_sub: "Equipo sub.", otro: "Otro", conductor_intermedio: "Conductor" };
+  // Etiqueta de tipo: conductor especial; el resto por prefijo (aéreo/subt./REC).
+  const _tipoLbl = eq => eq.tipo === "conductor_intermedio" ? "Conductor" : _labelTipoEquipo(eq.nombre);
   const BADGE_CLS = {
     viable: "badge-viable", prealerta: "badge-prealerta",
     critico: "badge-critico", sin_cn: "bg-secondary"
@@ -1725,7 +1789,7 @@ function vccTablaEquipos(equipos, deltaI) {
         ? `<span class="text-muted">tramo</span> <code>${eq.nombre.replace("Conductor(","").replace(")","")}</code>`
         : `<code>${eq.nombre}</code>`;
       const mainRow = `<tr>
-        <td>${nombreDisplay}</td><td>${TIPO_LBL[eq.tipo]||eq.tipo}</td>
+        <td>${nombreDisplay}</td><td>${_tipoLbl(eq)}</td>
         <td class="r">${cnStr}</td><td class="r">${dI} A${atMark}</td>
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
@@ -1790,7 +1854,7 @@ function vccTablaEquipos(equipos, deltaI) {
     const atTag = eq.tension_kv_override != null && eqDI !== deltaI
       ? ` <span style="font-size:.62rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
     const dI    = eqDI != null ? Number(eqDI).toFixed(2) + atTag : "—";
-    const tipo  = TIPO_LBL[eq.tipo] || eq.tipo;
+    const tipo  = _tipoLbl(eq);
     const est   = eq.estado || "sin_cn";
     const bcls  = BADGE_CLS[est] || "bg-secondary";
     const blbl  = BADGE_LBL[est] || est;

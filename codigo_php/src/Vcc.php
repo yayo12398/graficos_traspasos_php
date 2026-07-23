@@ -518,7 +518,13 @@ function evaluarEquipos(
             $iBaseA     = $alivioA_abs !== null
                 ? max(0.0, $iBaseAOrig - $alivioA_abs)
                 : $iBaseAOrig;
-            $iTotalA = $iBaseA + $deltaIEq;
+            // ΔI conservador: si hay serie de adición (isla entrante en el receptor),
+            // se suma su pico anual; en flujo VCC normal (sin adición) usa $deltaIEq.
+            $adicionA = $eq['serie_adicion_override'] ?? $serieAdicion ?? null;
+            $deltaIA  = (is_array($adicionA) && $adicionA)
+                ? max(array_map('floatval', $adicionA)) + $deltaIEq
+                : $deltaIEq;
+            $iTotalA = $iBaseA + $deltaIA;
             $pctA    = round($iTotalA / $cn * 100.0, 1);
             $enfA    = [
                 'I_base'    => round($iBaseA,  2),

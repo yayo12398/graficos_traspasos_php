@@ -48,6 +48,20 @@ function db_agui(): PDO {
     return $pdo;
 }
 
+function db_tlc(): PDO {
+    static $pdo = null;
+    if ($pdo !== null) return $pdo;
+    global $_cfg;
+    $c = $_cfg['mysql_tlc'];
+    $dsn = "mysql:host={$c['host']};dbname={$c['database']};charset={$c['charset']};connect_timeout=20";
+    $pdo = new PDO($dsn, $c['user'], $c['password'], [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        Pdo\Mysql::ATTR_INIT_COMMAND => "SET NAMES utf8mb4",
+    ]);
+    return $pdo;
+}
+
 // ── Helpers globales ──────────────────────────────────────────────────────────
 
 function e(?string $v): string {

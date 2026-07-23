@@ -2,21 +2,21 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.php  — router puro (261 L)                                 ║
+// ║  ÍNDICE DE index.php  — router puro (304 L)                                 ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  BOOTSTRAP                                                      L.22–239    ║
+// ║  BOOTSTRAP                                                      L.22–243    ║
 // ║    Verificar config.php                                          L.22        ║
 // ║    require_once conexion.php + require_login()                   L.40        ║
 // ║    Carpetas de escritura + includes src/                         L.44        ║
-// ║    CLI static, base path, cabeceras CORS                         L.64        ║
-// ║    jsonOk, jsonErr, jsonPy, bodyJson                             L.88        ║
-// ║    gd(), getLz(), _lzInfoEntre()                                L.117        ║
-// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.204        ║
+// ║    CLI static, base path, cabeceras CORS                         L.65        ║
+// ║    jsonOk, jsonErr, jsonPy, bodyJson                             L.92        ║
+// ║    gd(), getLz(), _lzInfoEntre()                                L.122        ║
+// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.209        ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  ROUTER                                                        L.240–264    ║
-// ║    GET /  → sirve templates/index.html con shim base-path       L.252       ║
-// ║    /api/* → require api/feeders … api/vcc.php                   L.278       ║
-// ║    404 fallback                                                  L.287       ║
+// ║  ROUTER                                                        L.245–304    ║
+// ║    GET /  → sirve templates/index.html con shim base-path       L.257       ║
+// ║    /api/* → require api/feeders … api/telecontrol.php           L.285       ║
+// ║    404 fallback                                                  L.295       ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Verificar config.php ──────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ require_once __DIR__ . '/src/EquiposConfig.php';
 require_once __DIR__ . '/src/AlimentadoresConfig.php';
 require_once __DIR__ . '/src/Vcc.php';
 require_once __DIR__ . '/src/Reportes.php';
+require_once __DIR__ . '/src/Telecontrol.php';
 
 // ── Servidor embebido: archivos estáticos se sirven directamente ──────────────
 if (PHP_SAPI === 'cli-server') {
@@ -160,6 +161,7 @@ function _lzInfoEntre(?int $numalimA, ?int $numalimB): array {
             'numpos_lz'            => $row['numpos_lz'],
             'tipo'                 => $row['tipo'],
             'excepcion'            => (bool)$row['excepcion'],
+            'tlc'                  => tlcEsTlc((string)$row['numpos_lz']),
             'equipos_troncal_orig' => (array)$row['equipos_troncal'],
         ];
 
@@ -289,6 +291,7 @@ require __DIR__ . '/api/ajustes.php';
 require __DIR__ . '/api/config_equip.php';
 require __DIR__ . '/api/config_alim.php';
 require __DIR__ . '/api/vcc.php';
+require __DIR__ . '/api/telecontrol.php';
 
 // ── 404 ────────────────────────────────────────────────────────────────────────
 jsonErr('Endpoint no encontrado: ' . $method . ' ' . $uri, 404);

@@ -68,7 +68,7 @@ Fuente de verdad de datos. Equivalente de `datos.py`.
 | `cargarAguasAbajo()` | Carga topología MT desde `maniobras_rapidas_aguas_abajo`. Caché 7 días |
 | `cargarDemandas()` | Retorna `[$dfAlim, $dfTrafo]` wide-keyed por numalim. Caché 30 días |
 | `gd()` | Helper: llama a ambas funciones de carga y retorna `['dfAb', 'dfAlim', 'dfTrafo']` |
-| `pivotarAlim()` | Convierte `$dfAlim` a array indexado por nombre normalizado |
+| `pivotarAlim()` | Convierte `$dfAlim` a array indexado por nombre normalizado. CN/CE toman el valor del **mes más reciente con dato** (no la 1ª fila), porque `dem_maximas` guarda una fila por mes y el CN puede reclasificarse en el tiempo |
 | `trafoDeFeeder()` | Busca fila del trafo asociado a un numalim de alimentador |
 | `obtenerSerieAlim()` | Retorna `['cn' => float, 'serie' => ['YYYY-MM' => float]]` para un numalim |
 | `deltaAcumulado()` | Suma delta de corriente de todas las transferencias de un feeder nuevo |
@@ -241,6 +241,30 @@ Mes a mes:
 ```
 
 Si origen y destino comparten el mismo trafo, no hay cambio neto.
+
+### Corrección por autotransformador (ATR) en el traspaso
+Cuando un alimentador tiene un ATR (23↔12 kV), la corriente se transforma al cruzarlo
+(I ∝ 1/V a potencia constante). El traspaso referencia todo a la tensión de cabecera:
+
+```
+ΔB (cabecera del receptor) = delta_max × (V_cab_orig / V_cab_dest)
+
+V_cab_orig = 23  si el origen tiene ATR y su isla está en zona baja (cabecera sobre el ATR)
+           = V_lz  si el origen no tiene ATR (conecta y mide a la tensión del LZ)
+V_cab_dest = 23  si el receptor tiene ATR con el LZ en su zona 12 kV (`$atB`)
+           = V_lz  si el receptor no tiene ATR
+```
+
+Implementación (`api/traspaso.php`): `$vCabOrig = (!$islaBajoAtrA && $atB) ? 12.0 : 23.0`,
+usado en `scaleFeederB` (feeder + trafo del receptor) y en el escalado por equipo del
+troncal B (`V_eq` según posición topológica vs el ATR del receptor).
+- El borde del ATR se identifica por **NUMPOS** (agnóstico al tipo): puede ser REC o
+  subterráneo (ORM/VIS/…). Config en `alimentadores_config.json` (`rec_alta`/`rec_baja`).
+- La respuesta de `/api/simular` incluye `atr_info` (feeder, rol entrega/recibe, tipo,
+  equipos de borde, corriente entregada → recibida) para la nota del panel.
+
+Ejemplo: TRAPENSES (12 kV) entrega 293.8 A → por el ATR reductor de L.JUGLARES llegan
+153.3 A a su cabecera de 23 kV (293.8 × 12/23).
 
 ### Período de análisis — Año corrido
 ```
@@ -425,8 +449,9 @@ Los endpoints de simulación, VCC y feeders_nuevos usan `jsonPy()`.
 
 | Tipo | Ubicación | Formato | TTL |
 |---|---|---|---|
-| Caché aguas_abajo | `data/cache/aguas_abajo.ser` | PHP serialize | 7 días |
-| Caché demandas | `data/cache/demandas.ser` | PHP serialize | 30 días |
+| Caché aguas_abajo | `data/cache/aguas_abajo_sql.ser` | PHP serialize | 7 días |
+| Caché demandas | `data/cache/demandas_sql.ser` | PHP serialize | 30 días |
+| Caché límite de zona | `data/cache/limite_zona_sql.ser` | PHP serialize | 7 días |
 | Ajustes de demanda | `data/ajustes_demanda.json` | JSON | Manual |
 | Feeders nuevos | `feeders_nuevos/<SLUG>.json` | JSON | Manual |
 | Evaluaciones VCC | `data/vcc/<SLUG>.json` | JSON | Manual |

@@ -30,4 +30,13 @@ return [
         'charset'  => 'utf8mb4',
     ],
 
+    // Base de datos Telecontrol (mismo servidor, mismas credenciales que cuadrilla)
+    'mysql_tlc' => [
+        'host'     => 'SERVIDOR',
+        'user'     => 'USUARIO',
+        'password' => 'CONTRASEÑA',
+        'database' => 'telecontrol_systems',
+        'charset'  => 'utf8mb4',
+    ],
+
 ];

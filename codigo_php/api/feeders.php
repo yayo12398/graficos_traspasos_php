@@ -24,14 +24,16 @@ if ($method === 'GET' && $a === 'feeders' && !$b0) {
         $cnTrafo    = ($trafoRow && isset($trafoRow['cn']) && is_numeric($trafoRow['cn'])) ? (float)$trafoRow['cn'] : null;
         $barraTrafo = $trafoRow ? (trim((string)($trafoRow['barra'] ?? '')) ?: null) : null;
         $sub        = trim((string)($row['subestacion'] ?? ''));
+        $nomAlim  = $nomAlimMap[(int)$numalim] ?? null;
         $result[] = [
             'numalim'    => (int)$numalim,
             'nombre'     => nombreDisplayAlim($row),
             'cn'         => (isset($row['cn']) && is_numeric($row['cn'])) ? (float)$row['cn'] : null,
-            'nom_alim'   => $nomAlimMap[(int)$numalim] ?? null,
+            'nom_alim'   => $nomAlim,
             'subestacion'=> $sub === '' ? null : $sub,
             'cn_trafo'   => $cnTrafo,
             'barra_trafo'=> $barraTrafo,
+            'frg'        => $nomAlim ? tlcAlimEsFrg($nomAlim) : false,
         ];
     }
     usort($result, fn($a, $b) => strcmp((string)($a['nombre'] ?? ''), (string)($b['nombre'] ?? '')));
@@ -91,6 +93,7 @@ if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'equipos' && !$b2) {
             'kva'        => $kvaEq,
             'kva_feeder' => $kvaFeeder,
             'pct_feeder' => $kvaFeeder > 0 ? round($kvaEq / $kvaFeeder * 100, 1) : 0.0,
+            'tlc'        => tlcEsTlc($nombre),
         ];
     }
     usort($result, fn($a, $b) => ($b['pct_feeder'] ?? 0) <=> ($a['pct_feeder'] ?? 0));
@@ -154,15 +157,25 @@ if ($method === 'POST' && $a === 'isla' && $b0 === 'preview' && !$b1) {
 }
 
 // ── GET /api/destinos/existentes ───────────────────────────────────────────────
-// Retorna: [{numalim, nombre, cn}]
+// Retorna: [{numalim, nombre, cn, frg}]
 if ($method === 'GET' && $a === 'destinos' && $b0 === 'existentes' && !$b1) {
-    ['dfAlim' => $dfAlim] = gd();
+    ['dfAlim' => $dfAlim, 'dfAb' => $dfAb] = gd();
+    // Mapa inverso numalim → nom_alim
+    $nomAlimMapDest = [];
+    foreach ($dfAb as $row) {
+        $nm = $row['numalim'] ?? null;
+        if ($nm !== null && !isset($nomAlimMapDest[(int)$nm])) {
+            $nomAlimMapDest[(int)$nm] = $row['nom_alim'] ?? null;
+        }
+    }
     $result = [];
     foreach ($dfAlim as $numalim => $row) {
+        $nomAlim  = $nomAlimMapDest[(int)$numalim] ?? null;
         $result[] = [
             'numalim' => (int)$numalim,
             'nombre'  => nombreDisplayAlim($row),
             'cn'      => (isset($row['cn']) && is_numeric($row['cn'])) ? (float)$row['cn'] : null,
+            'frg'     => $nomAlim ? tlcAlimEsFrg($nomAlim) : false,
         ];
     }
     usort($result, fn($a, $b) => strcmp((string)($a['nombre'] ?? ''), (string)($b['nombre'] ?? '')));
@@ -292,6 +305,7 @@ if ($method === 'GET' && $a === 'vecinos_lz' && $b0 && !$b1) {
             'numpos_lz'            => $row['numpos_lz'],
             'tipo'                 => $row['tipo'],
             'excepcion'            => (bool)$row['excepcion'],
+            'tlc'                  => tlcEsTlc((string)$row['numpos_lz']),
             'equipos_troncal_orig' => $row['equipos_troncal'],
             'vecinos'              => $vecinos,
         ];
@@ -365,8 +379,10 @@ if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
 
 // ── GET /api/debug/status ──────────────────────────────────────────────────────
 if ($method === 'GET' && $a === 'debug' && $b0 === 'status' && !$b1) {
-    $cacheAb  = D_CACHE . '/aguas_abajo.ser';
-    $cacheDem = D_CACHE . '/demandas.ser';
+    // Nombres deben coincidir con las claves de caché en Datos.php (cargar*()).
+    $cacheAb  = D_CACHE . '/aguas_abajo_sql.ser';
+    $cacheDem = D_CACHE . '/demandas_sql.ser';
+    $cacheLz  = D_CACHE . '/limite_zona_sql.ser';
     $abOk  = file_exists($cacheAb);
     $demOk = file_exists($cacheDem);
     if ($abOk && $demOk) {
@@ -382,6 +398,8 @@ if ($method === 'GET' && $a === 'debug' && $b0 === 'status' && !$b1) {
             'meses_disponibles'   => $meses,
             'cache_ab_mtime'      => date('Y-m-d H:i:s', (int)filemtime($cacheAb)),
             'cache_dem_mtime'     => date('Y-m-d H:i:s', (int)filemtime($cacheDem)),
+            'cache_lz_mtime'      => file_exists($cacheLz)
+                ? date('Y-m-d H:i:s', (int)filemtime($cacheLz)) : null,
         ]);
     }
     jsonPy(['cargado' => false, 'cache_ab' => $abOk, 'cache_dem' => $demOk]);

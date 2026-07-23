@@ -73,5 +73,125 @@
                 "fecha_registro": "2026-07-17"
             }
         ]
+    },
+    "LAGUNA_SUR": {
+        "conductores_intermedios": []
+    },
+    "S.PABLO": {
+        "conductores_intermedios": []
+    },
+    "SENDERO": {
+        "conductores_intermedios": []
+    },
+    "TRAVESIA": {
+        "conductores_intermedios": []
+    },
+    "LAS.ENCINA": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC110270",
+                "rec_baja": "REC110269",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "COLINA": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC111892",
+                "rec_baja": "REC111891",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "EL DAMASCO": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC1163211",
+                "rec_baja": "REC38280",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            },
+            {
+                "rec_alta": "REC112850",
+                "rec_baja": "REC113213",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "STA.ESTER": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC93905",
+                "rec_baja": "REC93904",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            },
+            {
+                "rec_alta": "REC114310",
+                "rec_baja": "REC114312",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            },
+            {
+                "rec_alta": "REC93905",
+                "rec_baja": "REC111911",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "HUECHUN": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC73638",
+                "rec_baja": "REC106635",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "CHENA": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC89569",
+                "rec_baja": "REC1791028",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "L.JUGLARES": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "ORM89687",
+                "rec_baja": "VIS89689",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-07-23"
+            }
+        ]
+    },
+    "TRAPENSES": {
+        "conductores_intermedios": []
     }
 }

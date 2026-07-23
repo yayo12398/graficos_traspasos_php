@@ -180,7 +180,7 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
             : ['kva_down' => null, 'kva_total' => null, 'fraccion' => null,
                'tds_down' => null, 'tds_con_kva' => null, 'tds_sin_kva' => null];
         // 'numpos' es el identificador de equipo; 'nombre' es el mismo valor (numpos_equip)
-        $result[] = array_merge($eq, $frac, ['numpos' => $eq['nombre']]);
+        $result[] = array_merge($eq, $frac, ['numpos' => $eq['nombre'], 'tlc' => tlcEsTlc($eq['nombre'])]);
     }
     // Ordenar: fracción descendente (igual que Python)
     usort($result, fn($a, $b) => ($b['fraccion'] ?? 0) <=> ($a['fraccion'] ?? 0));

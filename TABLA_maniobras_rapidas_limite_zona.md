@@ -102,9 +102,29 @@ n_troncal = count(NUMPOS_troncal WHERE valor != 'cabecera', agrupado por (NUMPOS
 viable    = (n_troncal > 0)
 ```
 
-**Caso no viable:** Si todas las filas de un par `(NUMPOS_LZ, NUMALIM)` tienen `NUMPOS_troncal = 'cabecera'`, significa que el LZ conecta directamente en la cabecera del receptor, sin troncal intermedio. El traspaso **no tiene recorrido físico posible** y se deshabilita en la interfaz (visible pero no seleccionable).
+**Caso no viable:** Si todas las filas de un par `(NUMPOS_LZ, NUMALIM)` tienen `NUMPOS_troncal = 'cabecera'`, significa que el LZ conecta directamente en la cabecera del receptor, sin troncal intermedio (según la BD). El traspaso se marca como no-viable, pero **desde 2026-07 se puede forzar** (ver sección "Traspaso forzado" más abajo).
 
-**Perspectiva:** La viabilidad se evalúa siempre desde el alimentador **receptor** (`NUMALIM`), no desde el origen.
+**Perspectiva:** La viabilidad se evalúa siempre desde el alimentador **receptor** (`NUMALIM`), no desde el origen. Esto genera **viabilidad asimétrica**: un mismo LZ puede ser viable en un sentido y no en el otro. Ejemplo real: DELANO(2734)↔TRAVESIA(2716) por `DBC97985`/`DBC107881` — viable con Delano como receptor (16/14 equipos troncal), no-viable con Travesía como receptor (`n_troncal = 0`, la BD solo registra `cabecera` de ese lado).
+
+---
+
+## Traspaso forzado (inconsistencias de la BD)
+
+Cuando la tabla no refleja bien la realidad (LZ marcado no-viable pese a ser operable, o troncal del receptor sin cargar), la interfaz permite **forzar el traspaso** sin validación topológica. Se introdujo en 2026-07 para cubrir huecos de esta tabla mientras se corrigen en la fuente.
+
+**Flujo:**
+
+1. **Dropdown de destinos agrupado.** Los alimentadores receptores se muestran en dos grupos: *"Con LZ viable"* (primero) y *"Con LZ · sin troncal (forzar)"* (al final). Antes, los no-viables se ocultaban al elegir el equipo que abre; ahora permanecen visibles y seleccionables.
+
+2. **Selección del LZ forzado.** El LZ no-viable se puede seleccionar (badge ámbar *"Sin troncal · forzar"*). Aparece un aviso *"Traspaso forzado"* explicando que la simulación corre igual (impacto en alimentador y transformador) pero sin evaluación automática del troncal del receptor.
+
+3. **Troncal manual del receptor.** Como el equipo de enlace suele ser un punto **normalmente abierto**, no aparece en `aguas_abajo` y el troncal del receptor no se puede derivar solo. El operador agrega manualmente los equipos del camino desde un selector; sus fracciones se calculan desde `aguas_abajo` (los equipos del receptor sí están ahí, solo el enlace no) y se evalúan igual que un traspaso normal.
+
+**Persistencia:** la composición del troncal manual **no se guarda** (es efímera, a la espera de que se corrija la BD). Solo el CN (corriente nominal) de cada equipo se persiste en `equipos_config`, ya que es un dato válido independiente de la topología.
+
+**Trazabilidad:** el response de `/api/simular` incluye `traspaso_forzado: bool` (true si el LZ seleccionado es no-viable), y la hoja de resultados muestra un banner distintivo para no confundir un traspaso forzado con uno validado topológicamente.
+
+> **Nota:** Un equipo de enlace normalmente abierto **no existe en `aguas_abajo`** (no alimenta TDs en operación normal). Por eso el troncal del receptor no puede derivarse de esa tabla y depende de `NUMPOS_troncal` de esta tabla LZ (o del ingreso manual en modo forzado).
 
 ---
 

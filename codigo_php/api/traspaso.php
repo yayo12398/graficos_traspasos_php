@@ -238,6 +238,8 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     // Se verifica si algún TD de la isla es aguas abajo del borde del ATR de A.
     // No depende de equipo_abre; usa los TDs reales de la isla.
     $vLz = 23.0;
+    $islaBajoAtrA = false;   // ¿la isla del origen queda en zona baja de un ATR del origen?
+    $atrOrigMatched = null;  // config del ATR del origen que participa (para la nota)
     if ($alimConfA && !empty($alimConfA['autotrafos'])) {
         $nomOrigUp = strtoupper(trim($nomOrig));
         $tdIslandSet = [];
@@ -257,6 +259,8 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                 $td = trim($_row['numpos_td'] ?? '');
                 if ($td !== '' && isset($tdIslandSet[$td])) {
                     $vLz = $atATipo === 'elevador' ? (float)($_atA['tension_alta'] ?? 23) : 12.0;
+                    $islaBajoAtrA = true;
+                    $atrOrigMatched = $_atA;
                     break 2;
                 }
             }
@@ -285,8 +289,15 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         if ($atB) $vSeB = 23.0;
     }
 
+    // Tensión de cabecera del origen (donde se mide deltaMax). Normalmente 23 kV;
+    // pero si el origen NO tiene ATR y el destino SÍ (LZ en su zona 12 kV), el origen
+    // conecta/mide en 12 kV → deltaMax está en 12 kV. Así el receptor con ATR recibe el
+    // aporte transformado (12→23 al subir por su ATR a la cabecera). scaleFeederB general:
+    //   ΔB = deltaMax × (V_cab_orig / V_cab_dest),  con V_cab_dest = $vSeB.
+    $vCabOrig = (!$islaBajoAtrA && $atB) ? 12.0 : 23.0;
+
     // Factores de escala para análisis de cabecera/trafo de B
-    $scaleFeederB    = 23.0 / $vSeB;
+    $scaleFeederB    = $vCabOrig / $vSeB;
     $deltaMaxB       = round($deltaMax * $scaleFeederB, 2);
     $pForB           = $isla['p'] * $scaleFeederB;
     $serieAdicionBSc = abs($scaleFeederB - 1.0) > 0.001
@@ -385,25 +396,57 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     }
     $lzInfo['numpos_lz_sel'] = $numposLzSel;
 
+    // Traspaso forzado: el LZ seleccionado no es viable en el receptor (la BD no
+    // registra troncal). La simulación corre igual, pero sin validación topológica.
+    $traspasoForzado = false;
+    foreach ($lzInfo['dispositivos'] ?? [] as $_d) {
+        if (!empty($_d['seleccionado']) && ($_d['viable'] ?? true) === false) {
+            $traspasoForzado = true;
+            break;
+        }
+    }
+
     // ── Evaluación VCC equipos troncales del receptor ─────────────────────────
     // serie_deltas[mes] = I_alim_A_orig[mes] × p  →  corriente isla que entra en alim B
+    // equipos_b viene del panel TSP; si no llega, se deriva del troncal LZ del
+    // dispositivo seleccionado (evaluación autónoma, sin depender del panel).
     $vccAlimBEquipos = null;
-    if ($tipoDest === 'excel' && $nDest && !empty($b['equipos_b'])) {
+    $equiposBReq = ($tipoDest === 'excel' && $nDest && is_array($b['equipos_b'] ?? null))
+        ? $b['equipos_b'] : [];
+    if ($tipoDest === 'excel' && $nDest && !$equiposBReq && !empty($lzInfo['tiene_lz'])) {
+        $selDisp = null;
+        foreach ($lzInfo['dispositivos'] as $_disp) {
+            if (!empty($_disp['seleccionado'])) { $selDisp = $_disp; break; }
+        }
+        $selDisp = $selDisp ?? ($lzInfo['dispositivos'][0] ?? null);
+        if ($selDisp && ($selDisp['viable'] ?? true)) {
+            foreach ((array)($selDisp['equipos_troncal'] ?? []) as $_nEq) {
+                if ($_nEq) $equiposBReq[] = ['nombre' => (string)$_nEq];
+            }
+        }
+    }
+    if ($tipoDest === 'excel' && $nDest && $equiposBReq) {
         $serieAdicionB = $deltaInfo['serie_deltas'] ?? [];
         $serieBFilt    = $mesesSel
             ? array_intersect_key($serieDest, array_flip($mesesSel))
             : $serieDest;
 
         $equiposBEval = [];
-        foreach ($b['equipos_b'] as $eqB) {
+        foreach ($equiposBReq as $eqB) {
             $nombre = $eqB['nombre'] ?? '';
             if (!$nombre) continue;
+            // CN: valor del panel → fallback a config guardada del equipo
+            $cnEq = isset($eqB['cn']) && is_numeric($eqB['cn']) ? (float)$eqB['cn'] : null;
+            if ($cnEq === null) {
+                $cnCfg = ecGetEquipo($nombre)['corriente_a'] ?? null;
+                if (is_numeric($cnCfg)) $cnEq = (float)$cnCfg;
+            }
             $tipo = $eqB['tipo'] ?? tipoEquipo($nombre);
             if ($tipo === 'conductor_intermedio') {
                 $equiposBEval[] = [
                     'nombre'   => "Conductor({$eqB['entre_b']})",
                     'tipo'     => 'conductor_intermedio',
-                    'cn'       => isset($eqB['cn']) && is_numeric($eqB['cn']) ? (float)$eqB['cn'] : null,
+                    'cn'       => $cnEq,
                     'fraccion' => isset($eqB['fraccion']) && is_numeric($eqB['fraccion']) ? (float)$eqB['fraccion'] : null,
                     'kva_down' => null,
                 ];
@@ -412,7 +455,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                 $equiposBEval[] = array_merge($frac, [
                     'nombre' => $nombre,
                     'tipo'   => tipoEquipo($nombre),
-                    'cn'     => isset($eqB['cn']) && is_numeric($eqB['cn']) ? (float)$eqB['cn'] : null,
+                    'cn'     => $cnEq,
                 ]);
             }
         }
@@ -443,7 +486,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                         ? ($isDown ? $atBTensAlta : 12.0)
                         : ($isDown ? 12.0 : $atBTensAlta);
                 }
-                $scale = 23.0 / $vEq;
+                $scale = $vCabOrig / $vEq;
                 if (abs($scale - 1.0) > 0.001) {
                     $sc = [];
                     foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scale, 4);
@@ -453,7 +496,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
             unset($_eqB);
         } elseif (abs($vLz - 23.0) > 0.001) {
             // Sin ATR de B en path: todos los equipos están al nivel del LZ
-            $scaleLz = 23.0 / $vLz;
+            $scaleLz = $vCabOrig / $vLz;
             foreach ($equiposBEval as &$_eqB) {
                 $sc = [];
                 foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scaleLz, 4);
@@ -466,7 +509,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
             $vccAlimBEquipos = evaluarEquipos(
                 equipos:      $equiposBEval,
                 deltaI:       0.0,
-                cnAlim:       null,
+                cnAlim:       is_nan($cnDest) ? null : $cnDest,
                 serieAlim:    $serieBFilt,
                 mesesFiltro:  $mesesSel ?: null,
                 serieAdicion: $serieAdicionB,
@@ -483,8 +526,40 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     }
 
     // Respuesta en formato Python plano
+    // ── Info ATR para la nota del panel (solo si un ATR participa del traspaso) ──
+    $atrNotas = [];
+    if ($islaBajoAtrA && $atrOrigMatched) {
+        $atrNotas[] = [
+            'feeder'       => $nomOrig,
+            'rol'          => 'entrega',
+            'tipo'         => $atrOrigMatched['tipo'] ?? 'reductor',
+            'eq_alta'      => trim((string)($atrOrigMatched['rec_alta'] ?? '')),
+            'eq_baja'      => trim((string)($atrOrigMatched['rec_baja'] ?? '')),
+            'tension_alta' => (float)($atrOrigMatched['tension_alta'] ?? 23),
+        ];
+    }
+    if ($atB) {
+        $atrNotas[] = [
+            'feeder'       => $nomDest,
+            'rol'          => 'recibe',
+            'tipo'         => $atB['tipo'] ?? 'reductor',
+            'eq_alta'      => trim((string)($atB['rec_alta'] ?? '')),
+            'eq_baja'      => trim((string)($atB['rec_baja'] ?? '')),
+            'tension_alta' => (float)($atB['tension_alta'] ?? 23),
+        ];
+    }
+    $atrInfo = $atrNotas ? [
+        'notas'           => $atrNotas,
+        'delta_entregado' => $deltaMax,
+        'delta_recibido'  => $deltaMaxB,
+        'v_cab_orig'      => $vCabOrig,
+        'v_cab_dest'      => $vSeB,
+        'transformado'    => $atrScale,
+    ] : null;
+
     jsonPy([
         'ok'                  => true,
+        'atr_info'            => $atrInfo,
         'lz_info'             => $lzInfo,
         'equipos_traspasados' => $equiposTrasp,
         'nombre_orig'         => $nomOrig,
@@ -518,6 +593,10 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
             'trafo_orig' => $numalimTrafoOrig   ? getAjustes('trafo', $numalimTrafoOrig)     : [],
             'trafo_dest' => $numalimTrafoDest   ? getAjustes('trafo', $numalimTrafoDest)     : [],
         ],
+        'v_lz'                => $vLz,
+        'traspaso_forzado'    => $traspasoForzado,
+        'frg_orig'            => tlcAlimEsFrg($nomOrig),
+        'frg_dest'            => $nomDest ? tlcAlimEsFrg($nomDest) : false,
         'serie_raw_orig'      => $serieOrigRaw['serie'] ?? [],
         'serie_raw_dest'      => $serieDestRaw['serie'] ?? [],
         'serie_raw_trafo_orig'=> serieRawDeFila($trafoOrigRowRaw ?? null),

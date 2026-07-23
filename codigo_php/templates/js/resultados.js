@@ -57,35 +57,59 @@ function mostrarResultados(data) {
       _alertaInv.innerHTML = `<div class="alert alert-info py-2">
         <i class="bi bi-arrow-left-right me-1"></i>
         <strong>Posible inversión de flujo:</strong> ${badges}
-        <div class="text-muted small mt-1">Equipos dentro de la isla que recibirán corriente desde la dirección opuesta. Verificar si aplica según topología real.</div>
+        <div class="text-muted small mt-1">Equipos dentro del segmento que recibirán corriente desde la dirección opuesta. Verificar si aplica según topología real.</div>
       </div>`;
     } else {
       _alertaInv.innerHTML = "";
     }
   }
 
-  // Info equipo abre / cierra
-  const _br = state.ultimaSimulacion?.body_request || {};
-  const _equipoAbre   = _br.equipo_nombre  || "";
-  const _equipoCierra = _br.equipo_cierra  || "";
-  const _escenario    = _br.escenario      || "normal";
+  // Resumen de maniobra — equipos que abren/cierran + TLC, junto a las métricas.
+  // El cierra puede venir en lz_info/_extras y no en body_request.
+  const _br  = state.ultimaSimulacion?.body_request || {};
+  const _sim = state.ultimaSimulacion || {};
+  const _equipoAbre   = _br.equipo_nombre || "";
+  const _equipoCierra = _br.equipo_cierra || _sim._extras?.equipo_cierra || _sim.lz_info?.numpos_lz_sel || "";
+  const _escenario    = _br.escenario || "normal";
   const _infoEq = document.getElementById("info-equipos");
   if (_infoEq) {
-    let _eqHtml = "";
-    if (_escenario === "corte_circuito") {
-      _eqHtml = `<span class="badge bg-secondary me-1"><i class="bi bi-scissors me-1"></i>Corte de circuito</span>`;
-      if (_equipoCierra) _eqHtml += `<span class="badge bg-light text-dark border me-1"><i class="bi bi-toggles me-1"></i>Cierra: ${_equipoCierra.toUpperCase()}</span>`;
+    const _norm = s => (s || "").toUpperCase().trim();
+    const _tlcAbre   = (state.equiposData || []).find(e => _norm(e.nombre)    === _norm(_equipoAbre))?.tlc;
+    const _tlcCierra = (state.lzVecinos  || []).find(l => _norm(l.numpos_lz) === _norm(_equipoCierra))?.tlc;
+    const _tlcBadge  = tlc => tlc === true
+      ? ' <span class="badge bg-success" style="font-size:.6rem;vertical-align:middle"><i class="bi bi-broadcast me-1"></i>TLC</span>'
+      : tlc === false
+        ? ' <span class="badge bg-secondary" style="font-size:.6rem;vertical-align:middle">sin TLC</span>'
+        : "";
+    const _chip = (icon, val, lbl) =>
+      `<div class="res-chip"><span class="res-chip-val" style="font-size:.9rem"><i class="bi ${icon} me-1"></i>${val}</span>` +
+      `<span class="res-chip-lbl">${lbl}</span></div>`;
+    const _chips = [];
+    if (_escenario === "corte_circuito") _chips.push(_chip("bi-scissors", "Corte de circuito", "Escenario"));
+    else if (_equipoAbre) _chips.push(_chip("bi-door-open", _norm(_equipoAbre) + _tlcBadge(_tlcAbre), "Equipo que abre"));
+    if (_equipoCierra) _chips.push(_chip("bi-toggles", _norm(_equipoCierra) + _tlcBadge(_tlcCierra), "Equipo que cierra"));
+    if (_chips.length) {
+      _infoEq.innerHTML = `<div class="d-flex flex-wrap gap-2">${_chips.join("")}</div>`;
+      _infoEq.style.display = "";
+      const _cards = document.getElementById("cards-resumen");   // ubicar junto a las métricas
+      if (_cards) _cards.insertAdjacentElement("afterend", _infoEq);
     } else {
-      if (_equipoAbre)   _eqHtml += `<span class="badge bg-light text-dark border me-1"><i class="bi bi-door-open me-1"></i>Abre: ${_equipoAbre.toUpperCase()}</span>`;
-      if (_equipoCierra) _eqHtml += `<span class="badge bg-light text-dark border me-1"><i class="bi bi-toggles me-1"></i>Cierra: ${_equipoCierra.toUpperCase()}</span>`;
+      _infoEq.innerHTML = "";
+      _infoEq.style.display = "none";
     }
-    _infoEq.innerHTML = _eqHtml;
-    _infoEq.style.display = _eqHtml ? "" : "none";
   }
+
+  // Nota de ATR (autotransformador) involucrado en el traspaso
+  renderNotaATR(data);
+  // Comentarios del caso (descripción + cambio topológico previo, si existen)
+  renderComentariosCaso(data);
 
   // Tabla resumen ejecutivo (FU mes a mes) + trafos
   renderTablaResumenEjecutivo(data);
   renderTablaTrafosEjecutivo(data);
+  // Botón "Copiar" en tablas de alimentadores y trafos
+  agregarBotonesCopia(document.getElementById("sec-tabla-resumen"));
+  agregarBotonesCopia(document.getElementById("sec-tabla-trafos-ej"));
 
   // Sección equipos involucrados + LZ (dentro de <details>)
   renderSecEquiposInvolucrados(data);
@@ -125,6 +149,120 @@ function mostrarResultados(data) {
     dbg(`✗ Error render: ${err.message}`, "error");
     mostrarErrorSim("Error al mostrar resultados: " + err.message);
   }
+}
+
+// ── NOTA ATR (autotransformador involucrado) ──────────────────────────────
+// Banner ámbar debajo de los chips abre/cierra. Solo si un ATR participa del
+// traspaso (lo decide el backend: origen con isla bajo su ATR, o destino con
+// ATR en el troncal). Incluye la corriente efectiva entregada → recibida.
+function renderNotaATR(data) {
+  const infoEq = document.getElementById("info-equipos");
+  let cont = document.getElementById("info-atr");
+  if (!cont) {
+    cont = document.createElement("div");
+    cont.id = "info-atr";
+    cont.className = "mb-2";
+  }
+  const ai = data.atr_info;
+  if (!ai || !ai.notas?.length) {
+    cont.innerHTML = "";
+    cont.style.display = "none";
+    return;
+  }
+
+  // Frase "entre/hacia" por flujo: reductor lista alta→baja; elevador baja→alta.
+  const _entre = n => {
+    const t = fmt(n.tension_alta, 0);
+    const alta = n.eq_alta, baja = n.eq_baja;
+    if (n.tipo === "elevador") {
+      return alta
+        ? `entre <code>${baja || "—"}</code> (lado 12 kV) y <code>${alta}</code> (lado ${t} kV)`
+        : `hacia <code>${baja}</code> (lado 12 kV)`;
+    }
+    return alta
+      ? `entre <code>${alta}</code> (lado ${t} kV) y <code>${baja || "—"}</code> (lado 12 kV)`
+      : `hacia <code>${baja}</code> (lado 12 kV)`;
+  };
+
+  const _nota = n => {
+    const rol = n.rol === "recibe" ? "recibe la carga" : "entrega la carga";
+    const t   = fmt(n.tension_alta, 0);
+    const dir = n.tipo === "elevador" ? `elevador 12→${t} kV` : `reductor ${t}→12 kV`;
+    const naceAlta = (n.tipo !== "elevador" && !n.eq_alta);
+    const cuerpo = naceAlta
+      ? `nace en ${t} kV; su autotransformador <strong>${dir}</strong> baja ${_entre(n)}`
+      : `tiene un autotransformador <strong>${dir}</strong> ${_entre(n)}`;
+    return `<div><i class="bi bi-lightning-charge-fill me-1"></i>El alimentador ` +
+      `<strong>${n.feeder}</strong> (${rol}) ${cuerpo}. ` +
+      `Las corrientes mostradas ya consideran esta transformación.</div>`;
+  };
+
+  const notas = ai.notas.map(_nota).join("");
+  const efectiva = ai.transformado
+    ? `<div class="mt-1 pt-1" style="border-top:1px solid #f0d68a">` +
+      `<i class="bi bi-arrow-left-right me-1"></i>Se traspasan ` +
+      `<strong>${fmt(ai.delta_entregado, 1)} A</strong> desde ${data.nombre_orig} (${fmt(ai.v_cab_orig, 0)} kV); ` +
+      `por el ATR llegan <strong>${fmt(ai.delta_recibido, 1)} A</strong> a la cabecera de ` +
+      `${data.nombre_dest} (${fmt(ai.v_cab_dest, 0)} kV).</div>`
+    : "";
+
+  cont.innerHTML =
+    `<div class="alert py-2 mb-0" style="background:#fdf6e3;border:1px solid #f0d68a;color:#6b5900;font-size:.85rem">` +
+    `${notas}${efectiva}</div>`;
+  cont.style.display = "";
+  if (infoEq) infoEq.insertAdjacentElement("afterend", cont);
+  else document.getElementById("cards-resumen")?.insertAdjacentElement("afterend", cont);
+}
+
+// ── COMENTARIOS DEL CASO ──────────────────────────────────────────────────
+// Pestaña plegable delgada (abierta por defecto) con la descripción del caso y
+// el cambio topológico previo — cada uno solo si fue rellenado por el operador.
+// Se ubica bajo la nota ATR si existe, si no bajo los chips abre/cierra.
+function renderComentariosCaso(data) {
+  const ex      = data._extras || {};
+  const desc    = (ex.descripcion || "").trim();
+  const camTopo = (ex.cambio_topologico || "").trim();
+
+  let cont = document.getElementById("info-comentarios");
+  if (!cont) {
+    cont = document.createElement("div");
+    cont.id = "info-comentarios";
+    cont.className = "mb-2";
+  }
+  if (!desc && !camTopo) {
+    cont.innerHTML = "";
+    cont.style.display = "none";
+    return;
+  }
+
+  const _campo = (icon, titulo, texto) =>
+    `<div class="mb-1">
+       <div class="fw-semibold text-muted" style="font-size:.75rem"><i class="bi ${icon} me-1"></i>${titulo}</div>
+       <div class="small" style="white-space:pre-wrap">${_escHtml(texto)}</div>
+     </div>`;
+  const items = [];
+  if (desc)    items.push(_campo("bi-card-text",  "Descripción del caso",     desc));
+  if (camTopo) items.push(_campo("bi-diagram-2",  "Cambio topológico previo", camTopo));
+
+  cont.innerHTML =
+    `<details open class="border rounded" style="background:#fcfcfd">
+       <summary class="px-2 py-1 d-flex align-items-center gap-1" style="cursor:pointer;list-style:none">
+         <i class="bi bi-chat-left-text text-muted"></i>
+         <span class="fw-semibold text-muted" style="font-size:.8rem">Comentarios del caso</span>
+         <i class="bi bi-chevron-down ms-auto text-muted" style="font-size:.7rem"></i>
+       </summary>
+       <div class="px-2 pb-2 pt-1" style="border-top:1px solid #eee">${items.join("")}</div>
+     </details>`;
+  cont.style.display = "";
+
+  // Ubicación: bajo la nota ATR si aplica, si no bajo los chips abre/cierra.
+  const atrEl  = document.getElementById("info-atr");
+  const infoEq = document.getElementById("info-equipos");
+  const visible = el => el && el.style.display !== "none" && el.innerHTML.trim() !== "";
+  const anchor = visible(atrEl) ? atrEl
+               : visible(infoEq) ? infoEq
+               : document.getElementById("cards-resumen");
+  if (anchor) anchor.insertAdjacentElement("afterend", cont);
 }
 
 // ── CHART.JS ──────────────────────────────────────────────────────────────
@@ -175,6 +313,71 @@ function renderPeorCaso(data) {
   const estBg  = rowBg[w.estado_dest] || "";
   const estBadge = `<span class="badge ${badgeClass[w.estado_dest] || ""}">${estadoLabel[w.estado_dest] || w.estado_dest || "—"}</span>`;
 
+  // ── Trafos de potencia en el mes peor (mismo mes que el alimentador) ──────
+  // Δ del trafo = I_después − I_antes de su propia fila: refleja alivio (−) en
+  // origen, carga (+) en destino, y ≈0 si comparten barra o hay ATR asimétrico.
+  const _peorTrafoTabla = (trafo, label, showEstado) => {
+    if (!trafo || trafo.sin_datos) return "";
+    const row = (trafo.tabla || []).find(r => r.mes === w.mes);
+    if (!row) return "";
+    const cnStr = trafo.cn_trafo != null ? ` · CN=${fmt(trafo.cn_trafo,0)} A` : "";
+    const dT    = (row.I_despues != null && row.I_antes != null) ? row.I_despues - row.I_antes : null;
+    const dTxt  = dT != null ? `${dT >= 0 ? "+" : "−"}${fmt(Math.abs(dT),1)} A` : "—";
+    const dCol  = dT == null ? "color:#888"
+                : dT < -0.05 ? "color:#1f8a4c" : dT > 0.05 ? "color:#b06a00" : "color:#666";
+    const est   = row.estado || "sin_datos";
+    const eBg    = rowBg[est] || "";
+    const eBadge = `<span class="badge ${badgeClass[est] || ""}">${estadoLabel[est] || "—"}</span>`;
+    const eHead  = showEstado ? `<th class="text-center py-1">Estado</th>` : "";
+    const eAntes = showEstado ? `<td></td>` : "";
+    const eDesp  = showEstado ? `<td class="text-center">${eBadge}</td>` : "";
+    return `
+      <div class="small fw-semibold mb-1 text-muted">
+        <i class="bi bi-lightning me-1"></i>${_trafoLabel(trafo)} — ${label}${cnStr}
+      </div>
+      <table class="table table-sm table-bordered mb-0" style="font-size:.82rem">
+        <thead><tr>
+          <th></th><th class="text-end py-1">Corriente</th><th class="text-end py-1">FU (%)</th>
+          <th class="text-end py-1">Δ</th>${eHead}
+        </tr></thead>
+        <tbody>
+          <tr><td style="white-space:nowrap">Antes</td>
+              <td class="text-end">${fmt(row.I_antes,1)} A</td>
+              <td class="text-end">${fmt(row.uso_antes_pct,1)}%</td>
+              <td></td>${eAntes}</tr>
+          <tr${eBg ? ` style="background:${eBg}"` : ""}>
+              <td style="white-space:nowrap">Después</td>
+              <td class="text-end">${fmt(row.I_despues,1)} A</td>
+              <td class="text-end">${fmt(row.uso_despues_pct,1)}%</td>
+              <td class="text-end fw-semibold" style="${dCol}">${dTxt}</td>${eDesp}</tr>
+        </tbody>
+      </table>`;
+  };
+
+  const _tO = data.trafo_orig, _tD = data.trafo_dest;
+  const _mismaBarra = data.misma_barra_se || _tO?.mismo_trafo_destino || _tD?.mismo_trafo_destino;
+  let trafoHtml = "";
+  if (_mismaBarra) {
+    const _t = (_tO && !_tO.sin_datos) ? _tO : _tD;
+    const _blk = _peorTrafoTabla(_t, "sin cambio neto", true);
+    if (_blk) trafoHtml = `
+      <div class="mt-2 pt-2" style="border-top:1px solid #c8d5ec">
+        <div class="alert alert-info py-1 px-2 mb-2" style="font-size:.8rem">
+          <i class="bi bi-info-circle me-1"></i>Alimentadores en la <strong>misma barra SE</strong> —
+          el transformador de potencia no ve cambio neto en su cargabilidad.
+        </div>
+        ${_blk}
+      </div>`;
+  } else {
+    const _blkO = _peorTrafoTabla(_tO, "alivio", false);
+    const _blkD = _peorTrafoTabla(_tD, "carga adicional", true);
+    if (_blkO || _blkD) trafoHtml = `
+      <div class="row g-2 mt-2 pt-2" style="border-top:1px solid #c8d5ec">
+        <div class="col-sm-6">${_blkO || '<div class="small text-muted fst-italic">Trafo de origen sin datos.</div>'}</div>
+        <div class="col-sm-6">${_blkD || '<div class="small text-muted fst-italic">Trafo de destino sin datos.</div>'}</div>
+      </div>`;
+  }
+
   el.innerHTML = `
     <div class="rounded-3 p-2" style="background:#f0f4fb;border:1px solid #d0ddef">
       <div class="d-flex flex-wrap align-items-center gap-3 mb-2 pb-1" style="border-bottom:1px solid #c8d5ec">
@@ -221,19 +424,13 @@ function renderPeorCaso(data) {
           </table>
         </div>
       </div>
+      ${trafoHtml}
     </div>`;
 
-  // Evaluación equipos receptor dentro de esta tarjeta
+  // Evaluación equipos receptor: ahora se muestra solo en la card
+  // "Equipos troncales en alimentador receptor" (renderSecEquiposInvolucrados)
   const secPeor = document.getElementById("sec-vcc-receptor-peor");
-  if (secPeor) {
-    if (data.vcc_alim_b_equipos?.length) {
-      secPeor.innerHTML = _vccReceptorBlock(data.vcc_alim_b_equipos);
-      secPeor.style.display = "";
-    } else {
-      secPeor.innerHTML = "";
-      secPeor.style.display = "none";
-    }
-  }
+  if (secPeor) { secPeor.innerHTML = ""; secPeor.style.display = "none"; }
 }
 
 function renderCharts(data) {
@@ -462,9 +659,9 @@ function _renderTrafoChart(canvasId, trafoData, titulo, modo, ajMeses = new Set(
 function _trafoLabel(trafo) {
   const sub = trafo?.subestacion || "";
   const bar = trafo?.barra       || "";
-  if (sub && bar)  return `Transformador de potencia Barra ${bar} SE ${sub}`;
-  if (sub)         return `Transformador de potencia SE ${sub}`;
-  if (bar)         return `Transformador de potencia Barra ${bar}`;
+  if (sub && bar)  return `${bar} SE ${sub}`;
+  if (sub)         return `SE ${sub}`;
+  if (bar)         return `${bar}`;
   return "Transformador de potencia";
 }
 
@@ -536,17 +733,10 @@ function renderMamSection(data) {
   const nomDest = data.nombre_dest || "Destino";
   document.getElementById("lbl-estados-mam").textContent = `FU (%) ${nomDest} — mes a mes`;
 
-  // Evaluación equipos receptor dentro de la sección MAM
+  // Evaluación equipos receptor: ahora se muestra solo en la card
+  // "Equipos troncales en alimentador receptor" (renderSecEquiposInvolucrados)
   const secMamVcc = document.getElementById("sec-vcc-receptor-mam");
-  if (secMamVcc) {
-    if (data.vcc_alim_b_equipos?.length) {
-      secMamVcc.innerHTML = _vccReceptorBlock(data.vcc_alim_b_equipos);
-      secMamVcc.style.display = "";
-    } else {
-      secMamVcc.innerHTML = "";
-      secMamVcc.style.display = "none";
-    }
-  }
+  if (secMamVcc) { secMamVcc.innerHTML = ""; secMamVcc.style.display = "none"; }
 }
 
 function renderMamCharts(data) {
@@ -778,15 +968,15 @@ function renderMamTable(data, headId, bodyId) {
     </tr>`;
 
   const metricas = [
-    { key: "I_orig_antes",         lbl: `${nO} — Antes (A)`,             fu: false },
-    { key: "I_orig_despues",       lbl: `${nO} — Después Mes a mes (A)`, fu: false },
-    { key: "uso_orig_antes_pct",   lbl: `FU antes (%) ${nO}`,            fu: false },
-    { key: "uso_orig_despues_pct", lbl: `FU (%) ${nO} Mes a mes`,        fu: false },
-    { key: "I_dest_antes",         lbl: `${nD} — Antes (A)`,             fu: false },
-    { key: "I_dest_despues",       lbl: `${nD} — Perfil Mes a mes (A)`,  fu: false },
-    { key: "uso_dest_antes_pct",   lbl: `FU antes (%) ${nD}`,            fu: false },
-    { key: "uso_dest_despues_pct", lbl: `FU (%) ${nD} Mes a mes`,        fu: true  },
-    { key: "estado_dest",          lbl: "Estado",                         isEstado: true },
+    { key: "I_orig_antes",         lbl: `${nO} — Antes (A)`,           fu: false },
+    { key: "I_orig_despues",       lbl: `${nO} — Después (A)`,         fu: false },
+    { key: "uso_orig_antes_pct",   lbl: `FU (%) ${nO} — Antes (A)`,    fu: false },
+    { key: "uso_orig_despues_pct", lbl: `FU (%) ${nO} — Después (A)`,  fu: false },
+    { key: "I_dest_antes",         lbl: `${nD} — Antes (A)`,           fu: false },
+    { key: "I_dest_despues",       lbl: `${nD} — Después (A)`,         fu: false },
+    { key: "uso_dest_antes_pct",   lbl: `FU (%) ${nD} — Antes (A)`,    fu: false },
+    { key: "uso_dest_despues_pct", lbl: `FU (%) ${nD} — Después (A)`,  fu: true  },
+    { key: "estado_dest",          lbl: "Estado",                       isEstado: true },
   ];
 
   document.getElementById(bodyId).innerHTML = metricas.map(m => {
@@ -880,6 +1070,7 @@ function renderTablaTrafosEjecutivo(data) {
     filas.push({ lbl: `${label} — Después (A)`,     key: "I_despues",      trafo, byMes, ajSet, fu: false });
     if (trafo.cn_trafo) {
       filas.push({ lbl: `FU (%) ${label}`,           key: "uso_despues_pct", trafo, byMes, ajSet, fu: true });
+      filas.push({ lbl: `Estado`,                     key: "estado",          trafo, byMes, ajSet, isEstado: true });
     }
   };
 
@@ -889,11 +1080,17 @@ function renderTablaTrafosEjecutivo(data) {
   document.getElementById("tabla-trafos-ej-body").innerHTML = filas.map(f => {
     const cells = tabla_mam.map((r, colIdx) => {
       const d   = f.byMes[r.mes] || {};
-      const v   = d[f.key];
-      const est = r.estado_dest || "";
       const wst = colIdx === worstIdx ? W_TD : "";
-      const fuBg = f.fu ? (rowBg[est] || "") : "";
-      const st   = [fuBg ? `background:${fuBg}` : "", wst].filter(Boolean).join(";");
+      // Estado propio del transformador en el mes (no del alimentador receptor)
+      const estTrafo = d.estado || "sin_datos";
+      if (f.isEstado) {
+        const bg = rowBg[estTrafo] || "";
+        const st = [bg ? `background:${bg}` : "", wst].filter(Boolean).join(";");
+        return `<td class="text-center" style="${st}"><span class="badge ${badgeClass[estTrafo]||""}">${estadoLabel[estTrafo]||"—"}</span></td>`;
+      }
+      const v    = d[f.key];
+      const fuBg  = f.fu ? (rowBg[estTrafo] || "") : "";
+      const st    = [fuBg ? `background:${fuBg}` : "", wst].filter(Boolean).join(";");
       const suffix = f.key === "uso_despues_pct" ? "%" : "";
       const txt    = (typeof v === "number" && isFinite(v)) ? (v.toFixed(1) + suffix) : "—";
       return `<td class="text-center" style="${st}">${txt}</td>`;
@@ -992,42 +1189,171 @@ function _mapCasoDescarga(s, numeroCaso) {
   };
 }
 
+// Serializa la config de un Chart.js vivo a JSON. Descarta funciones
+// (callbacks de tooltip con closures que no sobreviven fuera del panel) y
+// corta refs internas/circulares de Chart.js. Los gráficos quedan interactivos
+// con el tooltip por defecto; solo se pierden anotaciones custom.
+function _serializeChartCfg(chart) {
+  const seen = new WeakSet();
+  const replacer = (k, v) => {
+    if (k && (k[0] === "_" || k[0] === "$")) return undefined;  // internos Chart.js
+    if (typeof v === "function") return undefined;              // sin closures
+    if (v && typeof v === "object") {
+      if (seen.has(v)) return undefined;                        // corta ciclos
+      seen.add(v);
+    }
+    return v;
+  };
+  return JSON.stringify(
+    { type: chart.config.type, data: chart.config.data, options: chart.config.options },
+    replacer
+  );
+}
+
+// Construye un documento HTML autónomo idéntico al panel de resultados vivo.
+// Se arma con DOM APIs (no con un template literal) para que el código fuente
+// no contenga literales de etiquetas estructurales (head/body/scr...): el
+// router inyecta contenido antes del cierre de head y eso rompería la página.
+function _construirInformeHTML(titulo) {
+  const panel = document.getElementById("resultado-contenido");
+  if (!panel) return null;
+
+  // 1) Capturar configs de los gráficos ANTES de clonar (canvas clonado sale
+  //    en blanco). Se recuperan por el canvas del DOM vía Chart.getChart.
+  const cfgs = {};
+  panel.querySelectorAll("canvas").forEach(cv => {
+    if (!cv.id) return;
+    const ch = (typeof Chart !== "undefined") ? Chart.getChart(cv) : null;
+    if (ch) cfgs[cv.id] = _serializeChartCfg(ch);
+  });
+
+  // 2) Clonar y preparar para vista estática (expandir colapsables, quitar
+  //    controles interactivos).
+  const clon = panel.cloneNode(true);
+  clon.style.display = "block";
+  // Colapsar todas las secciones <details> (equipos/LZ, serie mensual por
+  // equipo, etc.) para no saturar el informe. Siguen siendo expandibles con
+  // un clic (details nativos, sin JS).
+  clon.querySelectorAll("details").forEach(d => (d.open = false));
+  const mamBody = clon.querySelector("#mam-body");
+  if (mamBody) mamBody.style.display = "block";
+  const secMam = clon.querySelector("#sec-mam");
+  if (secMam) secMam.style.display = "";
+  clon.querySelectorAll(".no-copy, button").forEach(el => el.remove());
+  clon.querySelectorAll("[onclick]").forEach(el => el.removeAttribute("onclick"));
+  // Secciones de trabajo que no van en el informe: ajuste de datos anómalos
+  // y corrimiento de carga.
+  ["sec-ajustes", "det-corrimiento"].forEach(id => {
+    const el = clon.querySelector("#" + id);
+    if (el) el.remove();
+  });
+
+  // 3) Documento nuevo vía DOM.
+  const doc = document.implementation.createHTMLDocument(titulo);
+
+  // Estilos: clonar los mismos CDN (link) y estilos inline del documento vivo.
+  document.querySelectorAll('link[rel="stylesheet"], style').forEach(n =>
+    doc.head.appendChild(n.cloneNode(true)));
+  const bodyStyle = doc.createElement("style");
+  bodyStyle.textContent = "body{background:#fff;padding:1rem}";
+  doc.head.appendChild(bodyStyle);
+
+  // Cuerpo: encabezado + panel clonado.
+  const wrap = doc.createElement("div");
+  wrap.style.width = "100%";
+  const h = doc.createElement("h5");
+  h.className = "mb-1";
+  h.textContent = titulo;
+  const sub = doc.createElement("div");
+  sub.className = "text-muted small mb-3";
+  sub.textContent = "Informe generado " + new Date().toLocaleString("es-CL");
+  wrap.appendChild(h);
+  wrap.appendChild(sub);
+  wrap.appendChild(doc.importNode(clon, true));
+  doc.body.appendChild(wrap);
+
+  // 4) Gráficos interactivos: Chart.js CDN + script que los recrea (JSON puro).
+  if (Object.keys(cfgs).length) {
+    const cfgsJson = JSON.stringify(cfgs).replace(/<\//g, "<\\/");
+    const s1 = doc.createElement("script");
+    s1.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
+    const s2 = doc.createElement("script");
+    s2.textContent =
+      "var raw=" + cfgsJson + ";" +
+      "window.addEventListener('DOMContentLoaded',function(){" +
+      "Object.keys(raw).forEach(function(id){" +
+      "var el=document.getElementById(id);if(!el)return;" +
+      "try{new Chart(el,JSON.parse(raw[id]));}catch(e){console.error(id,e);}" +
+      "});});";
+    doc.body.appendChild(s1);
+    doc.body.appendChild(s2);
+  }
+
+  return "<!doc" + "type html>\n" + doc.documentElement.outerHTML;
+}
+
+function _descargarBlobHTML(html, nombreArchivo) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = nombreArchivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function descargarHTML() {
   const sim    = state.ultimaSimulacion;
   const cadena = state.cadenaSimulaciones;
   if (!sim) return mostrarError("Primero ejecuta una simulación.");
 
-  let body;
   const fecha = new Date().toISOString().slice(0, 10);
-  let nombreArchivo;
 
+  // Corrimiento multi-caso: el panel solo muestra el caso actual, así que la
+  // cadena completa se sigue generando en el backend (reporte agregado).
   if (cadena.length > 1) {
-    // Multi-caso: enviar todos los casos para reporte de cadena
-    body = { casos: cadena.map(s => _mapCasoDescarga(s, s._numero_caso ?? 1)) };
-    nombreArchivo = `corrimiento_${cadena.length}casos_${fecha}.html`;
-  } else {
-    // Caso único
-    body = _mapCasoDescarga(sim, sim._numero_caso ?? 1);
-    body.feeder_nuevo = sim.feeder_nuevo || null;
-    nombreArchivo = `traspaso_${fecha}.html`;
+    spinner(true, "Generando informe...");
+    try {
+      const body = { casos: cadena.map(s => _mapCasoDescarga(s, s._numero_caso ?? 1)) };
+      const r = await fetch("/api/descargar_html", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { mostrarError("Error generando HTML."); return; }
+      _descargarBlobHTML(await r.blob(), `corrimiento_${cadena.length}casos_${fecha}.html`);
+    } finally {
+      spinner(false);
+    }
+    return;
   }
 
+  // Caso único: informe = captura exacta del panel de resultados.
   spinner(true, "Generando informe...");
+  // Los gráficos MAM se crean lazy al expandir la sección; si no existen, los
+  // creamos sólo para capturar su config y luego restauramos el panel.
+  const mamBody       = document.getElementById("mam-body");
+  const mamPrevDisp   = mamBody ? mamBody.style.display : null;
+  const mamTemporal   = !!(sim.tabla_mam?.length && !_charts["barras-mam"]);
   try {
-    const r = await fetch("/api/descargar_html", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) { mostrarError("Error generando HTML."); return; }
-    const blob = await r.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = nombreArchivo;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (mamTemporal) {
+      if (mamBody) mamBody.style.display = "";   // visible para dimensionar
+      renderMamCharts(sim);
+      renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam,
+        sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
+    }
+    const titulo = `Traspaso ${sim.nombre_orig || "Origen"} → ${sim.nombre_dest || "Destino"}`;
+    const html   = _construirInformeHTML(titulo);
+    if (!html) { mostrarError("No hay panel de resultados para exportar."); return; }
+    _descargarBlobHTML(html, `traspaso_${fecha}.html`);
+  } catch (e) {
+    mostrarError("Error generando informe: " + e.message);
   } finally {
+    // Restaurar el panel al estado previo si los gráficos MAM eran temporales.
+    if (mamTemporal) {
+      _destroyCharts("barras-mam", "estados-mam", "canvas-trafo-orig-mam", "canvas-trafo-dest-mam");
+      if (mamBody) mamBody.style.display = mamPrevDisp;
+    }
     spinner(false);
   }
 }
@@ -1961,6 +2287,8 @@ function vccInicializarSelect() {
     if (f.subestacion) parts.push(f.subestacion);
     document.getElementById("vcc-alim-cn-txt").textContent = parts.join("  |  ");
     document.getElementById("vcc-alim-info").style.display = "";
+    const vccFrgBadge = document.getElementById("vcc-alim-frg-badge");
+    if (vccFrgBadge) vccFrgBadge.style.display = f.frg ? "" : "none";
     vccLimpiarPunto();
     if (state.vccAlimNom) {
       // Resetear toggle al modo equipo al cambiar alimentador
