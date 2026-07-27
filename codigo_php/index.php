@@ -2,21 +2,21 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.php  — router puro (304 L)                                 ║
+// ║  ÍNDICE DE index.php  — router puro (305 L)                                 ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  BOOTSTRAP                                                      L.22–243    ║
+// ║  BOOTSTRAP                                                      L.22–244    ║
 // ║    Verificar config.php                                          L.22        ║
 // ║    require_once conexion.php + require_login()                   L.40        ║
 // ║    Carpetas de escritura + includes src/                         L.44        ║
 // ║    CLI static, base path, cabeceras CORS                         L.65        ║
 // ║    jsonOk, jsonErr, jsonPy, bodyJson                             L.92        ║
 // ║    gd(), getLz(), _lzInfoEntre()                                L.122        ║
-// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.209        ║
+// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.210        ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  ROUTER                                                        L.245–304    ║
-// ║    GET /  → sirve templates/index.html con shim base-path       L.257       ║
-// ║    /api/* → require api/feeders … api/telecontrol.php           L.285       ║
-// ║    404 fallback                                                  L.295       ║
+// ║  ROUTER                                                        L.246–305    ║
+// ║    GET /  → sirve templates/index.html con shim base-path       L.258       ║
+// ║    /api/* → require api/feeders … api/telecontrol.php           L.286       ║
+// ║    404 fallback                                                  L.296       ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Verificar config.php ──────────────────────────────────────────────────────

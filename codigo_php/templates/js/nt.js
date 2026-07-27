@@ -9,7 +9,7 @@ async function inicializarOrigenSelect() {
     ts.origen = new TomSelect("#sel-origen", {
       options: feeders.map(f => ({
         value:       String(f.numalim),
-        text:        f.nombre,
+        text:        (f.frg ? '[FRG] ' : '') + f.nombre,
         cn:          f.cn,
         nom_alim:    f.nom_alim,
         subestacion:  f.subestacion,
@@ -1197,7 +1197,7 @@ async function renderPanelCorrimiento(numalimDest, nombreDest) {
       : "";
     return `<tr style="cursor:pointer" title="Clic para precargar corrimiento hacia ${c.nombre}"
               onclick="precargarCorrimiento(${numalimDest}, ${c.numalim}, ${c.remanente_pct ?? null}, ${c.remanente_A ?? null})">
-      <td><span class="fw-semibold">${c.nombre}</span>${cxBadge}</td>
+      <td><span class="fw-semibold">${c.nombre}</span>${esAlimFrg(c.numalim) ? frgBadge() : ''}${cxBadge}</td>
       <td class="text-end"><span class="badge bg-${colorBg} text-${colorBg === 'warning' ? 'dark' : 'white'}">${remTxt}</span></td>
       <td class="text-end text-muted small">${pctTxt}</td>
     </tr>`;

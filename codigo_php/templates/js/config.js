@@ -227,7 +227,7 @@ function renderAlimentadoresConfig(data) {
         <td class="fw-semibold font-monospace">
           <span class="text-primary" style="cursor:pointer;text-decoration:underline dotted"
                 onclick="event.stopPropagation();cfgAlimSeleccionar('${nomE}')"
-                title="Abrir panel de gestión (ATRs, equipos)">${nom}</span>${atBadge}</td>
+                title="Abrir panel de gestión (ATRs, equipos)">${nom}</span>${esAlimFrg(nom) ? frgBadge() : ''}${atBadge}</td>
         <td class="text-muted small">${nConds} conductor${nConds !== 1 ? "es" : ""}</td>
         <td class="text-muted small"><i class="bi bi-cpu me-1"></i><span class="cfg-alim-eq-badge-${safeId}">equipos</span></td>
         <td>
@@ -898,7 +898,7 @@ function hvccRenderTabla(evs) {
 
     return `<tr>
       <td class="text-muted small">${ev.fecha||"—"}</td>
-      <td><strong>${ev.nombre_alim||"—"}</strong></td>
+      <td><strong>${ev.nombre_alim||"—"}</strong>${esAlimFrg(ev.nombre_alim) ? frgBadge() : ''}</td>
       <td>${punto}</td>
       <td class="text-muted small">${ev.id_cliente||"—"}</td>
       <td class="small">${ev.nombre_cliente||"—"}</td>

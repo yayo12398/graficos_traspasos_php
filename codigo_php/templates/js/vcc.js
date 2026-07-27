@@ -972,7 +972,7 @@ function vccTraspasoAbreChange(equipoAbre) {
 
   destSel.innerHTML = `<option value="">— Seleccionar alimentador —</option>` +
     [...destMap.entries()].map(([nm, d]) =>
-      `<option value="${nm}" data-nom="${d.nom_alim}">${d.nom_alim}</option>`
+      `<option value="${nm}" data-nom="${d.nom_alim}">${esAlimFrg(nm) ? '[FRG] ' : ''}${d.nom_alim}</option>`
     ).join("");
 
   // Guardar mapa en dataset para usarlo al seleccionar

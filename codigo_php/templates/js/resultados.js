@@ -2271,7 +2271,7 @@ function vccInicializarSelect() {
   const el = document.getElementById("vcc-sel-alim");
 
   function buildOpts(feeders) {
-    return feeders.map(f => ({ value: String(f.numalim), text: f.nombre }));
+    return feeders.map(f => ({ value: String(f.numalim), text: (f.frg ? '[FRG] ' : '') + f.nombre }));
   }
 
   async function onChangeAlim(val) {

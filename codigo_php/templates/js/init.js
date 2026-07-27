@@ -463,3 +463,15 @@ function _escHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+// FRG: consulta si un alimentador participa en esquema FRG (por numalim o nom_alim)
+// y badge canónico para tablas. El dato viene de state.feedersData (/api/feeders).
+function esAlimFrg(key) {
+  if (key == null || !state.feedersData?.length) return false;
+  const f = state.feedersData.find(x => x.numalim == key || (x.nom_alim && x.nom_alim === key));
+  return !!(f && f.frg);
+}
+function frgBadge() {
+  return '<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem"'
+       + ' title="Participa en esquema FRG">FRG</span>';
+}
