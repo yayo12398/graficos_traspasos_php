@@ -25,6 +25,8 @@ const state = {
   origenAlimConfig: null, // config de conductores/autotrafos del origen
   mesesDisponibles:[],   // lista YYYY-MM del Excel
   ultimaSimulacion: null,
+  sugerenciasTLC:   false, // switch NT: activa propuestas de traspaso/corrimiento TLC
+  _sugTraspaso:     [],   // últimas maniobras sugeridas (para precargarTraspasoSugerido)
   // VCC
   vccAlimIdx:       null, // numalim del alimentador VCC
   vccAlimNom:       null, // nom_alim VCC

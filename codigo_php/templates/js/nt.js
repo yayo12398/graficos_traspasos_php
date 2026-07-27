@@ -57,6 +57,10 @@ async function seleccionarOrigen(numalimStr) {
   document.getElementById("card-isla").style.display = "";
   document.getElementById("card-destino").style.display = "none";
   document.getElementById("card-simular").style.display = "none";
+  // Limpiar sugerencias TLC previas (el switch conserva su estado)
+  state._sugTraspaso = [];
+  const _sugCont = document.getElementById("sugerencias-traspaso");
+  if (_sugCont) _sugCont.innerHTML = "";
   const _panelB = document.getElementById("panel-equipos-b");
   if (_panelB) _panelB.style.display = "none";
   state.troncalBNomAlim = null; state.troncalBEnriquecido = []; state.equiposConfigB = {}; state.alimConfigB = null;
@@ -1296,8 +1300,14 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
           const deltaEst = (maxDemB2 != null)
             ? ` ≈ ${(maxDemB2 * sug.pct_feeder / 100).toFixed(1)} A estimado`
             : "";
+          // Badge TLC del equipo sugerido (solo con sugerencias activas)
+          const tlcSug = state.sugerenciasTLC
+            ? (sug.tlc
+                ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
+                : ` <span class="badge bg-secondary" style="font-size:.6rem" title="Sin telecontrol — requiere maniobra en terreno">terreno</span>`)
+            : "";
           elSug.innerHTML = `<i class="bi bi-lightbulb-fill text-warning me-1"></i>
-            Sugerido abrir <strong><code>${sug.nombre}</code></strong>
+            Sugerido abrir <strong><code>${sug.nombre}</code></strong>${tlcSug}
             <span class="badge bg-secondary ms-1">${sug.pct_feeder.toFixed(1)}% de ${nombreB}${deltaEst}</span>
             <span class="text-muted ms-1">— remanente ${nombreC}: ${remanenteA != null ? remanenteA.toFixed(1)+' A' : remanenteC.toFixed(1)+'%'}</span>`;
         } else {
@@ -1327,7 +1337,110 @@ function _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) 
   }
 
   if (!candidatos.length) return null;
-  return candidatos.reduce((best, e) => e.pct_feeder > best.pct_feeder ? e : best);
+  const pick = arr => arr.reduce((best, e) => e.pct_feeder > best.pct_feeder ? e : best);
+  // Con sugerencias TLC activas, preferir un equipo telecontrolado dentro de cargabilidad.
+  if (state.sugerenciasTLC) {
+    const tlc = candidatos.filter(e => e.tlc);
+    if (tlc.length) return pick(tlc);
+  }
+  return pick(candidatos);
+}
+
+// ── SUGERIDOR DE PRIMER TRASPASO (TLC) ────────────────────────────────────
+// Interruptor opcional: activa/desactiva el modo sugerencias sin cambiar el
+// flujo manual. Con OFF, todo queda idéntico al comportamiento por defecto.
+function toggleSugerenciasTLC(on) {
+  state.sugerenciasTLC = !!on;
+  const wrap = document.getElementById("sugerencias-traspaso-wrap");
+  if (wrap) wrap.style.display = on ? "" : "none";
+  const banner = document.getElementById("sugerencias-traspaso");
+  if (!on && banner) banner.innerHTML = "";
+}
+
+// Consulta el backend y muestra las mejores maniobras TLC (top-3) como banner.
+async function sugerirTraspasoTLC() {
+  const cont = document.getElementById("sugerencias-traspaso");
+  if (!cont) return;
+  if (state.origenNumalim == null) {
+    cont.innerHTML = `<div class="alert alert-warning py-2 px-3 small mb-0">
+      <i class="bi bi-exclamation-triangle me-1"></i>Selecciona un alimentador de origen primero.</div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="text-muted small">
+    <span class="spinner-border spinner-border-sm me-2" role="status"></span>Buscando maniobras TLC…</div>`;
+  try {
+    const maniobras = await apiFetch(`/api/sugerencias_traspaso/${state.origenNumalim}`);
+    state._sugTraspaso = Array.isArray(maniobras) ? maniobras : [];
+    if (!state._sugTraspaso.length) {
+      cont.innerHTML = `<div class="alert alert-secondary py-2 px-3 small mb-0">
+        <i class="bi bi-info-circle me-1"></i>Sin maniobra TLC viable para este origen (sin vecinos LZ o sin datos).</div>`;
+      return;
+    }
+    const _tlcB = (ok, txtNo) => ok
+      ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
+      : ` <span class="badge bg-secondary" style="font-size:.6rem">${txtNo}</span>`;
+    const filas = state._sugTraspaso.slice(0, 3).map((m, i) => {
+      const factB = m.factible
+        ? ` <span class="badge bg-success" style="font-size:.6rem">cabe</span>`
+        : ` <span class="badge bg-warning text-dark" style="font-size:.6rem" title="Excede la cargabilidad del destino">excede ${Math.abs(m.holgura_A).toFixed(0)} A</span>`;
+      return `<div class="border rounded p-2 mb-1" style="cursor:pointer;background:#f6fff6"
+                   onclick="precargarTraspasoSugerido(${i})" title="Clic para precargar esta maniobra">
+        <div class="small">
+          <span class="text-muted">Abre</span> <code>${(m.equipo_abre||'').toUpperCase()}</code>${_tlcB(m.tlc_abre, 'terreno')}
+          <span class="text-muted mx-1">→ cierra</span> <code>${m.numpos_lz}</code>${_tlcB(m.tlc_lz, 'manual')}
+          <span class="text-muted mx-1">→</span> <strong>${m.dest_nom}</strong>
+        </div>
+        <div class="small text-muted mt-1">
+          transfiere ≈ <strong>${m.transfer_A.toFixed(0)} A</strong> · remanente destino ${m.remanente_A.toFixed(0)} A${factB}
+        </div>
+      </div>`;
+    }).join("");
+    cont.innerHTML = `<div class="small fw-semibold mb-1" style="color:#198754">
+      <i class="bi bi-magic me-1"></i>Mejores maniobras TLC — clic para precargar</div>${filas}`;
+  } catch (e) {
+    cont.innerHTML = `<div class="alert alert-danger py-2 px-3 small mb-0">Error al sugerir: ${e.message}</div>`;
+  }
+}
+
+// Precarga una maniobra sugerida en el formulario (espejo de precargarCorrimiento):
+// modo equipo → equipo que abre → destino existente → LZ que cierra.
+function precargarTraspasoSugerido(idx) {
+  const m = (state._sugTraspaso || [])[idx];
+  if (!m) return;
+
+  // 1. Modo "por equipo"
+  const rEq = document.getElementById("modo-equipo");
+  if (rEq) { rEq.checked = true; rEq.dispatchEvent(new Event("change", { bubbles: true })); }
+
+  // 2. LZ preseleccionado antes de disparar mostrarEquipoCierra
+  state.selectedNumposLZ = m.numpos_lz;
+
+  // 3. Equipo que abre → dispara filtrado de destinos + preview + reveal de cards
+  if (ts.equipo) {
+    if (!ts.equipo.options[m.equipo_abre]) {
+      ts.equipo.addOption({ value: m.equipo_abre, text: (m.equipo_abre||'').toUpperCase(), label: (m.equipo_abre||'').toUpperCase() });
+    }
+    ts.equipo.setValue(m.equipo_abre);
+  }
+
+  // 4. Destino existente (excel)
+  const rDest = document.getElementById("dest-excel");
+  if (rDest) { rDest.checked = true; rDest.dispatchEvent(new Event("change", { bubbles: true })); }
+  if (ts.destino) {
+    if (!ts.destino.options[String(m.dest_numalim)]) {
+      ts.destino.addOption({ value: String(m.dest_numalim), text: m.dest_nom });
+    }
+    ts.destino.setValue(String(m.dest_numalim)); // onChange → mostrarEquipoCierra
+  }
+
+  // 5. Equipo que cierra + refuerzo de la selección LZ
+  const inpCierra = document.getElementById("inp-equipo-cierra");
+  if (inpCierra) inpCierra.value = m.numpos_lz;
+  mostrarEquipoCierra(m.dest_numalim);
+
+  // Feedback visual: resaltar la maniobra elegida
+  const cont = document.getElementById("sugerencias-traspaso");
+  if (cont) cont.querySelectorAll(".border").forEach((el, j) => el.style.outline = j === idx ? "2px solid #198754" : "");
 }
 
 function limpiarCadena() {

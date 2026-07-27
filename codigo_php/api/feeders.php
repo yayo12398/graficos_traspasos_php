@@ -3,6 +3,7 @@
 // FEEDERS / DATOS BASE — rutas /api/feeders, /api/meses, /api/feeder/*,
 //   /api/subestaciones, /api/destinos/*, /api/reload, /api/equipos?nom_alim=,
 //   /api/isla, /api/isla/preview, /api/vecinos_lz/*, /api/corrimiento_candidatos/*,
+//   /api/sugerencias_traspaso/*,
 //   /api/debug/status, /api/datos
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -375,6 +376,136 @@ if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
 
     usort($resultado, fn($a, $b) => ($b['remanente_A'] ?? PHP_INT_MIN) <=> ($a['remanente_A'] ?? PHP_INT_MIN));
     jsonPy($resultado);
+}
+
+// ── GET /api/sugerencias_traspaso/{numalim} ────────────────────────────────────
+// Propone maniobras de primer traspaso priorizando telecontrol (TLC). Cruza:
+//   equipos aguas abajo del origen (pct_feeder + tlc)
+//   × dispositivos LZ del origen (equipos_troncal_orig + tlc)
+//   × vecinos viables (remanente_A = cn − dem_max).
+// transfer_A ≈ dem_max_orig × pct_feeder; factible si transfer ≤ remanente destino.
+// tier: abre+cierra TLC→1 · abre TLC/cierra manual→2 · sin TLC→3.
+// Retorna top-5 maniobras factibles rankeadas (tier asc, holgura desc).
+if ($method === 'GET' && $a === 'sugerencias_traspaso' && $b0 && !$b1) {
+    $numalim = (int)$b0;
+    ['dfAlim' => $dfAlim, 'dfAb' => $dfAb] = gd();
+    $dfLz = getLz();
+
+    $nomAlim = nomAlimDeNumalim($dfAb, $numalim);
+    if ($nomAlim === null || !$dfLz) { jsonPy([]); }
+
+    $meses = mesesDisponibles($dfAlim);
+    $demMax = function(int $nm) use ($dfAlim, $meses): float {
+        $row = $dfAlim[$nm] ?? null;
+        if ($row === null) return NAN;
+        $mx = NAN;
+        foreach ($meses as $mes) {
+            $v = isset($row[$mes]) && $row[$mes] !== '' ? (float)$row[$mes] : NAN;
+            if (is_finite($v) && (!is_finite($mx) || $v > $mx)) $mx = $v;
+        }
+        return $mx;
+    };
+    $remanente = function(int $nm) use ($dfAlim, $demMax): float {
+        $row = $dfAlim[$nm] ?? null;
+        if ($row === null) return NAN;
+        $cn = (isset($row['cn']) && is_numeric($row['cn'])) ? (float)$row['cn'] : NAN;
+        $dm = $demMax($nm);
+        return (is_finite($cn) && is_finite($dm)) ? $cn - $dm : NAN;
+    };
+
+    $demMaxOrig = $demMax($numalim);
+    if (!is_finite($demMaxOrig)) $demMaxOrig = 0.0;
+
+    // Mapa equipo → {nombre, pct_feeder, tlc} (misma computación que /feeder/{nom}/equipos)
+    $allTds = tdsDeFeeder($dfAb, $nomAlim);
+    $kvaFeeder = 0.0;
+    foreach ($allTds as $td) { $kvaFeeder += (float)($td['potencia'] ?? 0); }
+    $eqMap = [];
+    foreach (equiposDeFeeder($dfAb, $nomAlim) as $row) {
+        $nombre = (string)($row['nombre_equip'] ?? '');
+        if ($nombre === '') continue;
+        $tdsEq = tdsDeEquipo($dfAb, $nombre, null);
+        $kvaEq = 0.0;
+        foreach ($tdsEq as $td) { $kvaEq += (float)($td['potencia'] ?? 0); }
+        $eqMap[strtoupper(trim($nombre))] = [
+            'nombre'     => $nombre,
+            'pct_feeder' => $kvaFeeder > 0 ? $kvaEq / $kvaFeeder * 100 : 0.0,
+            'tlc'        => tlcEsTlc($nombre),
+        ];
+    }
+
+    // Mapa numalim → nom_alim para nombrar destinos
+    $numalimMap = [];
+    foreach ($dfAb as $r) {
+        $nm = $r['numalim'] ?? null;
+        if ($nm !== null && !isset($numalimMap[(int)$nm])) $numalimMap[(int)$nm] = $r['nom_alim'] ?? '';
+    }
+
+    $lzFilas   = array_values(array_filter($dfLz, fn($r) => $r['numalim'] === $numalim));
+    $maniobras = [];
+    foreach ($lzFilas as $lz) {
+        $numposLz = (string)$lz['numpos_lz'];
+        $tlcLz    = tlcEsTlc($numposLz);
+        // equipos del origen en el troncal hacia este LZ que existen en el feeder
+        $equiposAbre = [];
+        foreach ((array)($lz['equipos_troncal'] ?? []) as $eq) {
+            $key = strtoupper(trim((string)$eq));
+            if (isset($eqMap[$key])) $equiposAbre[$key] = $eqMap[$key];
+        }
+        if (!$equiposAbre) continue;
+
+        foreach ((array)($lz['vecinos'] ?? []) as $v) {
+            $vn = (int)$v;
+            if ($vn === $numalim) continue;
+            // viabilidad del vecino para este LZ (misma lógica que /vecinos_lz)
+            $vRows = array_values(array_filter(
+                $dfLz, fn($r) => $r['numalim'] === $vn && $r['numpos_lz'] === $lz['numpos_lz']
+            ));
+            $viable = $vRows ? (bool)$vRows[0]['viable'] : true;
+            if (!$viable) continue;
+            $rem = $remanente($vn);
+            if (!is_finite($rem)) continue;
+            $destNom = $numalimMap[$vn] ?? (string)$vn;
+
+            foreach ($equiposAbre as $eq) {
+                $transfer = $demMaxOrig * $eq['pct_feeder'] / 100.0;
+                $holgura  = $rem - $transfer;
+                $tlcAbre  = (bool)$eq['tlc'];
+                $tier     = $tlcAbre ? ($tlcLz ? 1 : 2) : 3;
+                $maniobras[] = [
+                    'equipo_abre'  => $eq['nombre'],
+                    'tlc_abre'     => $tlcAbre,
+                    'numpos_lz'    => $numposLz,
+                    'tlc_lz'       => $tlcLz,
+                    'dest_numalim' => $vn,
+                    'dest_nom'     => $destNom,
+                    'transfer_A'   => round($transfer, 1),
+                    'remanente_A'  => round($rem, 1),
+                    'holgura_A'    => round($holgura, 1),
+                    'factible'     => $holgura >= 0,
+                    'tier'         => $tier,
+                    'tier_label'   => [1 => 'abre+cierra TLC', 2 => 'abre TLC · cierra manual', 3 => 'sin TLC'][$tier],
+                ];
+            }
+        }
+    }
+
+    // Ranking: factibles primero, luego tier TLC asc, luego mayor holgura.
+    // Se incluyen las no-factibles (marcadas) para no quedar vacíos en zonas congestionadas.
+    usort($maniobras, fn($a, $b) =>
+        ((int)$b['factible'] <=> (int)$a['factible'])
+        ?: ($a['tier'] <=> $b['tier'])
+        ?: ($b['holgura_A'] <=> $a['holgura_A'])
+    );
+    $seen = []; $top = [];
+    foreach ($maniobras as $m) {
+        $k = $m['equipo_abre'] . '|' . $m['dest_numalim'];
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $top[] = $m;
+        if (count($top) >= 5) break;
+    }
+    jsonPy($top);
 }
 
 // ── GET /api/debug/status ──────────────────────────────────────────────────────
