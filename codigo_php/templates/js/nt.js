@@ -1315,30 +1315,37 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
         const vals = prevSim.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
         if (vals.length) maxDemandB = Math.max(...vals);
       }
-      const sug = _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB);
+      const ranking = _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB);
+      state._sugCorrimiento = ranking;
       const elSug = document.getElementById("corrimiento-equipo-sugerido");
       if (elSug) {
-        if (sug) {
-          const prevSim2 = state.cadenaSimulaciones.length > 0
-            ? state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1] : null;
-          let maxDemB2 = null;
-          if (prevSim2?.tabla?.length) {
-            const vs = prevSim2.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
-            if (vs.length) maxDemB2 = Math.max(...vs);
-          }
-          const deltaEst = (maxDemB2 != null)
-            ? ` ≈ ${(maxDemB2 * sug.pct_feeder / 100).toFixed(1)} A estimado`
-            : "";
-          // Badge TLC del equipo sugerido (solo con sugerencias activas)
-          const tlcSug = state.sugerenciasTLC
-            ? (sug.tlc
-                ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
-                : ` <span class="badge bg-secondary" style="font-size:.6rem" title="Sin telecontrol — requiere maniobra en terreno">terreno</span>`)
-            : "";
-          elSug.innerHTML = `<i class="bi bi-lightbulb-fill text-warning me-1"></i>
-            Sugerido abrir <strong><code>${sug.nombre}</code></strong>${tlcSug}
-            <span class="badge bg-secondary ms-1">${sug.pct_feeder.toFixed(1)}% de ${nombreB}${deltaEst}</span>
-            <span class="text-muted ms-1">— remanente ${nombreC}: ${remanenteA != null ? remanenteA.toFixed(1)+' A' : remanenteC.toFixed(1)+'%'}</span>`;
+        if (ranking.length) {
+          const remTxt = remanenteA != null ? remanenteA.toFixed(1) + ' A' : remanenteC.toFixed(1) + '%';
+          const NUM = ["①", "②", "③"];
+          const filas = ranking.map((e, i) => {
+            const deltaEst = (maxDemandB != null && maxDemandB > 0)
+              ? ` <span class="text-muted">≈ ${(maxDemandB * e.pct_feeder / 100).toFixed(1)} A estimado</span>`
+              : "";
+            // Badge TLC del candidato (solo con sugerencias activas)
+            const tlcB = state.sugerenciasTLC
+              ? (e.tlc
+                  ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
+                  : ` <span class="badge bg-secondary" style="font-size:.6rem" title="Sin telecontrol — requiere maniobra en terreno">terreno</span>`)
+              : "";
+            return `<div class="d-flex align-items-center gap-1 py-1" data-sug-idx="${i}"
+                         style="border-top:${i > 0 ? '1px solid rgba(0,0,0,.06)' : 'none'}">
+                <span class="text-muted">${NUM[i] || ('#' + (i + 1))}</span>
+                <strong><code>${e.nombre}</code></strong>${tlcB}
+                <span class="badge bg-secondary ms-1">${e.pct_feeder.toFixed(1)}% de ${nombreB}</span>${deltaEst}
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 ms-auto" style="font-size:.72rem"
+                        title="Precargar este equipo como el que abre" onclick="precargarEquipoCorrimiento(${i})">
+                  <i class="bi bi-play-fill"></i>
+                </button>
+              </div>`;
+          }).join("");
+          elSug.innerHTML = `<div class="mb-1"><i class="bi bi-lightbulb-fill text-warning me-1"></i>
+            <strong>Candidatos para el corrimiento</strong>
+            <span class="text-muted ms-1">— remanente ${nombreC}: ${remTxt}</span></div>${filas}`;
         } else {
           elSug.innerHTML = `<span class="text-muted"><i class="bi bi-dash me-1"></i>Sin equipo sugerido para este rango de carga</span>`;
         }
@@ -1350,11 +1357,13 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
   }
 }
 
-function _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) {
-  if (!equipos?.length || remanenteC == null) return null;
+// Devuelve los candidatos de corrimiento rankeados (top-3), dentro de cargabilidad
+// del receptor. Con sugerencias TLC activas, los telecontrolados quedan primero.
+function _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) {
+  if (!equipos?.length || remanenteC == null) return [];
 
   const validos = equipos.filter(e => e.pct_feeder != null && e.pct_feeder > 0);
-  if (!validos.length) return null;
+  if (!validos.length) return [];
 
   let candidatos;
   if (remanenteA != null && maxDemandB != null && maxDemandB > 0) {
@@ -1365,14 +1374,38 @@ function _sugerirEquipoCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) 
     candidatos = validos.filter(e => e.pct_feeder <= remanenteC);
   }
 
-  if (!candidatos.length) return null;
-  const pick = arr => arr.reduce((best, e) => e.pct_feeder > best.pct_feeder ? e : best);
-  // Con sugerencias TLC activas, preferir un equipo telecontrolado dentro de cargabilidad.
-  if (state.sugerenciasTLC) {
-    const tlc = candidatos.filter(e => e.tlc);
-    if (tlc.length) return pick(tlc);
+  if (!candidatos.length) return [];
+  // Orden: con sugerencias TLC → telecontrolados primero; luego mayor % de traspaso.
+  const cmp = (a, b) => {
+    if (state.sugerenciasTLC && !!a.tlc !== !!b.tlc) return a.tlc ? -1 : 1;
+    return b.pct_feeder - a.pct_feeder;
+  };
+  return [...candidatos].sort(cmp).slice(0, 3);
+}
+
+// Precarga un candidato de corrimiento como el equipo que abre en el caso actual.
+// El destino ya quedó fijado por precargarCorrimiento (state.pendingPreselectDest).
+function precargarEquipoCorrimiento(idx) {
+  const e = (state._sugCorrimiento || [])[idx];
+  if (!e) return;
+
+  // 1. Modo "por equipo"
+  const rEq = document.getElementById("modo-equipo");
+  if (rEq) { rEq.checked = true; rEq.dispatchEvent(new Event("change", { bubbles: true })); }
+
+  // 2. Equipo que abre → dispara filtrado de destinos + preview de isla + reveal de cards
+  if (ts.equipo) {
+    const val = e.nombre;
+    if (!ts.equipo.options[val]) {
+      ts.equipo.addOption({ value: val, text: (val || '').toUpperCase(), label: (val || '').toUpperCase() });
+    }
+    ts.equipo.setValue(val);
   }
-  return pick(candidatos);
+
+  // Feedback visual: resaltar el candidato elegido
+  const cont = document.getElementById("corrimiento-equipo-sugerido");
+  if (cont) cont.querySelectorAll("[data-sug-idx]").forEach(el =>
+    el.style.background = (+el.dataset.sugIdx === idx) ? "rgba(25,135,84,.12)" : "");
 }
 
 // ── SUGERIDOR DE PRIMER TRASPASO (TLC) ────────────────────────────────────
@@ -1384,6 +1417,8 @@ function toggleSugerenciasTLC(on) {
   if (wrap) wrap.style.display = on ? "" : "none";
   const banner = document.getElementById("sugerencias-traspaso");
   if (!on && banner) banner.innerHTML = "";
+  // Persistir preferencia (localStorage: por navegador, no se comparte entre usuarios)
+  try { localStorage.setItem("sugerenciasTLC", on ? "1" : "0"); } catch (_) {}
 }
 
 // Consulta el backend y muestra las mejores maniobras TLC (top-3) como banner.

@@ -26,8 +26,9 @@ const state = {
   origenAlimConfig: null, // config de conductores/autotrafos del origen
   mesesDisponibles:[],   // lista YYYY-MM del Excel
   ultimaSimulacion: null,
-  sugerenciasTLC:   false, // switch NT: activa propuestas de traspaso/corrimiento TLC
+  sugerenciasTLC:   false, // switch NT: activa propuestas de traspaso/corrimiento TLC (persistido en localStorage)
   _sugTraspaso:     [],   // últimas maniobras sugeridas (para precargarTraspasoSugerido)
+  _sugCorrimiento:  [],   // últimos candidatos de corrimiento (para precargarEquipoCorrimiento)
   // VCC
   vccAlimIdx:       null, // numalim del alimentador VCC
   vccAlimNom:       null, // nom_alim VCC
@@ -83,6 +84,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ── Estado del caché de datos ─────────────────────────────────────────────
 async function cargarEstadoCache() {
+  // Restaurar preferencia del switch "Sugerencias TLC" (por navegador, no compartido)
+  if (localStorage.getItem("sugerenciasTLC") === "1") {
+    const chk = document.getElementById("chk-sugerencias-tlc");
+    if (chk) chk.checked = true;
+    if (typeof toggleSugerenciasTLC === "function") toggleSugerenciasTLC(true);
+  }
   try {
     const d = await apiFetch('/api/debug/status');
     actualizarLabelesCache(d);
