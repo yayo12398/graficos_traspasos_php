@@ -1315,30 +1315,41 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
         const vals = prevSim.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
         if (vals.length) maxDemandB = Math.max(...vals);
       }
-      const ranking = _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB);
+      // Mapa equipo → {numpos_lz, tlc_lz} del LZ que une B→C (para maniobra completa).
+      // Reusa /api/vecinos_lz: cruza equipos_troncal_orig × vecinos (igual que el backend).
+      const lzMap = await _mapaLzCorrimiento(numalimB, numalimC);
+      const ranking = _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB, lzMap);
       state._sugCorrimiento = ranking;
       const elSug = document.getElementById("corrimiento-equipo-sugerido");
       if (elSug) {
         if (ranking.length) {
           const remTxt = remanenteA != null ? remanenteA.toFixed(1) + ' A' : remanenteC.toFixed(1) + '%';
           const NUM = ["①", "②", "③"];
+          // Badge TLC/terreno o manual, gated por el switch de sugerencias.
+          const _tlcBadge = (ok, txtNo) => state.sugerenciasTLC
+            ? (ok
+                ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
+                : ` <span class="badge bg-secondary" style="font-size:.6rem" title="Sin telecontrol">${txtNo}</span>`)
+            : "";
           const filas = ranking.map((e, i) => {
-            const deltaEst = (maxDemandB != null && maxDemandB > 0)
-              ? ` <span class="text-muted">≈ ${(maxDemandB * e.pct_feeder / 100).toFixed(1)} A estimado</span>`
+            const transfTxt = (e.transfer != null)
+              ? ` · <span class="text-muted">transfiere ≈ ${e.transfer.toFixed(1)} A</span>`
               : "";
-            // Badge TLC del candidato (solo con sugerencias activas)
-            const tlcB = state.sugerenciasTLC
-              ? (e.tlc
-                  ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
-                  : ` <span class="badge bg-secondary" style="font-size:.6rem" title="Sin telecontrol — requiere maniobra en terreno">terreno</span>`)
+            const factBadge = (e.factible == null)
+              ? ""
+              : (e.factible
+                  ? ` <span class="badge bg-success" style="font-size:.6rem">cabe</span>`
+                  : ` <span class="badge bg-warning text-dark" style="font-size:.6rem" title="Excede la cargabilidad del destino">excede ${Math.abs(e.holgura).toFixed(1)} A</span>`);
+            const lzTxt = e.numpos_lz
+              ? ` <span class="text-muted">→ cierra</span> <code>${e.numpos_lz}</code>${_tlcBadge(e.tlc_lz, 'manual')}`
               : "";
-            return `<div class="d-flex align-items-center gap-1 py-1" data-sug-idx="${i}"
+            return `<div class="d-flex align-items-center flex-wrap gap-1 py-1" data-sug-idx="${i}"
                          style="border-top:${i > 0 ? '1px solid rgba(0,0,0,.06)' : 'none'}">
                 <span class="text-muted">${NUM[i] || ('#' + (i + 1))}</span>
-                <strong><code>${e.nombre}</code></strong>${tlcB}
-                <span class="badge bg-secondary ms-1">${e.pct_feeder.toFixed(1)}% de ${nombreB}</span>${deltaEst}
+                <strong><code>${e.nombre}</code></strong>${_tlcBadge(e.tlc, 'terreno')}${lzTxt}
+                <span class="badge bg-secondary ms-1">${e.pct_feeder.toFixed(1)}% de ${nombreB}</span>${transfTxt}${factBadge}
                 <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 ms-auto" style="font-size:.72rem"
-                        title="Precargar este equipo como el que abre" onclick="precargarEquipoCorrimiento(${i})">
+                        title="Precargar esta maniobra (equipo + LZ)" onclick="precargarEquipoCorrimiento(${i})">
                   <i class="bi bi-play-fill"></i>
                 </button>
               </div>`;
@@ -1357,30 +1368,71 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
   }
 }
 
-// Devuelve los candidatos de corrimiento rankeados (top-3), dentro de cargabilidad
-// del receptor. Con sugerencias TLC activas, los telecontrolados quedan primero.
-function _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB) {
-  if (!equipos?.length || remanenteC == null) return [];
-
-  const validos = equipos.filter(e => e.pct_feeder != null && e.pct_feeder > 0);
-  if (!validos.length) return [];
-
-  let candidatos;
-  if (remanenteA != null && maxDemandB != null && maxDemandB > 0) {
-    // Comparación en amperes: delta_estimado = maxDemandB × p ≤ remanenteA
-    candidatos = validos.filter(e => (maxDemandB * e.pct_feeder / 100) <= remanenteA);
-  } else {
-    // Fallback: comparación porcentual (solo válida si CN_B ≈ CN_C)
-    candidatos = validos.filter(e => e.pct_feeder <= remanenteC);
+// Construye el mapa equipo→{numpos_lz, tlc_lz} del LZ que une el origen B con el
+// destino C, reusando /api/vecinos_lz (mismo cruce equipos_troncal × vecinos que el
+// backend de sugerencias_traspaso). Prefiere LZ viable hacia C; si solo hay no-viable,
+// lo incluye igual (respeta el traspaso forzado). Prefiere el LZ telecontrolado.
+async function _mapaLzCorrimiento(numalimB, numalimC) {
+  const map = {};
+  let lzs;
+  try { lzs = await apiFetch(`/api/vecinos_lz/${numalimB}`); }
+  catch (_) { return map; }
+  if (!Array.isArray(lzs)) return map;
+  // Preferir ties viables; recolectar no-viables como respaldo.
+  for (const pref of [true, false]) {
+    for (const lz of lzs) {
+      const haciaC = (lz.vecinos || []).some(v => v.numalim == numalimC && !!v.viable === pref);
+      if (!haciaC) continue;
+      for (const eq of (lz.equipos_troncal_orig || [])) {
+        const key = String(eq).toUpperCase().trim();
+        // No sobreescribir un tie ya fijado, salvo para preferir el telecontrolado.
+        if (!(key in map) || (lz.tlc && !map[key].tlc_lz)) {
+          map[key] = { numpos_lz: lz.numpos_lz, tlc_lz: !!lz.tlc };
+        }
+      }
+    }
+    if (Object.keys(map).length) break; // ya hay ties viables → no bajar a no-viables
   }
+  return map;
+}
 
-  if (!candidatos.length) return [];
-  // Orden: con sugerencias TLC → telecontrolados primero; luego mayor % de traspaso.
+// Devuelve los candidatos de corrimiento como maniobras completas rankeadas (top-3):
+// solo equipos que unen B→C vía un LZ (lzMap), anexando el LZ que cierra, el monto a
+// transferir y el estado cabe/excede. Con sugerencias TLC activas, los telecontrolados
+// (equipo o LZ) quedan primero. Los no-factibles se incluyen marcados (no se ocultan).
+function _rankearEquiposCorrimiento(equipos, remanenteC, remanenteA, maxDemandB, lzMap) {
+  if (!equipos?.length || remanenteC == null) return [];
+  lzMap = lzMap || {};
+
+  const cand = [];
+  for (const e of equipos) {
+    if (e.pct_feeder == null || e.pct_feeder <= 0) continue;
+    const key = String(e.nombre || "").toUpperCase().trim();
+    const tie = lzMap[key];
+    if (!tie) continue; // sin LZ hacia C → no es candidato de corrimiento
+    const transfer = (maxDemandB != null && maxDemandB > 0) ? maxDemandB * e.pct_feeder / 100 : null;
+    const holgura  = (transfer != null && remanenteA != null) ? remanenteA - transfer : null;
+    cand.push({
+      ...e,
+      numpos_lz: tie.numpos_lz,
+      tlc_lz:    tie.tlc_lz,
+      transfer,
+      holgura,
+      factible:  holgura != null ? holgura >= 0 : null,
+    });
+  }
+  if (!cand.length) return [];
+  // Orden: TLC primero (equipo o LZ) con el switch; factibles antes; luego mayor %.
   const cmp = (a, b) => {
-    if (state.sugerenciasTLC && !!a.tlc !== !!b.tlc) return a.tlc ? -1 : 1;
+    if (state.sugerenciasTLC) {
+      const at = (a.tlc || a.tlc_lz) ? 1 : 0, bt = (b.tlc || b.tlc_lz) ? 1 : 0;
+      if (at !== bt) return bt - at;
+    }
+    const af = a.factible === false ? 0 : 1, bf = b.factible === false ? 0 : 1;
+    if (af !== bf) return bf - af;
     return b.pct_feeder - a.pct_feeder;
   };
-  return [...candidatos].sort(cmp).slice(0, 3);
+  return cand.sort(cmp).slice(0, 3);
 }
 
 // Precarga un candidato de corrimiento como el equipo que abre en el caso actual.
@@ -1392,6 +1444,9 @@ function precargarEquipoCorrimiento(idx) {
   // 1. Modo "por equipo"
   const rEq = document.getElementById("modo-equipo");
   if (rEq) { rEq.checked = true; rEq.dispatchEvent(new Event("change", { bubbles: true })); }
+
+  // 1b. LZ que cierra preseleccionado antes del setValue → mostrarEquipoCierra lo marca
+  if (e.numpos_lz) state.selectedNumposLZ = e.numpos_lz;
 
   // 2. Equipo que abre → dispara filtrado de destinos + preview de isla + reveal de cards
   if (ts.equipo) {
