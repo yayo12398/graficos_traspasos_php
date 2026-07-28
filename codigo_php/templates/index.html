@@ -98,6 +98,8 @@
     details > summary { outline:none; user-select:none; }
     details > summary .vcc-chevron { transition:transform .2s; }
     details[open] > summary .vcc-chevron { transform:rotate(180deg); }
+    #det-caso-actual > summary .bi-chevron-down { transition:transform .2s; }
+    #det-caso-actual:not([open]) > summary .bi-chevron-down { transform:rotate(-90deg); }
     .tabla-vcc th { background:var(--enel-blue); color:#fff; font-size:.82rem; }
     .tabla-vcc td { font-size:.82rem; padding:.3rem .6rem !important; }
     .bloque-summary { padding-left:.75rem; }
@@ -1364,7 +1366,7 @@
 
 <script>
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.html — bloque <script>  (~9692 L total)                    ║
+// ║  ÍNDICE DE index.html — bloque <script>  (~9609 L total)                    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  GLOBAL / INIT / CACHÉ                                         L.1629–1825  ║
 // ║    window.onerror  captura errores JS  |  state{}  global app  L.1629/1635  ║
@@ -1377,14 +1379,14 @@
 // ║    recargarTlc()         fuerza reload caché TLC                 L.1801      ║
 // ║    registrarEventos()    wires de eventos DOM                    L.1825      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS GENERALES                                              L.1724–2099  ║
+// ║  HELPERS GENERALES                                              L.1872–2099  ║
 // ║    apiFetch(url,opts)    fetch con manejo de errores             L.1872      ║
 // ║    spinner(show,msg)     muestra/oculta spinner global           L.1877      ║
 // ║    copiarTablaEl(t,btn)  copia tabla HTML+TSV al clipboard       L.2012      ║
 // ║    agregarBotonesCopia(c)  inserta botones copiar en container   L.2058      ║
 // ║    AT_PREFIJOS/_atBordePrio/_esBordeATR/_escHtml()              L.2083      ║
 // ║    esAlimFrg/frgBadge()  consulta FRG + badge por alim          L.2099      ║
-// ║    fmt(v,dec)            formatea número o "—"                   L.1724      ║
+// ║    fmt(v,dec)            formatea número o "—"                   L.3757      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  MESES / PERÍODO                                                L.1885–1989  ║
 // ║    fmtMes(yyyymm)              'YYYY-MM' → 'Mes YY'             L.1885      ║
@@ -1459,170 +1461,168 @@
 // ║    limpiarCadena()             reinicia cadena simulaciones      L.3598      ║
 // ║    colapsarCasoActual()        colapsa UI del caso activo        L.3632      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  RESULTADOS — RENDER                                            L.3759–4778  ║
+// ║  RESULTADOS — RENDER                                            L.3759–4645  ║
 // ║    mostrarResultados(data)     render principal post-simulación  L.3759      ║
 // ║    renderNotaATR(data)         banner ámbar ATR + corriente ef.  L.3913      ║
 // ║    renderComentariosCaso(data) bloque <details> comentarios      L.3976      ║
 // ║    _destroyCharts(...ids)      destruye instancias Chart.js      L.4039      ║
 // ║    _mesLabel(yyyymm)           'YYYY-MM' → 'Ene 24'             L.4043      ║
 // ║    renderPeorCaso(data)        sección peor caso Δ fijo          L.4048      ║
-// ║    renderCharts(data)          gráficos barras/dona Chart.js     L.4191      ║
-// ║    _renderTrafoChart(...)      chart línea trafo I_ant/I_des     L.4324      ║
-// ║    _trafoLabel(trafo)          etiqueta trafo (nombre·kVA·barra) L.4414      ║
-// ║    renderTrafos(oOrig,oDest)   bloque trafos texto resumido      L.4423      ║
-// ║    toggleSecMam()              abre/cierra sección MAM (lazy)    L.4458      ║
-// ║    renderMamSection(data)      sección MAM colapsable            L.4481      ║
-// ║    renderMamCharts(data)       charts perfil MAM                 L.4501      ║
-// ║    renderMamTrafos(...)        charts/tabla trafos MAM           L.4663      ║
-// ║    renderMamTable(d,headId,bodyId) tabla FU mes a mes genérica   L.4708      ║
-// ║    renderTablaResumenEjecutivo(d)  tabla FU ejecutiva al frente  L.4771      ║
-// ║    renderTablaTrafosEjecutivo(d)   tabla trafos ejecutiva        L.4778      ║
+// ║    _renderTrafoChart(...)      chart línea trafo I_ant/I_des     L.4191      ║
+// ║    _trafoLabel(trafo)          etiqueta trafo (nombre·kVA·barra) L.4281      ║
+// ║    renderTrafos(oOrig,oDest)   bloque trafos texto resumido      L.4290      ║
+// ║    toggleSecMam()              abre/cierra sección MAM (lazy)    L.4325      ║
+// ║    renderMamSection(data)      sección MAM colapsable            L.4348      ║
+// ║    renderMamCharts(data)       charts perfil MAM                 L.4368      ║
+// ║    renderMamTrafos(...)        charts/tabla trafos MAM           L.4530      ║
+// ║    renderMamTable(d,headId,bodyId) tabla FU mes a mes genérica   L.4575      ║
+// ║    renderTablaResumenEjecutivo(d)  tabla FU ejecutiva al frente  L.4638      ║
+// ║    renderTablaTrafosEjecutivo(d)   tabla trafos ejecutiva        L.4645      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  GUARDAR / DESCARGAR                                            L.4876–5404  ║
-// ║    guardarTransferencia()      POST /api/guardar_transferencia   L.4876      ║
-// ║    _mapCasoDescarga(s,n)       mapea caso simulado a body HTML   L.4930      ║
-// ║    _serializeChartCfg(chart)   serializa config Chart.js → obj  L.4967      ║
-// ║    _prepararClonPanel(panel)  clon estatico del panel           L.5027      ║
-// ║    _ensamblarDocInforme(t,fn,c)  doc HTML autonomo+charts       L.5038      ║
-// ║    _construirInformeHTML(t)    captura DOM vivo → HTML autónomo  L.5069      ║
-// ║    _construirInformeCadenaHTML()  informe de cadena DOM         L.5348      ║
-// ║    _descargarBlobHTML(html,f)  blob download + link temporal     L.5394      ║
-// ║    descargarHTML()             POST /api/descargar_html          L.5404      ║
+// ║  GUARDAR / DESCARGAR                                            L.4743–5237  ║
+// ║    guardarTransferencia()      POST /api/guardar_transferencia   L.4743      ║
+// ║    _serializeChartCfg(chart)   serializa config Chart.js → obj  L.4800      ║
+// ║    _prepararClonPanel(panel)  clon estatico del panel           L.4860      ║
+// ║    _ensamblarDocInforme(t,fn,c)  doc HTML autonomo+charts       L.4871      ║
+// ║    _construirInformeHTML(t)    captura DOM vivo → HTML autónomo  L.4902      ║
+// ║    _construirInformeCadenaHTML()  informe de cadena DOM         L.5181      ║
+// ║    _descargarBlobHTML(html,f)  blob download + link temporal     L.5227      ║
+// ║    descargarHTML()             POST /api/descargar_html          L.5237      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  FEEDERS EN COMISIONAMIENTO (tab)                               L.5453–6292  ║
-// ║    cargarFeedersNuevos()       GET /api/feeders_nuevos           L.5453      ║
-// ║    _feederCambiosTopoHTML(n,c) HTML lista cambios topológicos    L.5505      ║
-// ║    agregarCambioTopo(nombre)   POST cambio topológico            L.5540      ║
-// ║    eliminarCambioTopo(n,i)     DELETE cambio topológico          L.5558      ║
-// ║    verDetalleFeeder(nombre)    GET detalle + render completo     L.5571      ║
-// ║    eliminarTransferencia(f,i)  DELETE transferencia de feeder    L.5764      ║
-// ║    eliminarFeeder(nombre)      DELETE /api/feeders_nuevos/{n}    L.5778      ║
-// ║    _renderFeederAcumChart(...) chart acumulado del feeder        L.5794      ║
-// ║    _destroyModalTCharts()      destruye charts del modal         L.5851      ║
-// ║    verDetalleTransferencia(f,i) modal detalle transferencia      L.5856      ║
-// ║    _renderModalCharts(...)     charts dentro del modal           L.6080      ║
-// ║    _renderTrafoChartGeneric(.) chart trafo genérico reutiliz.    L.6155      ║
-// ║    verDetalleTDs(tds)          modal con listado de TDs          L.6218      ║
-// ║    descargarInformeFeeder(n)   GET informe HTML feeder           L.6273      ║
-// ║    descargarTransferencia(f,i) GET HTML de una transferencia     L.6292      ║
+// ║  FEEDERS EN COMISIONAMIENTO (tab)                               L.5286–6125  ║
+// ║    cargarFeedersNuevos()       GET /api/feeders_nuevos           L.5286      ║
+// ║    _feederCambiosTopoHTML(n,c) HTML lista cambios topológicos    L.5338      ║
+// ║    agregarCambioTopo(nombre)   POST cambio topológico            L.5373      ║
+// ║    eliminarCambioTopo(n,i)     DELETE cambio topológico          L.5391      ║
+// ║    verDetalleFeeder(nombre)    GET detalle + render completo     L.5404      ║
+// ║    eliminarTransferencia(f,i)  DELETE transferencia de feeder    L.5597      ║
+// ║    eliminarFeeder(nombre)      DELETE /api/feeders_nuevos/{n}    L.5611      ║
+// ║    _renderFeederAcumChart(...) chart acumulado del feeder        L.5627      ║
+// ║    _destroyModalTCharts()      destruye charts del modal         L.5684      ║
+// ║    verDetalleTransferencia(f,i) modal detalle transferencia      L.5689      ║
+// ║    _renderModalCharts(...)     charts dentro del modal           L.5913      ║
+// ║    _renderTrafoChartGeneric(.) chart trafo genérico reutiliz.    L.5988      ║
+// ║    verDetalleTDs(tds)          modal con listado de TDs          L.6051      ║
+// ║    descargarInformeFeeder(n)   GET informe HTML feeder           L.6106      ║
+// ║    descargarTransferencia(f,i) GET HTML de una transferencia     L.6125      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — PUNTO / ALIM A (inputs panel)                            L.6352–7073  ║
-// ║    vccGetNumpos/NuevoTp/ModoPunto/IdCliente/NombreCliente/Dir() L.6352–6357  ║
-// ║    vccInicializarSelect()      TomSelect numérico de punto VCC   L.6360      ║
-// ║    vccActualizarUIModo(modo)   muestra/oculta campos por modo    L.6430      ║
-// ║    vccCargarEquipos(nom,modo)  GET equipos alimentador A         L.6443      ║
-// ║    vccLimpiarPunto()           limpia selección de punto VCC     L.6563      ║
-// ║    vccBuscarPunto(numpos)      GET /api/vcc/punto/{numpos}       L.6585      ║
-// ║    vccRenderEquiposInputs(eqs) tabla inputs CN/tipo alim A       L.6637      ║
-// ║    _vccEqRow(eq,…,atRecAltaNom) fila equipo (7 params)           L.6703      ║
-// ║    _vccAutotrafoSepRow(kv,rec,recBaja) separador 23/12kV         L.6765      ║
-// ║    _vccCondBtnRow/CondRow(...) fila botón/conductor intermedio   L.6777/6787 ║
-// ║    vccInsertarConductor(btn)   inserta fila conductor            L.6800      ║
-// ║    vccEliminarConductor(btn)   elimina fila conductor            L.6809      ║
-// ║    vccGuardarConfigAlim()      POST config conductores+autotraf. L.6999      ║
-// ║    vccRegistrarAutotrafo(rec,kv) guarda autotrafo en config alim L.7027      ║
-// ║    vccEliminarAutotrafo(recBaja) elimina ATR específico          L.7053      ║
-// ║    vccRegistrarRecBaja(recBaja,recAlta) guarda rec_baja en ATR   L.7073      ║
+// ║  VCC — PUNTO / ALIM A (inputs panel)                            L.6185–6906  ║
+// ║    vccGetNumpos/NuevoTp/ModoPunto/IdCliente/NombreCliente/Dir() L.6185–6190  ║
+// ║    vccInicializarSelect()      TomSelect numérico de punto VCC   L.6193      ║
+// ║    vccActualizarUIModo(modo)   muestra/oculta campos por modo    L.6263      ║
+// ║    vccCargarEquipos(nom,modo)  GET equipos alimentador A         L.6276      ║
+// ║    vccLimpiarPunto()           limpia selección de punto VCC     L.6396      ║
+// ║    vccBuscarPunto(numpos)      GET /api/vcc/punto/{numpos}       L.6418      ║
+// ║    vccRenderEquiposInputs(eqs) tabla inputs CN/tipo alim A       L.6470      ║
+// ║    _vccEqRow(eq,…,atRecAltaNom) fila equipo (7 params)           L.6536      ║
+// ║    _vccAutotrafoSepRow(kv,rec,recBaja) separador 23/12kV         L.6598      ║
+// ║    _vccCondBtnRow/CondRow(...) fila botón/conductor intermedio   L.6610/6620 ║
+// ║    vccInsertarConductor(btn)   inserta fila conductor            L.6633      ║
+// ║    vccEliminarConductor(btn)   elimina fila conductor            L.6642      ║
+// ║    vccGuardarConfigAlim()      POST config conductores+autotraf. L.6832      ║
+// ║    vccRegistrarAutotrafo(rec,kv) guarda autotrafo en config alim L.6860      ║
+// ║    vccEliminarAutotrafo(recBaja) elimina ATR específico          L.6886      ║
+// ║    vccRegistrarRecBaja(recBaja,recAlta) guarda rec_baja en ATR   L.6906      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — ALIM B (receptor troncal)                                L.6821–6973  ║
-// ║    vccCargarEquiposB(nom,tr)   GET equipos alimentador B         L.6821      ║
-// ║    vccRenderEquiposBInputs(eqs,c) tabla inputs alim B            L.6846      ║
-// ║    _vccbEqRow/CondBtnRow/CondRow(.) filas alim B               L.6876–6917  ║
-// ║    vccbInsertarConductor/EliminarConductor(btn) conductores B    L.6929/6937 ║
-// ║    vccGuardarConfigAlimB()     POST config conductores alim B    L.6947      ║
-// ║    vccLeerCNsEquiposB()        lee CNs ingresados de alim B      L.6973      ║
+// ║  VCC — ALIM B (receptor troncal)                                L.6654–6806  ║
+// ║    vccCargarEquiposB(nom,tr)   GET equipos alimentador B         L.6654      ║
+// ║    vccRenderEquiposBInputs(eqs,c) tabla inputs alim B            L.6679      ║
+// ║    _vccbEqRow/CondBtnRow/CondRow(.) filas alim B               L.6709–6750  ║
+// ║    vccbInsertarConductor/EliminarConductor(btn) conductores B    L.6762/6770 ║
+// ║    vccGuardarConfigAlimB()     POST config conductores alim B    L.6780      ║
+// ║    vccLeerCNsEquiposB()        lee CNs ingresados de alim B      L.6806      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — TRASPASO SIMULTÁNEO (TSP)                                L.7102–7305  ║
-// ║    tspCargarEquiposB(n,nom,tr) GET equipos TSP alim B            L.7102      ║
-// ║    tspRenderManualB()          render panel troncal manual       L.7145      ║
-// ║    tspAgregarEquipoB(n)        agrega equipo al troncal manual   L.7183      ║
-// ║    tspQuitarEquipoB(n)         quita equipo del troncal manual   L.7192      ║
-// ║    tspRenderEquiposBTabla(eqs) tabla equipos TSP alim B          L.7197      ║
-// ║    _tspEqBRow(eq)              fila equipo TSP alim B            L.7228      ║
-// ║    tspGuardarConfigAlimB()     POST config conductores TSP B     L.7254      ║
-// ║    tspLeerEquiposB()           lee equipos TSP alim B            L.7281      ║
-// ║    tspRefrescarCNsB()          recarga CNs desde config TSP B    L.7305      ║
+// ║  VCC — TRASPASO SIMULTÁNEO (TSP)                                L.6935–7138  ║
+// ║    tspCargarEquiposB(n,nom,tr) GET equipos TSP alim B            L.6935      ║
+// ║    tspRenderManualB()          render panel troncal manual       L.6978      ║
+// ║    tspAgregarEquipoB(n)        agrega equipo al troncal manual   L.7016      ║
+// ║    tspQuitarEquipoB(n)         quita equipo del troncal manual   L.7025      ║
+// ║    tspRenderEquiposBTabla(eqs) tabla equipos TSP alim B          L.7030      ║
+// ║    _tspEqBRow(eq)              fila equipo TSP alim B            L.7061      ║
+// ║    tspGuardarConfigAlimB()     POST config conductores TSP B     L.7087      ║
+// ║    tspLeerEquiposB()           lee equipos TSP alim B            L.7114      ║
+// ║    tspRefrescarCNsB()          recarga CNs desde config TSP B    L.7138      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — MANIOBRA / LZ / DESTINO                                  L.7318–7620  ║
-// ║    vccToggleTraspaso()         muestra/oculta panel traspaso     L.7318      ║
-// ║    vccTraspasoModo(modo)       cambia modo de traspaso           L.7326      ║
-// ║    _vccPoblarAbreDropdown()    carga dropdown equipo que abre    L.7341      ║
-// ║    vccTraspasoAbreChange(eq)   onChange equipo que abre          L.7363      ║
-// ║    vccMostrarLzCierra(list)    auto/radio selector LZ cierra     L.7432      ║
-// ║    vccSeleccionarLz(lz)        selecciona LZ manualmente         L.7469      ║
-// ║    vccLzCierraChange(numpos)   onChange selección LZ             L.7475      ║
-// ║    vccTraspasoDestinoChange(n) onChange destino traspaso VCC     L.7484      ║
-// ║    _vccRenderDestinoManual(id) render inputs destino manual      L.7544      ║
-// ║    vccDestinoManualChange(sel) onChange destino manual           L.7573      ║
-// ║    vccGetTraspasoParams()      → body para evaluar traspaso      L.7592      ║
-// ║    vccLeerCNsEquipos()         lee CNs ingresados alim A         L.7620      ║
+// ║  VCC — MANIOBRA / LZ / DESTINO                                  L.7151–7453  ║
+// ║    vccToggleTraspaso()         muestra/oculta panel traspaso     L.7151      ║
+// ║    vccTraspasoModo(modo)       cambia modo de traspaso           L.7159      ║
+// ║    _vccPoblarAbreDropdown()    carga dropdown equipo que abre    L.7174      ║
+// ║    vccTraspasoAbreChange(eq)   onChange equipo que abre          L.7196      ║
+// ║    vccMostrarLzCierra(list)    auto/radio selector LZ cierra     L.7265      ║
+// ║    vccSeleccionarLz(lz)        selecciona LZ manualmente         L.7302      ║
+// ║    vccLzCierraChange(numpos)   onChange selección LZ             L.7308      ║
+// ║    vccTraspasoDestinoChange(n) onChange destino traspaso VCC     L.7317      ║
+// ║    _vccRenderDestinoManual(id) render inputs destino manual      L.7377      ║
+// ║    vccDestinoManualChange(sel) onChange destino manual           L.7406      ║
+// ║    vccGetTraspasoParams()      → body para evaluar traspaso      L.7425      ║
+// ║    vccLeerCNsEquipos()         lee CNs ingresados alim A         L.7453      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — FICHA EQUIPO / MESES                                     L.7664–7831  ║
-// ║    fichaAbrirModal(numpos,cb)  abre modal ficha equipo           L.7664      ║
-// ║    fichaToggleCampos()         muestra/oculta campos ficha       L.7720      ║
-// ║    _fichaDefaultTipo(numpos)   infiere tipo equipo por prefijo   L.7725      ║
-// ║    fichaGuardar()              POST /api/equipos/config/{n}      L.7733      ║
-// ║    fichaEliminar()             DELETE /api/equipos/config/{n}    L.7768      ║
-// ║    vccRenderMeses(historico)   checkboxes período VCC            L.7781      ║
-// ║    vccMesToggle(chk)           onChange mes VCC                  L.7803      ║
-// ║    vccMesesSeleccionados()     → array meses VCC marcados        L.7811      ║
-// ║    vccActualizarLblMeses()     actualiza label meses VCC         L.7814      ║
-// ║    vccToggleHistorico(activo)  activa período histórico VCC      L.7819      ║
-// ║    vccSelMeses(checked)        sel./desel. todos meses VCC       L.7831      ║
+// ║  VCC — FICHA EQUIPO / MESES                                     L.7497–7664  ║
+// ║    fichaAbrirModal(numpos,cb)  abre modal ficha equipo           L.7497      ║
+// ║    fichaToggleCampos()         muestra/oculta campos ficha       L.7553      ║
+// ║    _fichaDefaultTipo(numpos)   infiere tipo equipo por prefijo   L.7558      ║
+// ║    fichaGuardar()              POST /api/equipos/config/{n}      L.7566      ║
+// ║    fichaEliminar()             DELETE /api/equipos/config/{n}    L.7601      ║
+// ║    vccRenderMeses(historico)   checkboxes período VCC            L.7614      ║
+// ║    vccMesToggle(chk)           onChange mes VCC                  L.7636      ║
+// ║    vccMesesSeleccionados()     → array meses VCC marcados        L.7644      ║
+// ║    vccActualizarLblMeses()     actualiza label meses VCC         L.7647      ║
+// ║    vccToggleHistorico(activo)  activa período histórico VCC      L.7652      ║
+// ║    vccSelMeses(checked)        sel./desel. todos meses VCC       L.7664      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  VCC — EVALUAR / RESULTADOS                                     L.7843–8472  ║
-// ║    vccEvaluar()                POST /api/vcc/evaluar             L.7843      ║
-// ║    _vccEstadoEquipos(eqs)      HTML badge estado equipos         L.7887      ║
-// ║    _vccResumenHTML(pA,pT,n,e)  HTML resumen VCC por escenario    L.7894      ║
-// ║    _vccRenderReceptorEnEscenario(sfx,dest) bloque receptor       L.7922      ║
-// ║    vccRenderResultados(r,t,e,i) render resultado VCC completo    L.7980      ║
-// ║    initTooltips(container)     inicializa tooltips Bootstrap      L.8069      ║
-// ║    vccTablaFU(tabla,r,opts)    tabla FU transpuesta meses=cols   L.8080      ║
-// ║    vccTablaEquipos(eqs,dI)     tabla equipos upstream VCC        L.8176      ║
-// ║    vccGuardar()                POST /api/vcc/guardar             L.8400      ║
-// ║    vccEliminar(idx)            DELETE evaluación VCC             L.8461      ║
-// ║    vccDescargarHTML()          POST /api/vcc/descargar_html      L.8472      ║
+// ║  VCC — EVALUAR / RESULTADOS                                     L.7676–8305  ║
+// ║    vccEvaluar()                POST /api/vcc/evaluar             L.7676      ║
+// ║    _vccEstadoEquipos(eqs)      HTML badge estado equipos         L.7720      ║
+// ║    _vccResumenHTML(pA,pT,n,e)  HTML resumen VCC por escenario    L.7727      ║
+// ║    _vccRenderReceptorEnEscenario(sfx,dest) bloque receptor       L.7755      ║
+// ║    vccRenderResultados(r,t,e,i) render resultado VCC completo    L.7813      ║
+// ║    initTooltips(container)     inicializa tooltips Bootstrap      L.7902      ║
+// ║    vccTablaFU(tabla,r,opts)    tabla FU transpuesta meses=cols   L.7913      ║
+// ║    vccTablaEquipos(eqs,dI)     tabla equipos upstream VCC        L.8009      ║
+// ║    vccGuardar()                POST /api/vcc/guardar             L.8233      ║
+// ║    vccEliminar(idx)            DELETE evaluación VCC             L.8294      ║
+// ║    vccDescargarHTML()          POST /api/vcc/descargar_html      L.8305      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONFIGURACIÓN (tab)                                            L.8532–9320  ║
-// ║    cfgMostrar(seccion)         pill activa: equipos|alim|ajust   L.8532      ║
-// ║    cargarEquiposGlobal()       GET /api/equipos/todos            L.8552      ║
-// ║    filtrarEquiposGlobal()      filtro búsqueda ≥2 chars          L.8569      ║
-// ║    renderEquiposGlobal(l,b,q)  tabla equipos configurados        L.8592      ║
-// ║    cfgEliminarEquipo(numpos)   DELETE /api/equipos/config/{n}    L.8659      ║
-// ║    cargarAlimentadoresConfig() GET /api/alimentadores/config     L.8671      ║
-// ║    renderAlimentadoresConfig(d) lista feeders — cards ⚡AT multi L.8682      ║
-// ║    cfgToggleAlim(id,nom)       expande/colapsa fila alim.        L.8789      ║
-// ║    cfgCargarEquiposAlim(n,c,s) GET equipos de feeder (lazy)      L.8804      ║
-// ║    cfgAlimEliminarATRLista(n,rb) DELETE ATR desde lista alim.    L.8855      ║
-// ║    cfgEliminarAlim(nom)        DELETE config de alimentador      L.8871      ║
-// ║    cfgEliminarConductorAlim(n,i) DELETE conductor específico     L.8879      ║
-// ║    _cfgAlimGetNoms()           GET nom_alim de todos los alims   L.8897      ║
-// ║    cfgAlimBuscar(q)            búsqueda alimentador por nombre   L.8913      ║
-// ║    cfgAlimSeleccionar(nom)     GET detalle alim + render panel   L.8928      ║
-// ║    cfgAlimCerrarDetalle()      cierra panel detalle alim.        L.8959      ║
-// ║    cfgAlimFichaCallback()      callback ficha tras guardar       L.8965      ║
-// ║    _cfgAlimFichaListCb(n,s)    callback ficha desde lista        L.8971      ║
-// ║    renderCfgAlimDetalle(data)  render panel detalle alim multi-AT L.8977     ║
-// ║    cfgCargarTpsAt(nomAlim)     GET TPs por lado AT (23/12 kV)    L.9175      ║
-// ║    cfgAtTipoChange()           swap selectores tipo ATR          L.9208      ║
-// ║    cfgAlimRegistrarAutotrafo(nom) POST autotrafo en config alim  L.9228      ║
-// ║    cfgAlimEliminarAutotrafo(nom,rb) DELETE ATR específico        L.9252      ║
-// ║    cargarAjustesAdmin()        GET /api/ajustes → tabla admin    L.9269      ║
-// ║    eliminarAjusteAdmin(t,n,m)  DELETE ajuste desde vista admin   L.9320      ║
+// ║  CONFIGURACIÓN (tab)                                            L.8365–9153  ║
+// ║    cfgMostrar(seccion)         pill activa: equipos|alim|ajust   L.8365      ║
+// ║    cargarEquiposGlobal()       GET /api/equipos/todos            L.8385      ║
+// ║    filtrarEquiposGlobal()      filtro búsqueda ≥2 chars          L.8402      ║
+// ║    renderEquiposGlobal(l,b,q)  tabla equipos configurados        L.8425      ║
+// ║    cfgEliminarEquipo(numpos)   DELETE /api/equipos/config/{n}    L.8492      ║
+// ║    cargarAlimentadoresConfig() GET /api/alimentadores/config     L.8504      ║
+// ║    renderAlimentadoresConfig(d) lista feeders — cards ⚡AT multi L.8515      ║
+// ║    cfgToggleAlim(id,nom)       expande/colapsa fila alim.        L.8622      ║
+// ║    cfgCargarEquiposAlim(n,c,s) GET equipos de feeder (lazy)      L.8637      ║
+// ║    cfgAlimEliminarATRLista(n,rb) DELETE ATR desde lista alim.    L.8688      ║
+// ║    cfgEliminarAlim(nom)        DELETE config de alimentador      L.8704      ║
+// ║    cfgEliminarConductorAlim(n,i) DELETE conductor específico     L.8712      ║
+// ║    _cfgAlimGetNoms()           GET nom_alim de todos los alims   L.8730      ║
+// ║    cfgAlimBuscar(q)            búsqueda alimentador por nombre   L.8746      ║
+// ║    cfgAlimSeleccionar(nom)     GET detalle alim + render panel   L.8761      ║
+// ║    cfgAlimCerrarDetalle()      cierra panel detalle alim.        L.8792      ║
+// ║    cfgAlimFichaCallback()      callback ficha tras guardar       L.8798      ║
+// ║    _cfgAlimFichaListCb(n,s)    callback ficha desde lista        L.8804      ║
+// ║    renderCfgAlimDetalle(data)  render panel detalle alim multi-AT L.8810     ║
+// ║    cfgCargarTpsAt(nomAlim)     GET TPs por lado AT (23/12 kV)    L.9008      ║
+// ║    cfgAtTipoChange()           swap selectores tipo ATR          L.9041      ║
+// ║    cfgAlimRegistrarAutotrafo(nom) POST autotrafo en config alim  L.9061      ║
+// ║    cfgAlimEliminarAutotrafo(nom,rb) DELETE ATR específico        L.9085      ║
+// ║    cargarAjustesAdmin()        GET /api/ajustes → tabla admin    L.9102      ║
+// ║    eliminarAjusteAdmin(t,n,m)  DELETE ajuste desde vista admin   L.9153      ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HISTORIAL VCC / UTILIDADES / AJUSTES                          L.9338–9681  ║
-// ║    mostrarError(msg)           alerta global de error            L.9338      ║
-// ║    mostrarToast(msg)           toast temporal Bootstrap          L.9348      ║
-// ║    vccCargarHistorialGlobal()  GET historial evaluaciones VCC    L.9365      ║
-// ║    hvccFiltrar()               filtra historial por alim/estado  L.9383      ║
-// ║    hvccEstadoEv(ev)            → clase CSS según estado evaluc.  L.9398      ║
-// ║    hvccRenderTabla(evs)        renderiza tabla historial VCC     L.9406      ║
-// ║    hvccEliminar(nom,idx)       DELETE evaluación del historial   L.9474      ║
-// ║    hvccDescargar(nom,idx)      descarga HTML evaluación VCC      L.9488      ║
-// ║    renderAjustePanel(data)     panel ajuste datos anómalos 2×2   L.9510      ║
-// ║    recalcularConAjuste()       recalcula simulación con ajustes  L.9644      ║
-// ║    guardarAjustesEntidad(t,n,p,e) POST /api/ajustes/{tipo}/{n}   L.9655      ║
-// ║    eliminarAjuste(t,n,mes,e)   DELETE /api/ajustes/.../{mes}     L.9681      ║
+// ║  HISTORIAL VCC / UTILIDADES / AJUSTES                          L.9171–9514  ║
+// ║    mostrarError(msg)           alerta global de error            L.9171      ║
+// ║    mostrarToast(msg)           toast temporal Bootstrap          L.9181      ║
+// ║    vccCargarHistorialGlobal()  GET historial evaluaciones VCC    L.9198      ║
+// ║    hvccFiltrar()               filtra historial por alim/estado  L.9216      ║
+// ║    hvccEstadoEv(ev)            → clase CSS según estado evaluc.  L.9231      ║
+// ║    hvccRenderTabla(evs)        renderiza tabla historial VCC     L.9239      ║
+// ║    hvccEliminar(nom,idx)       DELETE evaluación del historial   L.9307      ║
+// ║    hvccDescargar(nom,idx)      descarga HTML evaluación VCC      L.9321      ║
+// ║    renderAjustePanel(data)     panel ajuste datos anómalos 2×2   L.9343      ║
+// ║    recalcularConAjuste()       recalcula simulación con ajustes  L.9477      ║
+// ║    guardarAjustesEntidad(t,n,p,e) POST /api/ajustes/{tipo}/{n}   L.9488      ║
+// ║    eliminarAjuste(t,n,mes,e)   DELETE /api/ajustes/.../{mes}     L.9514      ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 <?php include __DIR__ . '/js/init.js'; ?>

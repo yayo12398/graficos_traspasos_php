@@ -47,19 +47,8 @@ if ($method === 'POST' && $a === 'guardar_transferencia' && !$b0) {
 // Genera el reporte HTML de un traspaso y lo retorna como descarga.
 if ($method === 'POST' && $a === 'descargar_html' && !$b0) {
     $b   = bodyJson();
-
-    // ── Multi-caso (cadena de corrimiento) ─────────────────────────────────
-    $casosRaw = $b['casos'] ?? null;
-    if ($casosRaw && count($casosRaw) > 1) {
-        $slug = 'corrimiento_' . date('Ymd_His');
-        $ruta = tempnam(sys_get_temp_dir(), 'rpt');
-        generarReporteCadenaHtml($casosRaw, $ruta);
-        header('Content-Type: text/html; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . $slug . '.html"');
-        readfile($ruta);
-        unlink($ruta);
-        exit;
-    }
+    // Nota: la cadena de corrimiento se genera client-side (_construirInformeCadenaHTML).
+    // Este endpoint solo atiende el caso único (usado por descargarTransferencia).
 
     $slug = slugFeeder($b['nombre_orig'] ?? 'rep') . '_' . slugFeeder($b['nombre_dest'] ?? '') . '_' . date('Ymd_His');
     $ruta = tempnam(sys_get_temp_dir(), 'rpt');
