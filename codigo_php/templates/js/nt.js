@@ -1158,15 +1158,36 @@ async function ejecutarSimulacion() {
     state.ultimaSimulacion = { ...data, body_request: body };
     mostrarResultados(data);
 
-    // Banner caso actual
+    // Caso actual — <summary> retraible (título único, reemplaza al banner oscuro),
+    // con el mismo estilo que los casos colapsados.
+    const _det    = document.getElementById("det-caso-actual");
     const _banner = document.getElementById("caso-banner");
-    if (_banner) {
-      const _bc = _CASO_COLORS[(state.numeroCaso - 1) % _CASO_COLORS.length];
-      _banner.innerHTML = `<div style="background:${_bc};color:#fff;padding:10px 18px;border-radius:6px;font-weight:700;font-size:1.05em">
-        Caso ${state.numeroCaso}: ${data.nombre_orig} → ${data.nombre_dest}
-      </div>`;
-      _banner.style.display = "";
+    const _bc     = _CASO_COLORS[(state.numeroCaso - 1) % _CASO_COLORS.length];
+    if (_det) {
+      _det.style.display    = "";
+      _det.style.borderLeft = `4px solid ${_bc}`;
+      _det.style.borderRadius = "6px";
+      _det.open = true;
     }
+    if (_banner) {
+      const _cnt    = data.resumen?.conteo || {};
+      const _est    = _cnt.critico > 0 ? "critico" : _cnt.prealerta > 0 ? "prealerta" : "viable";
+      const _colEst = _est === "critico" ? "danger" : _est === "prealerta" ? "warning" : "success";
+      const _lblEst = _est === "critico" ? "Crítico" : _est === "prealerta" ? "Prealerta" : "Viable";
+      const _pct    = data.isla?.p_pct?.toFixed(1) ?? "—";
+      const _np     = data.lz_info?.numpos_lz_sel ? ` · Equipo: <code>${data.lz_info.numpos_lz_sel}</code>` : "";
+      _banner.style.cssText = `cursor:pointer;list-style:none;background:${_bc}18;border-radius:6px`;
+      _banner.innerHTML =
+        `<i class="bi bi-chevron-down" style="font-size:.8rem"></i>` +
+        `<span class="fw-semibold" style="color:${_bc}">Caso ${state.numeroCaso}: ${data.nombre_orig} → ${data.nombre_dest}</span>` +
+        `<span class="badge bg-${_colEst} text-${_colEst === 'warning' ? 'dark' : 'white'}">${_lblEst}</span>` +
+        `<span class="small text-muted">${_pct}% traspasado${_np}</span>`;
+    }
+    // Acciones (descargar / guardar) — fuera de los casos, siempre visible.
+    const _acc = document.getElementById("acciones-resultado");
+    if (_acc) _acc.style.display = "";
+    // Resumen de la cadena en vivo (arriba de los casos)
+    renderCadenaResumen();
 
     // Restablecer origen solo si NO hay cadena de corrimiento activa (2+ casos):
     // durante una cadena el origen queda fijo hasta reiniciar (botón Reiniciar).
@@ -1451,12 +1472,30 @@ function precargarTraspasoSugerido(idx) {
   if (cont) cont.querySelectorAll(".border").forEach((el, j) => el.style.outline = j === idx ? "2px solid #198754" : "");
 }
 
+// Resumen del corrimiento en vivo (arriba de los casos), reusando las tablas del
+// informe. Visible solo con cadena (≥2 casos).
+function renderCadenaResumen() {
+  const cont = document.getElementById("cadena-resumen");
+  if (!cont) return;
+  const cadena = state.cadenaSimulaciones || [];
+  if (cadena.length < 2) { cont.innerHTML = ""; return; }
+  cont.innerHTML =
+    `<div class="card step-card mb-2">` +
+    `<div class="step-header"><i class="bi bi-table me-1"></i><span class="fw-semibold">Resumen del corrimiento</span></div>` +
+    `<div class="step-body p-2">` +
+    _cadenaIntroHTML(cadena) + _cadenaTablaAlimHTML(cadena) +
+    _cadenaTablaTrafosHTML(cadena) + _cadenaTablaFUFinal(cadena) +
+    `</div></div>`;
+}
+
 function limpiarCadena() {
   state.cadenaSimulaciones = [];
   state.cadenaReportCases = [];
   state.numeroCaso = 0;
   const el = document.getElementById("cadena-casos");
   if (el) el.innerHTML = "";
+  const res = document.getElementById("cadena-resumen");
+  if (res) res.innerHTML = "";
   const banner = document.getElementById("caso-banner");
   if (banner) { banner.innerHTML = ""; banner.style.display = "none"; }
   if (ts.origen) ts.origen.enable();
@@ -1472,7 +1511,7 @@ function reiniciarTraspaso() {
   limpiarCadena();                       // cadena, banner, avisos, ts.origen.enable()
   if (ts.origen) ts.origen.clear();      // deseleccionar origen
   const _hide = id => { const el = document.getElementById(id); if (el) el.style.display = "none"; };
-  ["resultado-contenido", "card-isla", "card-destino", "card-meses", "card-simular", "orig-info"].forEach(_hide);
+  ["det-caso-actual", "acciones-resultado", "resultado-contenido", "card-isla", "card-destino", "card-meses", "card-simular", "orig-info"].forEach(_hide);
   const _cc = document.getElementById("cadena-casos"); if (_cc) _cc.innerHTML = "";
   ["inp-descripcion", "inp-cambio-topo", "inp-equipo-cierra"].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = "";
@@ -1601,5 +1640,9 @@ function colapsarCasoActual() {
 
   document.getElementById("cadena-casos").appendChild(details);
   contenido.style.display = "none";
+  // Ocultar el wrapper del caso actual hasta que se renderice el siguiente
+  // (evita que quede un <details> vacío con el título del caso ya colapsado).
+  const _det = document.getElementById("det-caso-actual");
+  if (_det) _det.style.display = "none";
 }
 

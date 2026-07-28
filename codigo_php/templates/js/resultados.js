@@ -1369,7 +1369,7 @@ function _trafoWorstRow(t) {
                 : (cn > 0 && typeof worst.I_despues === "number") ? worst.I_despues / cn * 100 : null;
   return { fuAntes, fuDesp, estado: worst.estado || "" };
 }
-function _fmtFU(v)  { return (typeof v === "number" && isFinite(v)) ? v.toFixed(0) + "%" : "—"; }
+function _fmtFU(v)  { return (typeof v === "number" && isFinite(v)) ? v.toFixed(1) + "%" : "—"; }
 function _fmtAmp(v) { return (typeof v === "number" && isFinite(v)) ? v.toFixed(0) : "—"; }
 function _estadoBadgeCad(est) {
   const lbl = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico" }[est] || "—";
@@ -1409,7 +1409,8 @@ function _cadenaEstadoCaso(s, r) {
 }
 function _cadenaTablaAlimHTML(cadena) {
   const rows = cadena.map((s, i) => {
-    const r      = _cadenaWorstRow(s.tabla);
+    // Escenario proporcional (perfil mes a mes), igual que las tablas por-caso.
+    const r      = _cadenaWorstRow(s.tabla_mam);
     const abre   = (s.body_request?.equipo_nombre || "—").toUpperCase();
     const cierra = (s._extras?.equipo_cierra || s.lz_info?.numpos_lz_sel || "—").toUpperCase();
     const est    = _cadenaEstadoCaso(s, r);
@@ -1472,7 +1473,7 @@ function _cadenaTablaTrafosHTML(cadena) {
 function _cadenaTablaFUFinal(cadena) {
   if (cadena.length < 2) return "";
   const mesesSet = new Set();
-  cadena.forEach(s => (s.tabla || []).forEach(r => { if (r.mes) mesesSet.add(r.mes); }));
+  cadena.forEach(s => (s.tabla_mam || []).forEach(r => { if (r.mes) mesesSet.add(r.mes); }));
   const meses = [...mesesSet].sort();
   if (!meses.length) return "";
 
@@ -1483,17 +1484,18 @@ function _cadenaTablaFUFinal(cadena) {
   cadena.forEach(s => push(s.nombre_dest));
 
   // Último caso que tocó cada alimentador (gana mayor índice) + rol + su trafo
-  // del mismo lado (serie de meses seleccionados, no la de año móvil).
+  // del mismo lado. Usa la serie proporcional (tabla_mam / trafo_*_mam), el mismo
+  // escenario que las tablas por-caso — así los valores coinciden.
   const info = {};
   cadena.forEach((s, i) => {
     const reg = (nom, role, trafo) => {
-      const byMesA = {}; (s.tabla || []).forEach(r => { byMesA[r.mes] = r; });
+      const byMesA = {}; (s.tabla_mam || []).forEach(r => { byMesA[r.mes] = r; });
       const byMesT = {};
       if (trafo && !trafo.sin_datos) (trafo.tabla || []).forEach(r => { byMesT[r.mes] = r; });
       info[nom] = { i, role, byMesA, trafo, byMesT };
     };
-    if (s.nombre_orig) reg(s.nombre_orig, "orig", s.trafo_orig);
-    if (s.nombre_dest) reg(s.nombre_dest, "dest", s.trafo_dest);
+    if (s.nombre_orig) reg(s.nombre_orig, "orig", s.trafo_orig_mam);
+    if (s.nombre_dest) reg(s.nombre_dest, "dest", s.trafo_dest_mam);
   });
 
   // Celdas de una fila, destacando el peor mes (máx FU de esa fila) en rojo.
