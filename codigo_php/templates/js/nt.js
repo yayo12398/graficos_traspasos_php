@@ -57,6 +57,12 @@ async function seleccionarOrigen(numalimStr) {
   document.getElementById("card-isla").style.display = "";
   document.getElementById("card-destino").style.display = "none";
   document.getElementById("card-simular").style.display = "none";
+  // Limpiar campos de texto del caso anterior (no arrastrar descripción / cambio
+  // topológico / equipo que cierra entre casos de un corrimiento).
+  ["inp-descripcion", "inp-cambio-topo", "inp-equipo-cierra"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
   // Limpiar sugerencias TLC previas (el switch conserva su estado)
   state._sugTraspaso = [];
   const _sugCont = document.getElementById("sugerencias-traspaso");
@@ -1162,8 +1168,9 @@ async function ejecutarSimulacion() {
       _banner.style.display = "";
     }
 
-    // Restablecer origen al terminar cada simulación
-    if (ts.origen) ts.origen.enable();
+    // Restablecer origen solo si NO hay cadena de corrimiento activa (2+ casos):
+    // durante una cadena el origen queda fijo hasta reiniciar (botón Reiniciar).
+    if (ts.origen && state.cadenaSimulaciones.length <= 1) ts.origen.enable();
     const _oN = document.getElementById("corrimiento-origen-notice");
     if (_oN) { _oN.innerHTML = ""; _oN.style.display = "none"; }
     const _iN = document.getElementById("corrimiento-isla-notice");
@@ -1265,6 +1272,7 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
   }
 
   if (ts.origen) {
+    ts.origen.enable();  // por si venía bloqueado del caso previo → permite el setValue
     ts.origen.setValue(String(numalimB));
     ts.origen.disable();
   }
@@ -1445,6 +1453,7 @@ function precargarTraspasoSugerido(idx) {
 
 function limpiarCadena() {
   state.cadenaSimulaciones = [];
+  state.cadenaReportCases = [];
   state.numeroCaso = 0;
   const el = document.getElementById("cadena-casos");
   if (el) el.innerHTML = "";
@@ -1455,6 +1464,23 @@ function limpiarCadena() {
   if (origNotice) { origNotice.innerHTML = ""; origNotice.style.display = "none"; }
   const islaNotice = document.getElementById("corrimiento-isla-notice");
   if (islaNotice) { islaNotice.innerHTML = ""; islaNotice.style.display = "none"; }
+}
+
+// Reinicia el Nuevo Traspaso desde cero: limpia la cadena, deselecciona el origen,
+// oculta resultados/pasos y vacía los campos. Vía limpia para abandonar un corrimiento.
+function reiniciarTraspaso() {
+  limpiarCadena();                       // cadena, banner, avisos, ts.origen.enable()
+  if (ts.origen) ts.origen.clear();      // deseleccionar origen
+  const _hide = id => { const el = document.getElementById(id); if (el) el.style.display = "none"; };
+  ["resultado-contenido", "card-isla", "card-destino", "card-meses", "card-simular", "orig-info"].forEach(_hide);
+  const _cc = document.getElementById("cadena-casos"); if (_cc) _cc.innerHTML = "";
+  ["inp-descripcion", "inp-cambio-topo", "inp-equipo-cierra"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = "";
+  });
+  const _sug = document.getElementById("sugerencias-traspaso"); if (_sug) _sug.innerHTML = "";
+  state.origenNumalim = null; state.origenNomAlim = null; state.selectedNumposLZ = null;
+  state.esCorrimiento = false; state.esRecalculo = false; state._sugTraspaso = [];
+  ocultarErrorSim();
 }
 
 function colapsarCasoActual() {
@@ -1470,6 +1496,48 @@ function colapsarCasoActual() {
   const labelEst = estado === "critico" ? "Crítico" : estado === "prealerta" ? "Prealerta" : "Viable";
   const numpos   = sim.lz_info?.numpos_lz_sel ? ` · Equipo: <code>${sim.lz_info.numpos_lz_sel}</code>` : "";
   const bc       = _CASO_COLORS[(n - 1) % _CASO_COLORS.length];
+
+  // Renderizar los gráficos MAM del caso ANTES del snapshot (se crean lazy al
+  // expandir); así el caso colapsado queda tan completo como el print de NT.
+  const _mamBody = document.getElementById("mam-body");
+  const _secMam  = document.getElementById("sec-mam");
+  const _mamPrev = _mamBody ? _mamBody.style.display : null;
+  const _secMamPrev = _secMam ? _secMam.style.display : null;
+  const _mamTmp  = !!(sim.tabla_mam?.length && !_charts["barras-mam"]);
+  if (_mamTmp) {
+    const _prevAnim = (typeof Chart !== "undefined") ? Chart.defaults.animation : undefined;
+    try {
+      // Sin animación → Chart.js pinta sincrónico en new Chart(); el toDataURL()
+      // del snapshot captura el gráfico ya pintado (si no, PNG en blanco).
+      if (typeof Chart !== "undefined") Chart.defaults.animation = false;
+      if (_secMam)  _secMam.style.display  = "";  // card visible → canvas con tamaño
+      if (_mamBody) _mamBody.style.display = "";
+      renderMamCharts(sim);
+      renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam,
+        sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
+    } catch (e) { /* si falla, el caso se colapsa sin MAM */ }
+    finally { if (typeof Chart !== "undefined") Chart.defaults.animation = _prevAnim; }
+  }
+
+  // Informe interactivo: capturar configs de los gráficos vivos del caso y un clon
+  // con los canvas intactos. El informe los recrea con Chart.js (no como PNG), así
+  // no quedan vacíos. Debe hacerse mientras los charts existen (antes de destruir MAM).
+  const _cfgsCaso = {};
+  contenido.querySelectorAll("canvas").forEach(cv => {
+    if (!cv.id) return;
+    const ch = (typeof Chart !== "undefined") ? Chart.getChart(cv) : null;
+    if (ch) _cfgsCaso[`_c${n}_${cv.id}`] = _serializeChartCfg(ch);
+  });
+  const cloneReport = contenido.cloneNode(true);
+  cloneReport.removeAttribute("id");
+  cloneReport.style.removeProperty("display");
+  _limpiarPanelInforme(cloneReport);
+  cloneReport.querySelectorAll("[id]").forEach(el => { el.id = `_c${n}_${el.id}`; });
+  if (!state.cadenaReportCases) state.cadenaReportCases = [];
+  state.cadenaReportCases.push({
+    n, nombre_orig: sim.nombre_orig, nombre_dest: sim.nombre_dest,
+    estado, colorEst, labelEst, pct, numpos, cfgs: _cfgsCaso, node: cloneReport,
+  });
 
   // Clonar DOM y convertir canvas a imágenes estáticas (innerHTML no preserva canvas pintado)
   const clone = contenido.cloneNode(true);
@@ -1489,6 +1557,18 @@ function colapsarCasoActual() {
       cloneCV.replaceWith(img);
     } catch (e) { cloneCV.remove(); }
   });
+
+  // Destruir los gráficos MAM temporales y restaurar la sección tras el snapshot.
+  if (_mamTmp) {
+    _destroyCharts("barras-mam", "estados-mam", "canvas-trafo-orig-mam", "canvas-trafo-dest-mam");
+    if (_mamBody) _mamBody.style.display = _mamPrev;
+    if (_secMam)  _secMam.style.display  = _secMamPrev;
+  }
+
+  // Limpieza igual que el informe: quita secciones de trabajo (LZ disponible,
+  // corrimiento, ajustes) y colapsa las auxiliares. Debe correr ANTES de renombrar
+  // IDs (busca por id original). Los <img> PNG quedan dentro de los <details> cerrados.
+  _limpiarPanelInforme(clone);
 
   // Renombrar IDs para evitar duplicados en el DOM
   clone.querySelectorAll("[id]").forEach(el => { el.id = `_c${n}_${el.id}`; });

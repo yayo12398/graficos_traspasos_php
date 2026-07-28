@@ -606,13 +606,13 @@ function _renderTrafoChart(canvasId, trafoData, titulo, modo, ajMeses = new Set(
           data: trafoData.tabla.map(r => r.uso_antes_pct),
           type: "line",
           borderColor: "rgba(100,149,237,0.75)", borderDash: [5,3],
-          borderWidth: 2, pointRadius: 2, fill: false, order: 1,
+          borderWidth: 2, pointRadius: 2, fill: false, order: 1, hidden: true,
         },
         {
           type: "line", label: "Prealerta 90%",
           data: trafoData.tabla.map(() => 90),
           borderColor: "rgba(230,126,34,0.8)", borderDash: [6,3],
-          borderWidth: 1.5, pointRadius: 0, fill: false, order: 0,
+          borderWidth: 1.5, pointRadius: 0, fill: false, order: 0, hidden: true,
         },
         {
           type: "line", label: "Crítico 100%",
@@ -707,11 +707,15 @@ function toggleSecMam() {
   if (!abierto) {
     body.style.display      = "";
     chevron.style.transform = "rotate(180deg)";
-    // Lazy-init — Chart.js necesita canvas visible para calcular dimensiones
+    // Re-render fresco en cada apertura: Chart.js necesita el canvas visible con
+    // dimensiones. requestAnimationFrame asegura el layout tras mostrar mam-body,
+    // y destruir+recrear evita canvas en blanco por estado stale entre casos.
     const sim = state.ultimaSimulacion;
-    if (sim && !_charts["barras-mam"]) {
-      renderMamCharts(sim);
-      renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam, sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
+    if (sim) {
+      requestAnimationFrame(() => {
+        renderMamCharts(sim);
+        renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam, sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
+      });
     }
   } else {
     body.style.display      = "none";
@@ -749,6 +753,16 @@ function renderMamCharts(data) {
   const bgDest  = tabla.map(r => ESTADO_COLOR[r.estado_dest]  || ESTADO_COLOR.sin_datos);
   const brdDest = tabla.map(r => ESTADO_BORDER[r.estado_dest] || ESTADO_BORDER.sin_datos);
 
+  // Destacar el peor mes (máx FU destino después) en rojo oscuro, como los trafos.
+  // bgDest/brdDest los comparten el chart de corriente y el de FU → aplica a ambos.
+  const worstIdx = tabla.reduce((best, r, i) =>
+    (r.uso_dest_despues_pct || 0) > (tabla[best]?.uso_dest_despues_pct || 0) ? i : best, 0);
+  if (tabla.length) {
+    bgDest[worstIdx]  = "rgba(180,0,0,0.85)";
+    brdDest[worstIdx] = "rgba(140,0,0,1)";
+  }
+  const brdWDest = tabla.map((r, i) => i === worstIdx ? 2 : 1);
+
   const ajOrig = new Set(Object.keys(data.ajustes_activos?.alim_orig || {}));
   const ajDest = new Set(Object.keys(data.ajustes_activos?.alim_dest || {}));
 
@@ -770,14 +784,14 @@ function renderMamCharts(data) {
           data: tabla.map(r => r.I_dest_antes),
           backgroundColor: "rgba(100,149,237,0.45)",
           borderColor: brdDestAntesColor,
-          borderWidth: brdDestAntesWidth, order: 3,
+          borderWidth: brdDestAntesWidth, order: 2,
         },
         {
           type: "bar",
-          label: `${nomDest} — Perfil Mes a mes (A)`,
+          label: `${nomDest} — Después (A)`,
           data: tabla.map(r => r.I_dest_despues),
           backgroundColor: bgDest, borderColor: brdDest,
-          borderWidth: 1, order: 2,
+          borderWidth: brdWDest, order: 3,
         },
         {
           type: "line",
@@ -789,7 +803,7 @@ function renderMamCharts(data) {
           pointBackgroundColor: ptColorOrig,
           pointBorderColor: ptColorOrig,
           pointStyle: ptStyleOrig,
-          fill: false, order: 1,
+          fill: false, order: 1, hidden: true,
         },
         {
           type: "line",
@@ -801,7 +815,7 @@ function renderMamCharts(data) {
           pointBackgroundColor: ptColorOrig,
           pointBorderColor: ptColorOrig,
           pointStyle: ptStyleOrig,
-          fill: false, order: 1,
+          fill: false, order: 1, hidden: true,
         },
         {
           type: "line",
@@ -848,10 +862,10 @@ function renderMamCharts(data) {
       labels,
       datasets: [
         {
-          label: `FU (%) ${nomDest} Mes a mes`,
+          label: `FU (%) ${nomDest} — Después`,
           data: tabla.map(r => r.uso_dest_despues_pct),
           backgroundColor: bgDest, borderColor: brdDest,
-          borderWidth: 1, order: 2,
+          borderWidth: brdWDest, order: 2,
         },
         {
           type: "line", label: "Prealerta 90%",
@@ -1074,8 +1088,10 @@ function renderTablaTrafosEjecutivo(data) {
     }
   };
 
-  if (trafoOrig) _addTrafoFilas(trafoOrig, `Trafo ${nomOrig} — alivio`, ajOrig);
-  if (trafoDest) _addTrafoFilas(trafoDest, `Trafo ${nomDest} — carga`, ajDest);
+  // Citar el transformador por su barra (ej. "Tr Lo Valledor 4"), no el alimentador.
+  const _nomTrafo = (t, fb) => (t && (t.barra || "").trim()) ? t.barra.trim() : `Trafo ${fb}`;
+  if (trafoOrig) _addTrafoFilas(trafoOrig, `${_nomTrafo(trafoOrig, nomOrig)} — alivio`, ajOrig);
+  if (trafoDest) _addTrafoFilas(trafoDest, `${_nomTrafo(trafoDest, nomDest)} — carga`, ajDest);
 
   document.getElementById("tabla-trafos-ej-body").innerHTML = filas.map(f => {
     const cells = tabla_mam.map((r, colIdx) => {
@@ -1210,16 +1226,97 @@ function _serializeChartCfg(chart) {
   );
 }
 
+// Convierte una sección (div-card con .step-header) en un <details> colapsado,
+// para que en el informe estático se pueda minimizar/expandir sin JS de la app.
+function _seccionADetails(root, id) {
+  const sec = root.querySelector("#" + id);
+  if (!sec) return;
+  const det = document.createElement("details");
+  det.className = sec.className || "";
+  det.style.cssText = sec.style.cssText;
+  det.style.display = "";  // la card podía estar display:none
+  const header  = sec.querySelector(".step-header");
+  const summary = document.createElement("summary");
+  summary.className = header ? header.className : "step-header";
+  summary.style.cssText = "cursor:pointer;list-style:none";
+  if (header) { summary.innerHTML = header.innerHTML; header.remove(); }
+  else summary.textContent = "Detalle";
+  det.appendChild(summary);
+  while (sec.firstChild) det.appendChild(sec.firstChild);
+  sec.replaceWith(det);
+}
+
+// Limpieza compartida del clon del panel para el informe: quita secciones de
+// trabajo, colapsa las secciones auxiliares en <details> y deja visibles las
+// tablas ejecutivas. Usada por el caso actual y por los previos (colapsarCasoActual).
+function _limpiarPanelInforme(clon) {
+  // Secciones que no van en el informe.
+  ["panel-lz", "det-corrimiento", "sec-ajustes"].forEach(id => {
+    const el = clon.querySelector("#" + id);
+    if (el) el.remove();
+  });
+  // Controles interactivos.
+  clon.querySelectorAll(".no-copy, button").forEach(el => el.remove());
+  clon.querySelectorAll("[onclick]").forEach(el => el.removeAttribute("onclick"));
+  // MAM: mostrar el cuerpo (colapsado por la app) para que se vea al abrir el details.
+  const mamBody = clon.querySelector("#mam-body");
+  if (mamBody) mamBody.style.display = "block";
+  // Colapsar los <details> existentes (equipos/LZ, etc.).
+  clon.querySelectorAll("details").forEach(d => (d.open = false));
+  // Convertir secciones auxiliares (div-card) en <details> colapsados.
+  ["sec-mam", "sec-peor-caso"].forEach(id => _seccionADetails(clon, id));
+  return clon;
+}
+
+// Construye un clon estático del panel de resultados para el informe.
+function _prepararClonPanel(panel) {
+  const clon = panel.cloneNode(true);
+  clon.style.display = "block";
+  return _limpiarPanelInforme(clon);
+}
+
+// Ensambla un documento HTML autónomo: clona los estilos del documento vivo,
+// inserta el cuerpo (via buildBody(doc)) y, si hay configs de Chart.js, un
+// script que los recrea. Los gráficos dentro de un <details> cerrado se crean
+// recién al abrirlo (un canvas de tamaño 0 no dibuja bien). Se arma con DOM APIs
+// para no incluir literales de <head>/<body>/script que el router inyecta.
+function _ensamblarDocInforme(titulo, buildBody, cfgs) {
+  const doc = document.implementation.createHTMLDocument(titulo);
+  document.querySelectorAll('link[rel="stylesheet"], style').forEach(n =>
+    doc.head.appendChild(n.cloneNode(true)));
+  const bodyStyle = doc.createElement("style");
+  bodyStyle.textContent = "body{background:#fff;padding:1rem}";
+  doc.head.appendChild(bodyStyle);
+
+  doc.body.appendChild(buildBody(doc));
+
+  if (cfgs && Object.keys(cfgs).length) {
+    const cfgsJson = JSON.stringify(cfgs).replace(/<\//g, "<\\/");
+    const s1 = doc.createElement("script");
+    s1.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
+    const s2 = doc.createElement("script");
+    s2.textContent =
+      "var raw=" + cfgsJson + ";" +
+      "function mk(id){var el=document.getElementById(id);if(!el||el._d)return;el._d=1;" +
+      "try{new Chart(el,JSON.parse(raw[id]));}catch(e){console.error(id,e);}}" +
+      "window.addEventListener('DOMContentLoaded',function(){" +
+      "Object.keys(raw).forEach(function(id){" +
+      "var el=document.getElementById(id);if(!el)return;var d=el.closest('details');" +
+      "if(d&&!d.open){d.addEventListener('toggle',function(){if(d.open)mk(id);});}else{mk(id);}" +
+      "});});";
+    doc.body.appendChild(s1);
+    doc.body.appendChild(s2);
+  }
+  return "<!doc" + "type html>\n" + doc.documentElement.outerHTML;
+}
+
 // Construye un documento HTML autónomo idéntico al panel de resultados vivo.
-// Se arma con DOM APIs (no con un template literal) para que el código fuente
-// no contenga literales de etiquetas estructurales (head/body/scr...): el
-// router inyecta contenido antes del cierre de head y eso rompería la página.
 function _construirInformeHTML(titulo) {
   const panel = document.getElementById("resultado-contenido");
   if (!panel) return null;
 
-  // 1) Capturar configs de los gráficos ANTES de clonar (canvas clonado sale
-  //    en blanco). Se recuperan por el canvas del DOM vía Chart.getChart.
+  // Capturar configs de los gráficos ANTES de clonar (canvas clonado sale en
+  // blanco). Se recuperan por el canvas del DOM vía Chart.getChart.
   const cfgs = {};
   panel.querySelectorAll("canvas").forEach(cv => {
     if (!cv.id) return;
@@ -1227,69 +1324,314 @@ function _construirInformeHTML(titulo) {
     if (ch) cfgs[cv.id] = _serializeChartCfg(ch);
   });
 
-  // 2) Clonar y preparar para vista estática (expandir colapsables, quitar
-  //    controles interactivos).
-  const clon = panel.cloneNode(true);
-  clon.style.display = "block";
-  // Colapsar todas las secciones <details> (equipos/LZ, serie mensual por
-  // equipo, etc.) para no saturar el informe. Siguen siendo expandibles con
-  // un clic (details nativos, sin JS).
-  clon.querySelectorAll("details").forEach(d => (d.open = false));
-  const mamBody = clon.querySelector("#mam-body");
-  if (mamBody) mamBody.style.display = "block";
-  const secMam = clon.querySelector("#sec-mam");
-  if (secMam) secMam.style.display = "";
-  clon.querySelectorAll(".no-copy, button").forEach(el => el.remove());
-  clon.querySelectorAll("[onclick]").forEach(el => el.removeAttribute("onclick"));
-  // Secciones de trabajo que no van en el informe: ajuste de datos anómalos
-  // y corrimiento de carga.
-  ["sec-ajustes", "det-corrimiento"].forEach(id => {
-    const el = clon.querySelector("#" + id);
-    if (el) el.remove();
+  const clon = _prepararClonPanel(panel);
+
+  return _ensamblarDocInforme(titulo, doc => {
+    const wrap = doc.createElement("div");
+    wrap.style.width = "100%";
+    const h = doc.createElement("h5");
+    h.className = "mb-1";
+    h.textContent = titulo;
+    const sub = doc.createElement("div");
+    sub.className = "text-muted small mb-3";
+    sub.textContent = "Informe generado " + new Date().toLocaleString("es-CL");
+    wrap.appendChild(h);
+    wrap.appendChild(sub);
+    wrap.appendChild(doc.importNode(clon, true));
+    return wrap;
+  }, cfgs);
+}
+
+// ── INFORME DE CORRIMIENTO (cadena) — captura DOM client-side ────────────────
+// Réplica del informe de NT para toda la cadena: cabecera con intro narrativo +
+// tablas-resumen de cargabilidad (alimentadores y trafos), luego cada caso en un
+// <details> colapsado con la captura DOM completa del panel (como el print de NT).
+// Casos previos con gráficos PNG (ya así en #cadena-casos); último interactivo.
+function _cadenaWorstRow(tabla) {
+  let worst = null, best = -Infinity;
+  (tabla || []).forEach(r => {
+    const v = r.uso_dest_despues_pct;
+    if (typeof v === "number" && isFinite(v) && v > best) { best = v; worst = r; }
+  });
+  return worst || (tabla || [])[0] || null;
+}
+function _trafoWorstRow(t) {
+  if (!t || t.sin_datos || !t.tabla?.length) return null;
+  const cn = t.cn_trafo || 0;
+  let worst = null, best = -Infinity;
+  t.tabla.forEach(r => {
+    const v = (typeof r.uso_despues_pct === "number") ? r.uso_despues_pct : (cn > 0 ? (r.I_despues / cn * 100) : null);
+    if (typeof v === "number" && isFinite(v) && v > best) { best = v; worst = r; }
+  });
+  if (!worst) return null;
+  const fuAntes = (cn > 0 && typeof worst.I_antes === "number") ? worst.I_antes / cn * 100 : null;
+  const fuDesp  = (typeof worst.uso_despues_pct === "number") ? worst.uso_despues_pct
+                : (cn > 0 && typeof worst.I_despues === "number") ? worst.I_despues / cn * 100 : null;
+  return { fuAntes, fuDesp, estado: worst.estado || "" };
+}
+function _fmtFU(v)  { return (typeof v === "number" && isFinite(v)) ? v.toFixed(0) + "%" : "—"; }
+function _fmtAmp(v) { return (typeof v === "number" && isFinite(v)) ? v.toFixed(0) : "—"; }
+function _estadoBadgeCad(est) {
+  const lbl = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico" }[est] || "—";
+  const cls = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico" }[est] || "";
+  return `<span class="badge ${cls}">${lbl}</span>`;
+}
+function _trafoLblCad(t) {
+  if (!t || t.sin_datos) return "—";
+  const parts = [t.nombre || t.numpos || "Trafo"];
+  const barra = (t.barra || "").trim();
+  if (barra) parts.push(barra);
+  return parts.join(" · ");
+}
+
+function _cadenaIntroHTML(cadena) {
+  const pasos = cadena.map(s =>
+    `<strong>${s.nombre_orig || ""} → ${s.nombre_dest || ""}</strong> transfiriendo ${(s.isla?.p_pct ?? 0).toFixed(1)}%`);
+  const n = cadena.length;
+  let txt;
+  if (n <= 1)      txt = `Traspaso de carga: ${pasos[0] || ""}.`;
+  else if (n === 2) txt = `Traspaso de carga con 1 corrimiento: desde ${pasos[0]}, luego ${pasos[1]}.`;
+  else {
+    const mid = pasos.slice(1, n - 1).join(", luego ");
+    txt = `Traspaso de carga con ${n - 1} corrimientos: desde ${pasos[0]}, ${mid}, y finalmente ${pasos[n - 1]}.`;
+  }
+  return `<div class="alert alert-info py-2 px-3 small mb-3"><i class="bi bi-arrow-repeat me-1"></i>${txt}</div>`;
+}
+
+function _cadenaCaseColor(i) {
+  return (typeof _CASO_COLORS !== "undefined") ? _CASO_COLORS[i % _CASO_COLORS.length] : "#1565c0";
+}
+function _cadenaEstadoCaso(s, r) {
+  // Estado del peor mes del receptor; fallback al conteo del caso.
+  if (r?.estado_dest) return r.estado_dest;
+  const c = s.resumen?.conteo || {};
+  return c.critico > 0 ? "critico" : c.prealerta > 0 ? "prealerta" : "viable";
+}
+function _cadenaTablaAlimHTML(cadena) {
+  const rows = cadena.map((s, i) => {
+    const r      = _cadenaWorstRow(s.tabla);
+    const abre   = (s.body_request?.equipo_nombre || "—").toUpperCase();
+    const cierra = (s._extras?.equipo_cierra || s.lz_info?.numpos_lz_sel || "—").toUpperCase();
+    const est    = _cadenaEstadoCaso(s, r);
+    const bc     = _cadenaCaseColor(i);
+    return `<tr style="--bs-table-bg:${bc}1f">
+      <td class="text-center" style="border-left:4px solid ${bc}">${i + 1}</td>
+      <td>${s.nombre_orig || ""} → ${s.nombre_dest || ""}</td>
+      <td><code>${abre}</code></td>
+      <td><code>${cierra}</code></td>
+      <td class="text-center">${(s.isla?.p_pct ?? 0).toFixed(1)}%</td>
+      <td class="text-center">${_fmtAmp(s.delta?.delta_max)}</td>
+      <td class="text-center">${_fmtFU(r?.uso_orig_antes_pct)} → ${_fmtFU(r?.uso_orig_despues_pct)}</td>
+      <td class="text-center">${_fmtFU(r?.uso_dest_antes_pct)} → ${_fmtFU(r?.uso_dest_despues_pct)}</td>
+      <td class="text-center">${_estadoBadgeCad(est)}</td>
+    </tr>`;
+  }).join("");
+  return `<h6 class="mt-2 mb-1">Cargabilidad — Alimentadores (peor mes)</h6>
+    <div style="overflow-x:auto"><table class="table table-sm table-bordered small mb-3">
+      <thead class="table-light"><tr>
+        <th class="text-center">Caso</th><th>Origen → Destino</th><th>Abre</th><th>Cierra</th>
+        <th class="text-center">% trasp.</th><th class="text-center">ΔI (A)</th>
+        <th class="text-center">FU orig (antes→desp)</th><th class="text-center">FU dest (antes→desp)</th>
+        <th class="text-center">Estado</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function _cadenaTablaTrafosHTML(cadena) {
+  const rows = [];
+  cadena.forEach((s, i) => {
+    const tO = s.trafo_orig_mam, tD = s.trafo_dest_mam;
+    const hasO = tO && !tO.sin_datos, hasD = tD && !tD.sin_datos;
+    if (!hasO && !hasD) return;
+    const rO = _trafoWorstRow(tO), rD = _trafoWorstRow(tD);
+    const estado = rD?.estado || rO?.estado || "";
+    const bc = _cadenaCaseColor(i);
+    rows.push(`<tr style="--bs-table-bg:${bc}1f">
+      <td class="text-center" style="border-left:4px solid ${bc}">${i + 1}</td>
+      <td>${_trafoLblCad(tO)}</td>
+      <td>${_trafoLblCad(tD)}</td>
+      <td class="text-center">${rO ? `${_fmtFU(rO.fuAntes)} → ${_fmtFU(rO.fuDesp)}` : "—"}</td>
+      <td class="text-center">${rD ? `${_fmtFU(rD.fuAntes)} → ${_fmtFU(rD.fuDesp)}` : "—"}</td>
+      <td class="text-center">${_estadoBadgeCad(estado)}</td>
+    </tr>`);
+  });
+  if (!rows.length) return "";
+  return `<h6 class="mt-2 mb-1">Cargabilidad — Transformadores (peor mes)</h6>
+    <div style="overflow-x:auto"><table class="table table-sm table-bordered small mb-3">
+      <thead class="table-light"><tr>
+        <th class="text-center">Caso</th><th>Trafo origen (alivio)</th><th>Trafo destino (carga)</th>
+        <th class="text-center">FU orig (antes→desp)</th><th class="text-center">FU dest (antes→desp)</th>
+        <th class="text-center">Estado</th>
+      </tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
+}
+
+// Tabla FU por período — estado final de la red (mes a mes), unificada.
+// Por cada alimentador involucrado (orden A, B, C…): una fila del alimentador y
+// debajo la de su transformador. Cada uno usa el "después" del último caso que
+// tocó ese alimentador (y el trafo del mismo lado/caso). Columnas = meses
+// seleccionados. Cada par de filas se tiñe con el color de su caso.
+function _cadenaTablaFUFinal(cadena) {
+  if (cadena.length < 2) return "";
+  const mesesSet = new Set();
+  cadena.forEach(s => (s.tabla || []).forEach(r => { if (r.mes) mesesSet.add(r.mes); }));
+  const meses = [...mesesSet].sort();
+  if (!meses.length) return "";
+
+  // Orden de alimentadores: origen del caso 1, luego destino de cada caso.
+  const orden = [], seen = new Set();
+  const push = nom => { if (nom && !seen.has(nom)) { seen.add(nom); orden.push(nom); } };
+  if (cadena[0]) push(cadena[0].nombre_orig);
+  cadena.forEach(s => push(s.nombre_dest));
+
+  // Último caso que tocó cada alimentador (gana mayor índice) + rol + su trafo
+  // del mismo lado (serie de meses seleccionados, no la de año móvil).
+  const info = {};
+  cadena.forEach((s, i) => {
+    const reg = (nom, role, trafo) => {
+      const byMesA = {}; (s.tabla || []).forEach(r => { byMesA[r.mes] = r; });
+      const byMesT = {};
+      if (trafo && !trafo.sin_datos) (trafo.tabla || []).forEach(r => { byMesT[r.mes] = r; });
+      info[nom] = { i, role, byMesA, trafo, byMesT };
+    };
+    if (s.nombre_orig) reg(s.nombre_orig, "orig", s.trafo_orig);
+    if (s.nombre_dest) reg(s.nombre_dest, "dest", s.trafo_dest);
   });
 
-  // 3) Documento nuevo vía DOM.
-  const doc = document.implementation.createHTMLDocument(titulo);
+  // Celdas de una fila, destacando el peor mes (máx FU de esa fila) en rojo.
+  const celdasFila = vals => {
+    let worstI = -1, worstV = -Infinity;
+    vals.forEach((v, i) => { if (typeof v === "number" && isFinite(v) && v > worstV) { worstV = v; worstI = i; } });
+    return vals.map((v, i) => {
+      const st = i === worstI
+        ? ' style="font-weight:bold;background:rgba(231,76,60,0.18);color:#8c0000"'
+        : "";
+      return `<td class="text-center"${st}>${_fmtFU(v)}</td>`;
+    }).join("");
+  };
+  const rows = orden.map(nom => {
+    const d = info[nom]; if (!d) return "";
+    const bc = _cadenaCaseColor(d.i);
+    // Fila alimentador (FU del rol que tuvo en su caso finalizador).
+    const valsA = meses.map(m => {
+      const r = d.byMesA[m];
+      return r ? (d.role === "orig" ? r.uso_orig_despues_pct : r.uso_dest_despues_pct) : null;
+    });
+    const filaA = `<tr style="--bs-table-bg:${bc}1f">` +
+      `<td class="fw-semibold" style="white-space:nowrap;border-left:4px solid ${bc}">${nom}</td>${celdasFila(valsA)}</tr>`;
+    // Fila transformador del mismo lado/caso.
+    const t  = d.trafo;
+    const cn = (t && t.cn_trafo) || 0;
+    const valsT = meses.map(m => {
+      const r = d.byMesT[m];
+      if (!r) return null;
+      return (typeof r.uso_despues_pct === "number") ? r.uso_despues_pct : (cn > 0 ? r.I_despues / cn * 100 : null);
+    });
+    const lblT  = (t && !t.sin_datos) ? _trafoLblCad(t) : "—";
+    const filaT = `<tr style="--bs-table-bg:${bc}14">` +
+      `<td class="small text-muted" style="white-space:nowrap;border-left:4px solid ${bc};padding-left:1.1rem">⚡ ${lblT}</td>${celdasFila(valsT)}</tr>`;
+    return filaA + filaT;
+  }).join("");
 
-  // Estilos: clonar los mismos CDN (link) y estilos inline del documento vivo.
-  document.querySelectorAll('link[rel="stylesheet"], style').forEach(n =>
-    doc.head.appendChild(n.cloneNode(true)));
-  const bodyStyle = doc.createElement("style");
-  bodyStyle.textContent = "body{background:#fff;padding:1rem}";
-  doc.head.appendChild(bodyStyle);
+  const head = meses.map(m => `<th class="text-center">${_mesLabel(m)}</th>`).join("");
+  return `<h6 class="mt-3 mb-1">FU por período — Alimentadores y Transformadores (estado final)</h6>
+    <div style="overflow-x:auto"><table class="table table-sm table-bordered small mb-3">
+      <thead class="table-light"><tr><th>Elemento</th>${head}</tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
 
-  // Cuerpo: encabezado + panel clonado.
-  const wrap = doc.createElement("div");
-  wrap.style.width = "100%";
-  const h = doc.createElement("h5");
-  h.className = "mb-1";
-  h.textContent = titulo;
-  const sub = doc.createElement("div");
-  sub.className = "text-muted small mb-3";
-  sub.textContent = "Informe generado " + new Date().toLocaleString("es-CL");
-  wrap.appendChild(h);
-  wrap.appendChild(sub);
-  wrap.appendChild(doc.importNode(clon, true));
-  doc.body.appendChild(wrap);
+// <details> del caso actual (vivo) con el mismo header de color que colapsarCasoActual.
+function _cadenaDetallesActual(doc, sim, n, clon) {
+  const bc     = (typeof _CASO_COLORS !== "undefined") ? _CASO_COLORS[(n - 1) % _CASO_COLORS.length] : "#1565c0";
+  const _cnt   = sim?.resumen?.conteo || {};
+  const estado = _cnt.critico > 0 ? "critico" : _cnt.prealerta > 0 ? "prealerta" : "viable";
+  const colorEst = estado === "critico" ? "danger" : estado === "prealerta" ? "warning" : "success";
+  const labelEst = estado === "critico" ? "Crítico" : estado === "prealerta" ? "Prealerta" : "Viable";
+  const pct    = sim?.isla?.p_pct?.toFixed(1) ?? "—";
 
-  // 4) Gráficos interactivos: Chart.js CDN + script que los recrea (JSON puro).
-  if (Object.keys(cfgs).length) {
-    const cfgsJson = JSON.stringify(cfgs).replace(/<\//g, "<\\/");
-    const s1 = doc.createElement("script");
-    s1.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
-    const s2 = doc.createElement("script");
-    s2.textContent =
-      "var raw=" + cfgsJson + ";" +
-      "window.addEventListener('DOMContentLoaded',function(){" +
-      "Object.keys(raw).forEach(function(id){" +
-      "var el=document.getElementById(id);if(!el)return;" +
-      "try{new Chart(el,JSON.parse(raw[id]));}catch(e){console.error(id,e);}" +
-      "});});";
-    doc.body.appendChild(s1);
-    doc.body.appendChild(s2);
-  }
+  const det = doc.createElement("details");
+  det.className = "card step-card mb-2";
+  det.style.borderLeft = `4px solid ${bc}`;
+  det.style.borderRadius = "6px";
+  const sum = doc.createElement("summary");
+  sum.className = "step-header d-flex align-items-center gap-2";
+  sum.style.cssText = `cursor:pointer;list-style:none;background:${bc}18;border-radius:6px`;
+  sum.innerHTML =
+    `<span class="fw-semibold" style="color:${bc}">Caso ${n}: ${sim?.nombre_orig || ""} → ${sim?.nombre_dest || ""}</span>` +
+    `<span class="badge bg-${colorEst} text-${colorEst === "warning" ? "dark" : "white"}">${labelEst}</span>` +
+    `<span class="small text-muted">${pct}% traspasado</span>`;
+  const body = doc.createElement("div");
+  body.className = "step-body p-0";
+  body.appendChild(doc.importNode(clon, true));
+  det.appendChild(sum);
+  det.appendChild(body);
+  return det;
+}
 
-  return "<!doc" + "type html>\n" + doc.documentElement.outerHTML;
+// <details> de un caso previo guardado (node con canvas intactos + header de color).
+function _cadenaCaseDetails(doc, pc) {
+  const bc = _cadenaCaseColor(pc.n - 1);
+  const det = doc.createElement("details");
+  det.className = "card step-card mb-2";
+  det.style.borderLeft = `4px solid ${bc}`;
+  det.style.borderRadius = "6px";
+  const sum = doc.createElement("summary");
+  sum.className = "step-header d-flex align-items-center gap-2";
+  sum.style.cssText = `cursor:pointer;list-style:none;background:${bc}18;border-radius:6px`;
+  sum.innerHTML =
+    `<span class="fw-semibold" style="color:${bc}">Caso ${pc.n}: ${pc.nombre_orig || ""} → ${pc.nombre_dest || ""}</span>` +
+    `<span class="badge bg-${pc.colorEst} text-${pc.colorEst === "warning" ? "dark" : "white"}">${pc.labelEst}</span>` +
+    `<span class="small text-muted">${pc.pct}% traspasado</span>`;
+  const body = doc.createElement("div");
+  body.className = "step-body p-0";
+  if (pc.node) body.appendChild(doc.importNode(pc.node, true));
+  det.appendChild(sum);
+  det.appendChild(body);
+  return det;
+}
+
+function _construirInformeCadenaHTML() {
+  const cadena    = state.cadenaSimulaciones || [];
+  const prevCasos = state.cadenaReportCases || [];
+  const panel     = document.getElementById("resultado-contenido");
+
+  // Configs de gráficos: casos previos (guardados) + caso actual (vivo). El
+  // informe los recrea con Chart.js (interactivos), no como PNG estático.
+  const cfgs = {};
+  prevCasos.forEach(pc => Object.assign(cfgs, pc.cfgs || {}));
+  if (panel) panel.querySelectorAll("canvas").forEach(cv => {
+    if (!cv.id) return;
+    const ch = (typeof Chart !== "undefined") ? Chart.getChart(cv) : null;
+    if (ch) cfgs[cv.id] = _serializeChartCfg(ch);
+  });
+  const clonActual = panel ? _prepararClonPanel(panel) : null;
+
+  return _ensamblarDocInforme("Corrimiento de carga", doc => {
+    const wrap = doc.createElement("div");
+    wrap.style.width = "100%";
+    const h = doc.createElement("h5");
+    h.className = "mb-1";
+    h.textContent = `Corrimiento de carga — ${cadena.length} caso${cadena.length !== 1 ? "s" : ""}`;
+    const sub = doc.createElement("div");
+    sub.className = "text-muted small mb-2";
+    sub.textContent = "Informe generado " + new Date().toLocaleString("es-CL");
+    wrap.appendChild(h);
+    wrap.appendChild(sub);
+
+    // Cabecera resumen (intro + tablas de cargabilidad).
+    const resumen = doc.createElement("div");
+    resumen.innerHTML = _cadenaIntroHTML(cadena)
+      + _cadenaTablaAlimHTML(cadena) + _cadenaTablaTrafosHTML(cadena)
+      + _cadenaTablaFUFinal(cadena);
+    wrap.appendChild(resumen);
+
+    // Casos previos guardados (canvas intactos → gráficos interactivos).
+    prevCasos.forEach(pc => wrap.appendChild(_cadenaCaseDetails(doc, pc)));
+
+    // Caso actual (vivo) en un <details> colapsado, gráficos interactivos.
+    if (clonActual && panel && panel.style.display !== "none" && cadena.length) {
+      wrap.appendChild(_cadenaDetallesActual(doc, cadena[cadena.length - 1], state.numeroCaso, clonActual));
+    }
+    return wrap;
+  }, cfgs);
 }
 
 function _descargarBlobHTML(html, nombreArchivo) {
@@ -1307,31 +1649,14 @@ async function descargarHTML() {
   const cadena = state.cadenaSimulaciones;
   if (!sim) return mostrarError("Primero ejecuta una simulación.");
 
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha    = new Date().toISOString().slice(0, 10);
+  const esCadena = cadena.length > 1;
 
-  // Corrimiento multi-caso: el panel solo muestra el caso actual, así que la
-  // cadena completa se sigue generando en el backend (reporte agregado).
-  if (cadena.length > 1) {
-    spinner(true, "Generando informe...");
-    try {
-      const body = { casos: cadena.map(s => _mapCasoDescarga(s, s._numero_caso ?? 1)) };
-      const r = await fetch("/api/descargar_html", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) { mostrarError("Error generando HTML."); return; }
-      _descargarBlobHTML(await r.blob(), `corrimiento_${cadena.length}casos_${fecha}.html`);
-    } finally {
-      spinner(false);
-    }
-    return;
-  }
-
-  // Caso único: informe = captura exacta del panel de resultados.
   spinner(true, "Generando informe...");
-  // Los gráficos MAM se crean lazy al expandir la sección; si no existen, los
-  // creamos sólo para capturar su config y luego restauramos el panel.
+  // Los gráficos MAM del caso actual se crean lazy al expandir la sección; si el
+  // caso los tiene pero no están renderizados, los creamos temporalmente para
+  // capturarlos y luego restauramos el panel. Aplica a ambos flujos (único y
+  // cadena: en cadena el caso actual es el último de la cadena).
   const mamBody       = document.getElementById("mam-body");
   const mamPrevDisp   = mamBody ? mamBody.style.display : null;
   const mamTemporal   = !!(sim.tabla_mam?.length && !_charts["barras-mam"]);
@@ -1342,10 +1667,19 @@ async function descargarHTML() {
       renderMamTrafos(sim.trafo_orig_mam, sim.trafo_dest_mam,
         sim.nombre_orig, sim.nombre_dest, sim.ajustes_activos, sim.misma_barra_se ?? false);
     }
-    const titulo = `Traspaso ${sim.nombre_orig || "Origen"} → ${sim.nombre_dest || "Destino"}`;
-    const html   = _construirInformeHTML(titulo);
+    let html, nombre;
+    if (esCadena) {
+      // Corrimiento: informe client-side de toda la cadena (captura DOM, como NT).
+      html   = _construirInformeCadenaHTML();
+      nombre = `corrimiento_${cadena.length}casos_${fecha}.html`;
+    } else {
+      // Caso único: informe = captura exacta del panel de resultados.
+      const titulo = `Traspaso ${sim.nombre_orig || "Origen"} → ${sim.nombre_dest || "Destino"}`;
+      html   = _construirInformeHTML(titulo);
+      nombre = `traspaso_${fecha}.html`;
+    }
     if (!html) { mostrarError("No hay panel de resultados para exportar."); return; }
-    _descargarBlobHTML(html, `traspaso_${fecha}.html`);
+    _descargarBlobHTML(html, nombre);
   } catch (e) {
     mostrarError("Error generando informe: " + e.message);
   } finally {

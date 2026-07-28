@@ -187,15 +187,16 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     $cnOrig         = $serieOrigRaw['cn'];
 
     // P2: delta acumulado de casos anteriores en cadena de corrimientos.
-    // Se aplica SOLO al display (serieOrig); el delta transferido se calcula
-    // siempre desde la BD limpia (serieOrigClean) para no sobreestimar la carga
-    // de la isla con corriente de casos anteriores que no pertenece a ese tramo.
+    // El origen del caso N es el destino del caso N-1, que quedó CARGADO con lo
+    // recibido → se SUMA al baseline de display (serieOrig) para arrastrar la
+    // carga entre casos. El delta transferido se sigue calculando desde la BD
+    // limpia (serieOrigClean): el tramo transferido lleva solo su carga propia.
     $deltaAcumOrig = $b['delta_acum_orig'] ?? [];
     $serieOrig     = $serieOrigClean;
     if ($deltaAcumOrig) {
         foreach ($deltaAcumOrig as $_m => $_d) {
             if (array_key_exists($_m, $serieOrig)) {
-                $serieOrig[$_m] = round((float)$serieOrig[$_m] - (float)$_d, 2);
+                $serieOrig[$_m] = round((float)$serieOrig[$_m] + (float)$_d, 2);
             }
         }
     }
@@ -326,12 +327,13 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
 
     $trafoOrigRowRaw = trafoDeFeeder($dfTrafo, $nOrig);
     $trafoOrigRow    = $trafoOrigRowRaw ? aplicarAjustesFila($trafoOrigRowRaw, 'trafo', $nOrig) : null;
-    // P2: propagar delta acumulado al trafo origen (solo si caso anterior NO era misma barra)
+    // P2: propagar delta acumulado al trafo origen (solo si caso anterior NO era misma barra).
+    // Suma la carga recibida en casos previos (arrastra la carga entre casos).
     $deltaAcumOrigMismaBarra = (bool)($b['delta_acum_orig_misma_barra'] ?? false);
     if ($trafoOrigRow && $deltaAcumOrig && !$deltaAcumOrigMismaBarra) {
         foreach ($deltaAcumOrig as $_m => $_d) {
             if (array_key_exists($_m, $trafoOrigRow) && preg_match('/^\d{4}-\d{2}$/', $_m)) {
-                $trafoOrigRow[$_m] = round((float)$trafoOrigRow[$_m] - (float)$_d, 2);
+                $trafoOrigRow[$_m] = round((float)$trafoOrigRow[$_m] + (float)$_d, 2);
             }
         }
     }

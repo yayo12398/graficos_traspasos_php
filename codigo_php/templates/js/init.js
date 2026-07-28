@@ -14,6 +14,7 @@ const state = {
   esRecalculo:          false,// true cuando se recalcula por ajuste (no reiniciar cadena)
   numeroCaso:           0,    // caso actual (1-3)
   cadenaSimulaciones:   [],   // historial de simulaciones de la cadena
+  cadenaReportCases:    [],   // por caso: {cfgs, node} para el informe interactivo
   lzVecinos:            [],   // vecinos LZ del origen actual [{numpos_lz, tipo, vecinos}]
   selectedNumposLZ:     null, // dispositivo LZ seleccionado por el usuario
   equiposData:     [],   // equipos del feeder origen
