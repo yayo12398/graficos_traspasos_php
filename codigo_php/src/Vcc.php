@@ -498,6 +498,16 @@ function evaluarEquipos(
             : $deltaI;
         $ent['delta_I'] = $deltaIEq;
 
+        // Escala de tensión de la base (traspaso con ATR): la demanda/CN del receptor se
+        // mide en su cabecera; bajo el ATR la base se escala ×vSeB/vEq. Default 1.0.
+        $vBaseScale = isset($eq['v_base_scale']) && is_numeric($eq['v_base_scale'])
+            ? (float)$eq['v_base_scale'] : 1.0;
+        // Corriente adicional (isla entrante) efectiva por equipo — para el display de ΔI.
+        $adicionEff = $eq['serie_adicion_override'] ?? $serieAdicion ?? null;
+        if (is_array($adicionEff) && $adicionEff) {
+            $ent['delta_I'] = round(max(array_map('floatval', $adicionEff)) + $deltaIEq, 2);
+        }
+
         // Sin CN válida → sin_cn
         if (!($cn && $cn > 0.0)) {
             $ent['delta_pct'] = null;
@@ -513,7 +523,7 @@ function evaluarEquipos(
         // ── Enfoque A: cota conservadora ────────────────────────────────────
         $enfA = null;
         if ($hasFrac && $cnAlim !== null && $cnAlim > 0.0) {
-            $iBaseAOrig = $cnAlim * $fraccion;          // sin traspaso
+            $iBaseAOrig = $cnAlim * $fraccion * $vBaseScale;  // sin traspaso, a la tensión del equipo
             // La isla completa (alivioA_abs [A]) fluía por este equipo → se resta entera
             $iBaseA     = $alivioA_abs !== null
                 ? max(0.0, $iBaseAOrig - $alivioA_abs)
@@ -539,28 +549,33 @@ function evaluarEquipos(
         $enfB = null;
         if ($hasFrac && $serieAlim) {
             $meses     = $mesesFiltro ?? array_keys($serieAlim);
-            $serieReco    = [];  // con traspaso
+            $serieReco    = [];  // con traspaso (demanda propia − alivio + adición)
             $serieRecoOrig = []; // sin traspaso (para I_alivio)
+            $serieAdic     = []; // adición (isla entrante) por mes, para descomponer I+ΔI
             foreach ($meses as $mes) {
                 $v = $serieAlim[$mes] ?? null;
                 if ($v === null || !is_numeric($v)) continue;
                 $vf = (float)$v;
                 if (is_nan($vf)) continue;
-                $recoOrig = $vf * $fraccion;
+                $recoOrig = $vf * $fraccion * $vBaseScale;  // demanda propia a la tensión del equipo
                 $serieRecoOrig[$mes] = round($recoOrig, 2);
                 $delta   = $serieAlivio  ? ($serieAlivio[$mes]  ?? 0.0) : 0.0;
                 $adicion = isset($eq['serie_adicion_override'])
                     ? (float)($eq['serie_adicion_override'][$mes] ?? 0.0)
                     : ($serieAdicion ? ($serieAdicion[$mes] ?? 0.0) : 0.0);
+                $serieAdic[$mes]  = $adicion;
                 $serieReco[$mes] = round(max(0.0, $recoOrig - $delta + $adicion), 2);
             }
 
             if ($serieReco) {
-                $maxVal   = max($serieReco);
-                $mesMaxB  = (string)array_search($maxVal, $serieReco);
-                $iBaseB   = $maxVal;
-                $iTotalB  = round($iBaseB + $deltaIEq, 2);
-                $pctB     = round($iTotalB / $cn * 100.0, 1);
+                // Peor mes = pico combinado (demanda propia + traspaso). Se descompone en
+                // ese mismo mes: I_base_max = demanda propia neta, I+ΔI = pico combinado.
+                $maxVal    = max($serieReco);
+                $mesMaxB   = (string)array_search($maxVal, $serieReco);
+                $adicAtMax = $serieAdic[$mesMaxB] ?? 0.0;
+                $iBaseB    = round($maxVal - $adicAtMax, 2);
+                $iTotalB   = round($maxVal + $deltaIEq, 2);
+                $pctB      = round($iTotalB / $cn * 100.0, 1);
 
                 $serieDet = [];
                 ksort($serieReco);
@@ -576,6 +591,8 @@ function evaluarEquipos(
                     ];
                 }
 
+                // I_alivio: solo tiene sentido en el donante (hay serieAlivio). Compara la
+                // base neta del mes pico contra el pico de demanda propia sin traspaso.
                 $maxOrig = $serieRecoOrig ? max($serieRecoOrig) : null;
                 $enfB = [
                     'I_base_max' => $iBaseB,
@@ -584,8 +601,8 @@ function evaluarEquipos(
                     'pct'        => $pctB,
                     'estado'     => _vccClasif($pctB),
                     'serie'      => $serieDet,
-                    'I_alivio'   => ($maxOrig !== null && abs($maxOrig - $maxVal) > 0.001)
-                                    ? round($maxVal - $maxOrig, 2) : null,
+                    'I_alivio'   => ($serieAlivio && $maxOrig !== null && abs($iBaseB - $maxOrig) > 0.001)
+                                    ? round($iBaseB - $maxOrig, 2) : null,
                 ];
             }
         }

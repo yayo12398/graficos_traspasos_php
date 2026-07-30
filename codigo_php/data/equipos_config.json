@@ -693,5 +693,32 @@
         "notas": "",
         "fecha_registro": "2026-07-23",
         "historial": []
+    },
+    "REC102901": {
+        "corriente_a": 300,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-30",
+        "historial": []
+    },
+    "REC59333": {
+        "corriente_a": 300,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-30",
+        "historial": []
+    },
+    "ABB89690": {
+        "corriente_a": 148,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-07-30",
+        "historial": []
     }
 }

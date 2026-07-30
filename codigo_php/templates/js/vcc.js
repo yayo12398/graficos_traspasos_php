@@ -1766,13 +1766,10 @@ function vccTablaEquipos(equipos, deltaI) {
 
   // ── tabla legacy ──────────────────────────────────────────────────────────
   if (!hasEnfoques) {
-    const dI23leg = equiposEval.find(e => (e.delta_I ?? deltaI) !== deltaI)?.delta_I ?? null;
-    const _atSepLeg = () => `<tr class="vcc-at-sep-row"><td colspan="6" style="padding:4px 8px;` +
+    const _atSepLeg = (prevKv, curKv) => `<tr class="vcc-at-sep-row"><td colspan="6" style="padding:4px 8px;` +
       `background:#fff9e6;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.77rem">` +
       `<span class="badge bg-warning text-dark me-2">⚡ Autotrafo</span>` +
-      `<span class="text-muted">23 kV — ΔI = <b>${Number(dI23leg).toFixed(2)} A</b></span>` +
-      `<span class="text-muted mx-2">//</span>` +
-      `<span class="text-muted">12 kV — ΔI = <b>${Number(deltaI).toFixed(2)} A</b></span>` +
+      `<span class="text-muted">${Number(prevKv)} kV <span class="mx-1">↕</span> ${Number(curKv)} kV</span>` +
       `</td></tr>`;
     const rows = equiposEval.flatMap((eq, i, arr) => {
       const fuente  = eq.fuente_ajuste || "equipo";
@@ -1793,9 +1790,10 @@ function vccTablaEquipos(equipos, deltaI) {
         <td class="r">${cnStr}</td><td class="r">${dI} A${atMark}</td>
         <td class="r">${dpctStr}</td>
         <td><span class="badge ${bcls}">${blbl}</span></td></tr>`;
-      const prevDI = i > 0 ? (arr[i-1].delta_I ?? deltaI) : eqDeltaI;
-      const needSep = i > 0 && prevDI !== deltaI && eqDeltaI === deltaI && dI23leg !== null;
-      return needSep ? [_atSepLeg(), mainRow] : [mainRow];
+      const prevKv = i > 0 ? (arr[i-1].tension_kv_override ?? null) : null;
+      const curKv  = eq.tension_kv_override ?? null;
+      const needSep = i > 0 && curKv != null && prevKv != null && prevKv !== curKv;
+      return needSep ? [_atSepLeg(prevKv, curKv), mainRow] : [mainRow];
     }).join("");
     return omitidosTxt + `<div style="overflow-x:auto"><table class="table table-sm tabla-sim tabla-vcc mb-0" style="font-size:.78rem">
       <thead><tr>
@@ -1837,13 +1835,10 @@ function vccTablaEquipos(equipos, deltaI) {
       <th class="r">% Ajuste</th>
     </tr>`;
 
-  const dI23dual = equiposEval.find(e => (e.delta_I ?? deltaI) !== deltaI)?.delta_I ?? null;
-  const _atSepDual = (prevDI) => `<tr class="vcc-at-sep-row"><td colspan="11" style="padding:4px 8px;` +
+  const _atSepDual = (prevKv, curKv) => `<tr class="vcc-at-sep-row"><td colspan="11" style="padding:4px 8px;` +
     `background:#fff9e6;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.77rem">` +
     `<span class="badge bg-warning text-dark me-2">⚡ Autotrafo</span>` +
-    `<span class="text-muted">23 kV — ΔI = <b>${Number(prevDI).toFixed(2)} A</b></span>` +
-    `<span class="text-muted mx-2">//</span>` +
-    `<span class="text-muted">12 kV — ΔI = <b>${Number(deltaI).toFixed(2)} A</b></span>` +
+    `<span class="text-muted">${Number(prevKv)} kV <span class="mx-1">↕</span> ${Number(curKv)} kV</span>` +
     `</td></tr>`;
 
   const rows = equiposEval.flatMap((eq, i, arr) => {
@@ -1932,9 +1927,10 @@ function vccTablaEquipos(equipos, deltaI) {
       </td></tr>`;
     }
 
-    const prevDI  = i > 0 ? (arr[i-1].delta_I ?? deltaI) : eqDI;
-    const atSep   = (i > 0 && prevDI !== deltaI && eqDI === deltaI && dI23dual !== null)
-      ? [_atSepDual(prevDI)] : [];
+    const prevKv  = i > 0 ? (arr[i-1].tension_kv_override ?? null) : null;
+    const curKv   = eq.tension_kv_override ?? null;
+    const atSep   = (i > 0 && curKv != null && prevKv != null && prevKv !== curKv)
+      ? [_atSepDual(prevKv, curKv)] : [];
     return [...atSep, mainRow, serieRow].filter(Boolean);
   }).join("");
 

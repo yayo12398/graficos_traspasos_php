@@ -402,6 +402,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     // equipos_b viene del panel TSP; si no llega, se deriva del troncal LZ del
     // dispositivo seleccionado (evaluación autónoma, sin depender del panel).
     $vccAlimBEquipos = null;
+    $atrOmitido = null;  // aviso: receptor con ATR pero corrección de tensión no anclada
     $equiposBReq = ($tipoDest === 'excel' && $nDest && is_array($b['equipos_b'] ?? null))
         ? $b['equipos_b'] : [];
     if ($tipoDest === 'excel' && $nDest && !$equiposBReq && !empty($lzInfo['tiene_lz'])) {
@@ -477,6 +478,12 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                         ? ($isDown ? $atBTensAlta : 12.0)
                         : ($isDown ? 12.0 : $atBTensAlta);
                 }
+                // Tensión del equipo (para badge ⚡ y separador de nivel en la tabla)
+                $_eqB['tension_kv_override'] = $vEq;
+                // Escala de la BASE: la demanda/CN del receptor se mide en su cabecera
+                // ($vSeB); bajo el ATR (12 kV) la misma potencia da más corriente → ×vSeB/vEq.
+                $_eqB['v_base_scale'] = $vEq > 0 ? $vSeB / $vEq : 1.0;
+                // Escala de la ADICIÓN (corriente transferida) respecto a la cabecera origen.
                 $scale = $vCabOrig / $vEq;
                 if (abs($scale - 1.0) > 0.001) {
                     $sc = [];
@@ -494,6 +501,38 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                 $_eqB['serie_adicion_override'] = $sc;
             }
             unset($_eqB);
+        }
+
+        // ── Aviso: corrección de tensión ATR no aplicada (silent $atB=null) ──
+        // Si el receptor tiene ATR pero no se ancló ($atB null) y algún equipo del
+        // troncal está aguas abajo del recloser de borde (cruza a 12 kV), la corrección
+        // se omitió → esos equipos se muestran a 23 kV subestimados. Disparo topológico:
+        // el caso legítimo (troncal que se queda en 23 kV) no cruza el borde → sin aviso.
+        if (!$atB && $alimConfBc && !empty($alimConfBc['autotrafos']) && $equiposBEval) {
+            foreach ($alimConfBc['autotrafos'] as $_at) {
+                $tipo  = $_at['tipo'] ?? 'reductor';
+                $bound = strtoupper(trim($tipo === 'elevador'
+                    ? ($_at['rec_baja'] ?? '')
+                    : (($_at['rec_alta'] ?? '') ?: ($_at['rec_baja'] ?? ''))));
+                if ($bound === '') continue;
+                $eqCruza = [];
+                foreach ($equiposBEval as $_e) {
+                    $nEq = strtoupper(trim($_e['nombre'] ?? ''));
+                    if ($nEq === '' || ($_e['tipo'] ?? '') === 'conductor_intermedio' || $nEq === $bound) continue;
+                    if (equipoEsAguasAbajoDe($dfAb, $nomDest, $bound, $_e['nombre'])) $eqCruza[] = $_e['nombre'];
+                }
+                if ($eqCruza) {
+                    $atrOmitido = [
+                        'feeder'  => $nomDest,
+                        'tipo'    => $tipo,
+                        'eq_alta' => trim((string)($_at['rec_alta'] ?? '')),
+                        'eq_baja' => trim((string)($_at['rec_baja'] ?? '')),
+                        'equipos' => $eqCruza,
+                        'forzado' => $traspasoForzado,
+                    ];
+                    break;
+                }
+            }
         }
 
         if ($equiposBEval) {
@@ -586,6 +625,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         ],
         'v_lz'                => $vLz,
         'traspaso_forzado'    => $traspasoForzado,
+        'atr_omitido'         => $atrOmitido,
         'frg_orig'            => tlcAlimEsFrg($nomOrig),
         'frg_dest'            => $nomDest ? tlcAlimEsFrg($nomDest) : false,
         'serie_raw_orig'      => $serieOrigRaw['serie'] ?? [],

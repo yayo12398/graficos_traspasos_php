@@ -450,17 +450,22 @@ function _clasificarDestinosLZ(equipoAbre = null) {
         lz.equipos_troncal_orig?.some(e => e.toUpperCase().trim() === eqUp))
     : state.lzVecinos;
 
-  const estado = new Map(); // numalim → 'viable' | 'no_viable'
+  const estado = new Map(); // numalim → 'viable' | 'no_viable'  (LZ ligados al segmento)
   lzRelevantes.forEach(lz => (lz.vecinos || []).forEach(v => {
     if (v.viable !== false) estado.set(v.numalim, 'viable');
     else if (estado.get(v.numalim) !== 'viable') estado.set(v.numalim, 'no_viable');
   }));
 
-  const g = { viable: [], noViable: [] };
+  // Todos los vecinos LZ del origen (sin filtrar por equipo) → para el grupo forzable.
+  const neighborsAll = new Set();
+  state.lzVecinos.forEach(lz => (lz.vecinos || []).forEach(v => neighborsAll.add(v.numalim)));
+
+  const g = { viable: [], noViable: [], sinSegmento: [] };
   state.destinosData.forEach(d => {
     const st = estado.get(d.numalim);
-    if (st === 'viable')         g.viable.push(d);
-    else if (st === 'no_viable') g.noViable.push(d);
+    if (st === 'viable')            g.viable.push(d);
+    else if (st === 'no_viable')    g.noViable.push(d);
+    else if (neighborsAll.has(d.numalim)) g.sinSegmento.push(d); // vecino LZ, no en este segmento
   });
   return g;
 }
@@ -471,16 +476,21 @@ function _rebuildDropdownDestinos(equipoAbre = null) {
   const g = _clasificarDestinosLZ(equipoAbre);
   const _txt = d => `${d.frg ? '[FRG] ' : ''}${d.nombre}  (CN=${d.cn?.toFixed(0) ?? "?"} A)`;
   const options = [];
-  g.viable.forEach(d   => options.push({ value: d.numalim, text: _txt(d), grupo: 'viable' }));
-  g.noViable.forEach(d => options.push({ value: d.numalim, text: _txt(d), grupo: 'no_viable' }));
+  g.viable.forEach(d      => options.push({ value: d.numalim, text: _txt(d), grupo: 'viable' }));
+  g.noViable.forEach(d    => options.push({ value: d.numalim, text: _txt(d), grupo: 'no_viable' }));
+  g.sinSegmento.forEach(d => options.push({ value: d.numalim, text: _txt(d), grupo: 'sin_segmento' }));
+
+  // Vecinos LZ del origen no ligados al segmento → forzables con troncal manual.
+  state.destinosSinSegmento = new Set(g.sinSegmento.map(d => d.numalim));
 
   const selActual = ts.destino?.getValue() ? parseInt(ts.destino.getValue()) : null;
   if (ts.destino) ts.destino.destroy();
   ts.destino = new TomSelect("#sel-destino", {
     options,
     optgroups: [
-      { value: 'viable',    label: 'Con LZ viable' },
-      { value: 'no_viable', label: 'Con LZ · sin troncal (forzar)' },
+      { value: 'viable',       label: 'Con LZ viable' },
+      { value: 'no_viable',    label: 'Con LZ · sin troncal (forzar)' },
+      { value: 'sin_segmento', label: 'Sin LZ en el segmento (forzar)' },
     ],
     optgroupField: 'grupo',
     lockOptgroupOrder: true,
@@ -500,12 +510,13 @@ function _rebuildDropdownDestinos(equipoAbre = null) {
 // Mensaje de estado bajo el selector de destino.
 function _mensajeDestinosLZ(lzInfoEl, grupos, equipoAbre) {
   if (!lzInfoEl) return;
-  const nV = grupos.viable.length, nNV = grupos.noViable.length;
+  const nV = grupos.viable.length, nNV = grupos.noViable.length, nSS = grupos.sinSegmento.length;
   const ecuacion = equipoAbre ? ` para equipo <code>${equipoAbre.toUpperCase()}</code>` : "";
-  if (nV + nNV) {
+  if (nV + nNV + nSS) {
     const icon  = equipoAbre ? "bi-funnel-fill text-primary" : "bi-geo-alt-fill text-success";
     const extra = nNV ? ` · <span class="text-warning-emphasis">${nNV} sin troncal (forzar)</span>` : "";
-    lzInfoEl.innerHTML = `<i class="bi ${icon} me-1"></i>${nV} con LZ viable${extra}${ecuacion}`;
+    const extraSS = nSS ? ` · <span class="text-warning-emphasis">${nSS} sin LZ en el segmento (forzar)</span>` : "";
+    lzInfoEl.innerHTML = `<i class="bi ${icon} me-1"></i>${nV} con LZ viable${extra}${extraSS}${ecuacion}`;
     lzInfoEl.className = "small text-success mt-1";
   } else {
     lzInfoEl.innerHTML = `<i class="bi bi-x-circle me-1"></i>Sin vecinos LZ${ecuacion} — este alimentador no puede traspasar`;
@@ -643,6 +654,10 @@ function mostrarEquipoCierra(numalimDest) {
     return;
   }
 
+  // Vecino LZ no ligado al segmento abierto → forzar con troncal manual (aunque el LZ
+  // físico sea viable, el vínculo LZ↔segmento no está validado para este equipo).
+  const sinSeg = state.destinosSinSegmento?.has(numalimDest) ?? false;
+
   const tipoIsla   = document.querySelector('input[name="tipo-isla"]:checked')?.value;
   const equipoAbre = (tipoIsla === "equipo" && ts.equipo?.getValue())
     ? ts.equipo.getValue().toUpperCase().trim() : null;
@@ -752,13 +767,23 @@ function mostrarEquipoCierra(numalimDest) {
     ${selDev ? _forzarWarn(selDev) : ""}
     ${selDev ? _htmlEquiposTroncal(selDev._equipos_troncal) : ""}`;
   }
+  // Aviso: vecino LZ forzado fuera del segmento (troncal manual obligatorio).
+  if (sinSeg) {
+    el.innerHTML += `<div class="alert alert-warning py-2 px-3 small mt-2 mb-0">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>
+      <strong>Traspaso forzado — sin LZ en el segmento.</strong> Este receptor es vecino LZ
+      del origen pero <strong>no está ligado al segmento</strong> que abriste. Arma el
+      troncal del receptor a mano en el panel de abajo (la composición no se guarda).
+    </div>`;
+  }
   el.style.display = "";
 
   // Cargar panel de configuración de equipos del receptor (según LZ seleccionado)
   // Preferir nom_alim del LZ (vi.nom_alim), fallback a destinosData
   const feederB  = state.destinosData.find(d => d.numalim === numalimDest);
   const nomAlimB = primerOk?._nom_alim || feederB?.nom_alim || feederB?.nombre || '';
-  const troncalB = primerOk?._equipos_troncal ?? [];
+  // sinSeg → troncal manual (vacío) aunque el LZ sea viable; el operador arma el camino.
+  const troncalB = sinSeg ? [] : (primerOk?._equipos_troncal ?? []);
   tspCargarEquiposB(numalimDest, nomAlimB, troncalB);
 }
 
@@ -812,6 +837,24 @@ function renderSecEquiposInvolucrados(data) {
       <i class="bi bi-exclamation-triangle-fill me-1"></i>
       <strong>Traspaso forzado</strong> — la base no registra el límite de zona como topológicamente viable.
       ${conTroncal}
+    </div>`);
+  }
+
+  // ── Aviso: corrección de tensión ATR del receptor no aplicada ────────────
+  if (data.atr_omitido) {
+    const o     = data.atr_omitido;
+    const eqs   = (o.equipos || []).map(e => `<code>${e}</code>`).join(", ");
+    const borde = o.tipo === "elevador"
+      ? (o.eq_baja || "borde 12 kV")
+      : (o.eq_alta || o.eq_baja || "borde 23 kV");
+    partes.push(`<div class="alert alert-warning py-2 px-3 small mb-2">
+      <i class="bi bi-lightning-charge-fill me-1"></i>
+      <strong>Corrección de tensión ATR no aplicada</strong> — el receptor
+      <strong>${data.nombre_dest}</strong> tiene un autotransformador (${o.tipo}) y estos
+      equipos del troncal quedan bajo el ATR (12 kV): ${eqs}. No se detectó el recloser de
+      borde (<code>${borde}</code>) en el troncal, así que sus corrientes se muestran a
+      23 kV (podrían estar subestimadas). Agrega el recloser de borde al troncal del
+      receptor para aplicar la corrección.
     </div>`);
   }
 
