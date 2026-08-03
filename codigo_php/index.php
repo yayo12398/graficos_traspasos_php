@@ -2,21 +2,21 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE index.php  — router puro (305 L)                                 ║
+// ║  ÍNDICE DE index.php  — router puro (306 L)                                 ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  BOOTSTRAP                                                      L.22–244    ║
+// ║  BOOTSTRAP                                                      L.22–245    ║
 // ║    Verificar config.php                                          L.22        ║
-// ║    require_once conexion.php + require_login()                   L.40        ║
-// ║    Carpetas de escritura + includes src/                         L.44        ║
-// ║    CLI static, base path, cabeceras CORS                         L.65        ║
-// ║    jsonOk, jsonErr, jsonPy, bodyJson                             L.92        ║
-// ║    gd(), getLz(), _lzInfoEntre()                                L.122        ║
-// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.210        ║
+// ║    require_once conexion.php + require_login()                   L.41        ║
+// ║    Carpetas de escritura + includes src/                         L.45        ║
+// ║    CLI static, base path, cabeceras CORS                         L.66        ║
+// ║    jsonOk, jsonErr, jsonPy, bodyJson                             L.93        ║
+// ║    gd(), getLz(), _lzInfoEntre()                                L.123        ║
+// ║    seleccionarTds(), filtrarMeses(), nomAlimDeNumalim()         L.211        ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  ROUTER                                                        L.246–305    ║
-// ║    GET /  → sirve templates/index.html con shim base-path       L.258       ║
-// ║    /api/* → require api/feeders … api/telecontrol.php           L.286       ║
-// ║    404 fallback                                                  L.296       ║
+// ║  ROUTER                                                        L.247–306    ║
+// ║    GET /  → sirve templates/index.html con shim base-path       L.259       ║
+// ║    /api/* → require api/feeders … api/telecontrol.php           L.287       ║
+// ║    404 fallback                                                  L.297       ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // ── Verificar config.php (solo en desarrollo local) ───────────────────────────
