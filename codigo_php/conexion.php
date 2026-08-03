@@ -2,7 +2,40 @@
 declare(strict_types=1);
 
 // ── Credenciales ──────────────────────────────────────────────────────────────
-$_cfg = require __DIR__ . '/config.php';
+// En desarrollo local config.php existe (gitignoreado). En deploy no se incluye
+// y se usan los valores de abajo directamente.
+$_cfg = file_exists(__DIR__ . '/config.php')
+    ? require __DIR__ . '/config.php'
+    : [
+        'mysql_cuadrilla' => [
+            'host'     => 'ewaahicdca00',
+            'user'     => 'OperAnalisys',
+            'password' => 'ArrozConHuevo#56',
+            'database' => 'meyg',
+            'charset'  => 'utf8mb4',
+        ],
+        'mysql_retim' => [
+            'host'     => 'ewaahicdca00',
+            'user'     => 'user_nmt',
+            'password' => 'Config2024#',
+            'database' => 'qv_server',
+            'charset'  => 'utf8mb4',
+        ],
+        'mysql_agui' => [
+            'host'     => 'ewaahicdca00',
+            'user'     => 'OperAnalisys',
+            'password' => 'ArrozConHuevo#56',
+            'database' => 'inf_tecnica_agui',
+            'charset'  => 'utf8mb4',
+        ],
+        'mysql_tlc' => [
+            'host'     => 'ewaahicdca00',
+            'user'     => 'OperAnalisys',
+            'password' => 'ArrozConHuevo#56',
+            'database' => 'telecontrol_systems',
+            'charset'  => 'utf8mb4',
+        ],
+    ];
 
 // ── Singletons de conexión PDO ────────────────────────────────────────────────
 
@@ -69,6 +102,8 @@ function e(?string $v): string {
 }
 
 function require_login(): void {
-    // stub vacío — activar al migrar al sistema central
-    // require_once PATH_CENTRAL . '/session.php';
+    $session = dirname(__DIR__) . '/session.php';
+    if (file_exists($session)) {
+        require_once $session;
+    }
 }

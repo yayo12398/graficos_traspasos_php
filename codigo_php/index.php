@@ -19,8 +19,9 @@ declare(strict_types=1);
 // ║    404 fallback                                                  L.296       ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-// ── Verificar config.php ──────────────────────────────────────────────────────
-if (!file_exists(__DIR__ . '/config.php')) {
+// ── Verificar config.php (solo en desarrollo local) ───────────────────────────
+// En producción conexion.php usa credenciales hardcodeadas como fallback.
+if (PHP_SAPI === 'cli-server' && !file_exists(__DIR__ . '/config.php')) {
     header('Content-Type: text/html; charset=utf-8');
     http_response_code(503);
     echo '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Configuración pendiente</title>'
@@ -39,7 +40,7 @@ if (!file_exists(__DIR__ . '/config.php')) {
 
 // ── Conexión y helpers de autenticación ──────────────────────────────────────
 require_once __DIR__ . '/conexion.php';
-require_login(); // stub hoy; activa al migrar al sistema central
+require_login(); // no-op en local; requiere session.php del servidor en producción
 
 // ── Crear carpetas de escritura si no existen ─────────────────────────────────
 foreach ([

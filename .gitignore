@@ -1,3 +1,6 @@
+# ── Paquetes de deploy (artefactos, no fuente) ──────────────
+AMEyAO_SimulacionTraspaso_VCC_PUSER/
+
 # ── Credenciales ───────────────────────────────────────────
 codigo_php/config.php
 
