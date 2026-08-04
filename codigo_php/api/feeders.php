@@ -70,7 +70,7 @@ if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'tds' && !$b2) {
 }
 
 // ── GET /api/feeder/{nom}/equipos ──────────────────────────────────────────────
-// Retorna: [{nombre, numpos, n_tds, kva, kva_feeder, pct_feeder}]
+// Retorna: [{nombre, numpos, n_tds, kva, kva_feeder, pct_feeder, tlc, tension_kv}]
 if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'equipos' && !$b2) {
     $nomAlim = urldecode($b0);
     ['dfAb' => $dfAb] = gd();
@@ -80,21 +80,25 @@ if ($method === 'GET' && $a === 'feeder' && $b0 && $b1 === 'equipos' && !$b2) {
     $kvaFeeder = 0.0;
     foreach ($allTds as $td) { $kvaFeeder += (float)($td['potencia'] ?? 0); }
     $kvaFeeder = round($kvaFeeder, 0);
+    // Tensión por equipo según el segmento del ATR ([] si el feeder no tiene autotrafo).
+    $tensionMap = tensionPorEquipoAtr($dfAb, $nomAlim, acGetAlim($nomAlim)['autotrafos'] ?? []);
     $result = [];
     foreach ($equipos as $row) {
         $nombre = (string)($row['nombre_equip'] ?? '');
+        $numpos = (string)($row['numpos_equip'] ?? '');
         $tdsEq  = tdsDeEquipo($dfAb, $nombre, null);
         $kvaEq  = 0.0;
         foreach ($tdsEq as $td) { $kvaEq += (float)($td['potencia'] ?? 0); }
         $kvaEq = round($kvaEq, 0);
         $result[] = [
             'nombre'     => $nombre,
-            'numpos'     => (string)($row['numpos_equip'] ?? ''),
+            'numpos'     => $numpos,
             'n_tds'      => count($tdsEq),
             'kva'        => $kvaEq,
             'kva_feeder' => $kvaFeeder,
             'pct_feeder' => $kvaFeeder > 0 ? round($kvaEq / $kvaFeeder * 100, 1) : 0.0,
             'tlc'        => tlcEsTlc($nombre),
+            'tension_kv' => $tensionMap[$numpos] ?? null,
         ];
     }
     usort($result, fn($a, $b) => ($b['pct_feeder'] ?? 0) <=> ($a['pct_feeder'] ?? 0));

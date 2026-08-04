@@ -212,6 +212,8 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
         if ($ne !== '') $nombresEq[$ne] = true;
     }
     $clasificados = _vccClasificarUpstream(array_keys($nombresEq));
+    // Tensión por equipo según el segmento del ATR ([] si el feeder no tiene autotrafo).
+    $tensionMap = tensionPorEquipoAtr($dfAb, $nomAlim, acGetAlim($nomAlim)['autotrafos'] ?? []);
     $result = [];
     foreach ($clasificados as $eq) {
         $frac = in_array($eq['tipo'], ['reconectador', 'equipo_sub'], true)
@@ -219,7 +221,11 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
             : ['kva_down' => null, 'kva_total' => null, 'fraccion' => null,
                'tds_down' => null, 'tds_con_kva' => null, 'tds_sin_kva' => null];
         // 'numpos' es el identificador de equipo; 'nombre' es el mismo valor (numpos_equip)
-        $result[] = array_merge($eq, $frac, ['numpos' => $eq['nombre'], 'tlc' => tlcEsTlc($eq['nombre'])]);
+        $result[] = array_merge($eq, $frac, [
+            'numpos'     => $eq['nombre'],
+            'tlc'        => tlcEsTlc($eq['nombre']),
+            'tension_kv' => $tensionMap[$eq['nombre']] ?? null,
+        ]);
     }
     // Ordenar: fracción descendente (igual que Python)
     usort($result, fn($a, $b) => ($b['fraccion'] ?? 0) <=> ($a['fraccion'] ?? 0));

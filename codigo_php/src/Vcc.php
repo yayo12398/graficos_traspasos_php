@@ -330,6 +330,76 @@ function equipoEsAguasAbajoDe(array $dfAb, string $nomAlim, string $boundary, st
 }
 
 /**
+ * Mapa numpos_equip => tension_kv (kV) según el segmento de tensión del autotrafo.
+ * Cada equipo hereda 12 kV si está aguas abajo de un borde de baja de un ATR (reductor
+ * rec_baja / elevador rec_alta), asignado al borde más profundo (set de TDs más pequeño).
+ * Los bordes conservan su tensión (rec_baja=12, rec_alta=tension_alta). El resto = tensión
+ * de cabecera del feeder (23 kV; 12 kV si el feeder es todo-elevador). [] si no hay ATRs.
+ * Solo display: alimenta el flag ⚡XXkV del dropdown de aguas abajo (NT y VCC).
+ */
+function tensionPorEquipoAtr(array $dfAb, string $nomAlim, array $autotrafos): array
+{
+    if (!$autotrafos) return [];
+
+    $equipos = equiposDeFeeder($dfAb, $nomAlim);   // [{nombre_equip, numpos_equip, ...}]
+    $tdsDeEq = function (string $nombre) use ($dfAb): array {
+        $set = [];
+        foreach (tdsDeEquipo($dfAb, $nombre, null) as $r) {
+            $np = (string)($r['numpos_td'] ?? '');
+            if ($np !== '') $set[$np] = true;
+        }
+        return $set;
+    };
+
+    // Bordes de baja: por ATR, el borde downstream + su set de TDs.
+    $bordes = [];        // ['borde'=>UP, 'set'=>[td=>true], 'size'=>int, 'tension'=>int]
+    $recBajaKv = [];     // UP => 12
+    $recAltaKv = [];     // UP => tension_alta
+    $todoElevador = true;
+    foreach ($autotrafos as $at) {
+        $tipo = ($at['tipo'] ?? 'reductor') === 'elevador' ? 'elevador' : 'reductor';
+        if ($tipo !== 'elevador') $todoElevador = false;
+        $recAlta = strtoupper(trim((string)($at['rec_alta'] ?? '')));
+        $recBaja = strtoupper(trim((string)($at['rec_baja'] ?? '')));
+        $tAlta   = (int)($at['tension_alta'] ?? 23);
+        if ($recBaja !== '') $recBajaKv[$recBaja] = 12;
+        if ($recAlta !== '') $recAltaKv[$recAlta] = $tAlta;
+        $borde = $tipo === 'elevador' ? $recAlta : ($recBaja ?: $recAlta);
+        if ($borde === '') continue;
+        $set = $tdsDeEq($borde);
+        if (!$set) continue;
+        $bordes[] = ['borde' => $borde, 'set' => $set, 'size' => count($set),
+                     'tension' => $tipo === 'elevador' ? $tAlta : 12];
+    }
+    $cabTension = $todoElevador ? 12 : 23;
+
+    $out = [];
+    foreach ($equipos as $e) {
+        $ne   = (string)($e['nombre_equip'] ?? '');
+        $npEq = (string)($e['numpos_equip'] ?? '');
+        $key  = strtoupper(trim($ne));
+        if ($npEq === '') continue;
+
+        // 1) Los bordes conservan su tensión.
+        if (isset($recBajaKv[$key])) { $out[$npEq] = $recBajaKv[$key]; continue; }
+        if (isset($recAltaKv[$key])) { $out[$npEq] = $recAltaKv[$key]; continue; }
+
+        // 2) Borde más profundo cuyo set de TDs contiene TDs(E).
+        $tdsE = $tdsDeEq($ne);
+        $best = null; $bestSize = PHP_INT_MAX;
+        if ($tdsE) foreach ($bordes as $bd) {
+            if ($key === $bd['borde']) continue;
+            $inside = true;
+            foreach ($tdsE as $td => $_) { if (!isset($bd['set'][$td])) { $inside = false; break; } }
+            if ($inside && $bd['size'] < $bestSize) { $best = $bd; $bestSize = $bd['size']; }
+        }
+        // 3) Cabecera si ninguno.
+        $out[$npEq] = $best ? $best['tension'] : $cabTension;
+    }
+    return $out;
+}
+
+/**
  * Añade datos de fracción de potencia a reconectadores y equipos_sub del listado upstream.
  * Los equipos de tipo 'otro' se dejan sin modificar.
  *

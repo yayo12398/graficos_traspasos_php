@@ -120,12 +120,11 @@ function renderEquipos(equipos) {
 
   const autotrafos = state.origenAlimConfig?.autotrafos ?? [];
 
-  // Mapas para badges y tiebreaker de sort (por tipo de ATR)
-  const atAltaMap = {}, atBajaMap = {}, atPrioMap = {};
+  // Mapa de prioridad para el tiebreaker de sort (por tipo de ATR).
+  // El flag de tensión por equipo viene del backend (e.tension_kv).
+  const atPrioMap = {};
   for (const at of autotrafos) {
     const tipo = at.tipo ?? 'reductor';
-    if (at.rec_alta) atAltaMap[at.rec_alta.trim().toUpperCase()] = at.tension_alta ?? 23;
-    if (at.rec_baja) atBajaMap[at.rec_baja.trim().toUpperCase()] = true;
     if (tipo === 'elevador') {
       if (at.rec_baja) atPrioMap[at.rec_baja.trim().toUpperCase()] = 2;
       if (at.rec_alta) atPrioMap[at.rec_alta.trim().toUpperCase()] = 3;
@@ -143,8 +142,8 @@ function renderEquipos(equipos) {
   const opts = sorted.map(e => {
     const nom    = e.nombre.trim().toUpperCase();
     const pctStr = e.pct_feeder != null ? ` (${e.pct_feeder.toFixed(1)}%)` : '';
-    const atSfx  = atAltaMap[nom] != null ? ` · ⚡ ${atAltaMap[nom]}kV`
-                 : atBajaMap[nom]          ? ` · ⚡ 12kV` : '';
+    // Flag de tensión por equipo (segmento del ATR, incluye PPF y todos los tipos).
+    const atSfx  = e.tension_kv != null ? ` · ⚡ ${e.tension_kv}kV` : '';
     const tlcSfx = e.tlc ? ' <span style="font-size:.68rem;color:#198754;font-weight:700">[TLC]</span>' : '';
     return { value: e.nombre, text: nom, label: `${_eqIcon(nom)} ${nom}${pctStr}${atSfx}${tlcSfx}` };
   });

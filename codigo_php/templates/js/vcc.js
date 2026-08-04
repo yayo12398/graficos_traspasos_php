@@ -21,13 +21,12 @@ async function vccCargarEquipos(nomAlim, modo = "equipos") {
         return { value: e.numpos, text: e.nombre, label: `${e.nombre}${kvaStr}` };
       });
     } else {
-      // Badges AT + separadores para modo equipos
+      // Separadores + tiebreaker de sort para modo equipos.
+      // El flag de tensión por equipo viene del backend (e.tension_kv).
       const autotrafos = state.alimConfig?.autotrafos ?? [];
-      const atNomMap = {}, atPrioMap = {};
+      const atPrioMap = {};
       for (const at of autotrafos) {
         const tipo = at.tipo ?? 'reductor';
-        if (at.rec_alta) atNomMap[at.rec_alta.trim().toUpperCase()] = at.tension_alta ?? 23;
-        if (at.rec_baja) atNomMap[at.rec_baja.trim().toUpperCase()] = 12;
         if (tipo === 'elevador') {
           if (at.rec_baja) atPrioMap[at.rec_baja.trim().toUpperCase()] = 2;
           if (at.rec_alta) atPrioMap[at.rec_alta.trim().toUpperCase()] = 3;
@@ -45,8 +44,8 @@ async function vccCargarEquipos(nomAlim, modo = "equipos") {
         const icon   = TIPO_ICON[e.tipo] || "⚫";
         const pctStr = e.fraccion != null ? ` (${(e.fraccion * 100).toFixed(1)}%)` : "";
         const nom    = (e.numpos || '').trim().toUpperCase();
-        const atKv   = atNomMap[nom];
-        const atSfx  = atKv != null ? ` · ⚡ ${atKv}kV` : '';
+        // Flag de tensión por equipo (segmento del ATR, incluye PPF y todos los tipos).
+        const atSfx  = e.tension_kv != null ? ` · ⚡ ${e.tension_kv}kV` : '';
         return { value: e.numpos, text: e.numpos, nom, label: `${icon} ${e.numpos}${pctStr}${atSfx}` };
       });
       // Separadores: reductor → después de rec_alta (o justo antes de rec_baja si sin alta); elevador → después de rec_baja
