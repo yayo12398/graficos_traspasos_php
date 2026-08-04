@@ -88,7 +88,8 @@ function _autotrafoAplicar(array $upstream, ?array $alimConf, float $kvaEmp, flo
 // modo=equipos (default): lista de equipos upstream enriquecida para el cache del JS
 //   → {numpos, nombre, tipo, cn, cn_opcional, fraccion, kva_down, kva_total, tds_down, ...}
 // modo=tp: lista de TDs del feeder → {numpos, nombre, kva, tipo}
-// modo=tps_at: TDs agrupados por lado del autotrafo → {alta:{n,kva,tps}, baja:{n,kva,tps}}
+// modo=tps_at: TDs agrupados por segmento de tensión → {segmentos:[{orden,label,tension_kv,rec_borde,tipo,n,kva,tps}]}
+//   Cabecera + un segmento por ATR (disjuntos: cada TD al borde más profundo que lo contiene).
 if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
     $nomAlim = urldecode($b1);
     $modo    = $_GET['modo'] ?? 'equipos';
@@ -96,50 +97,88 @@ if ($method === 'GET' && $a === 'vcc' && $b0 === 'equipos' && $b1 && !$b2) {
     $nomUp   = strtoupper(trim($nomAlim));
 
     if ($modo === 'tps_at') {
+        // Segmentos de tensión del feeder: cabecera (23 kV, o 12 si el feeder nace en baja)
+        // + un segmento por ATR. Disjuntos: cada TD se asigna al borde más profundo (set
+        // aguas-abajo más pequeño) que lo contiene → sin doble conteo en cascada ni cruce
+        // entre ramas paralelas. Vista informativa (solo la consume el panel de config).
         $alimConf = acGetAlim($nomAlim);
-        $at       = ($alimConf['autotrafos'] ?? [])[0] ?? null;
-        if (!$at || !($at['rec_alta'] ?? '')) jsonOk(['alta' => null, 'baja' => null]);
-        $recAlta = $at['rec_alta'];
-        $recBaja = $at['rec_baja'] ?? '';
+        $ats      = $alimConf['autotrafos'] ?? [];
+        if (!$ats) jsonOk(['segmentos' => []]);
 
-        // Frontera: rec_baja si está asignado (más preciso), else rec_alta
-        $recFrontera = $recBaja ?: $recAlta;
-
-        // TDs aguas abajo de la frontera → lado 12 kV
-        $tdsFrontera = tdsDeEquipo($dfAb, $recFrontera);
-        $npBajaSet = []; $seen12 = []; $list12 = [];
-        foreach ($tdsFrontera as $r) {
+        // Universo de TDs del feeder: numpos_td únicos con su fila (para kVA/nombre y orden).
+        $rowByTd = []; $ordenTd = [];
+        foreach (tdsDeFeeder($dfAb, $nomAlim) as $r) {
             $np = (string)($r['numpos_td'] ?? '');
-            if (!$np) continue;
-            $npBajaSet[$np] = true;
-            if (!isset($seen12[$np])) { $seen12[$np] = true; $list12[] = $r; }
+            if ($np === '' || isset($rowByTd[$np])) continue;
+            $rowByTd[$np] = $r;
+            $ordenTd[]    = $np;
         }
 
-        // TDs del feeder completo (cabecera → todos) que NO están en el lado 12 kV → lado 23 kV
-        $tdsFeeder = tdsDeFeeder($dfAb, $nomAlim);
-        $seen23 = []; $list23 = [];
-        foreach ($tdsFeeder as $r) {
-            $np = (string)($r['numpos_td'] ?? '');
-            if (!$np || isset($npBajaSet[$np])) continue;
-            if (!isset($seen23[$np])) { $seen23[$np] = true; $list23[] = $r; }
+        // Por cada ATR: borde downstream + set de TDs aguas abajo (mismo criterio que la
+        // frontera del flujo single-ATR anterior: tdsDeEquipo por nombre del borde).
+        $segMeta = [];
+        foreach ($ats as $at) {
+            $tipo    = ($at['tipo'] ?? 'reductor') === 'elevador' ? 'elevador' : 'reductor';
+            $recAlta = trim((string)($at['rec_alta'] ?? ''));
+            $recBaja = trim((string)($at['rec_baja'] ?? ''));
+            $borde   = $tipo === 'elevador' ? $recAlta : ($recBaja ?: $recAlta);
+            if ($borde === '') continue;
+            $set = [];
+            foreach (tdsDeEquipo($dfAb, $borde) as $r) {
+                $np = (string)($r['numpos_td'] ?? '');
+                if ($np !== '' && isset($rowByTd[$np])) $set[$np] = true;
+            }
+            if (!$set) continue;
+            $segMeta[] = ['borde' => $borde, 'tipo' => $tipo,
+                          'tension' => $tipo === 'elevador' ? 23 : 12,
+                          'set' => $set, 'size' => count($set)];
         }
 
-        $buildSide = function(array $tds): array {
+        // Asignar cada TD al borde más profundo (set más pequeño) que lo contiene; -1 = cabecera.
+        $grupos = [-1 => []];
+        foreach ($segMeta as $i => $_) $grupos[$i] = [];
+        foreach ($ordenTd as $np) {
+            $best = -1; $bestSize = PHP_INT_MAX;
+            foreach ($segMeta as $i => $m) {
+                if (isset($m['set'][$np]) && $m['size'] < $bestSize) { $best = $i; $bestSize = $m['size']; }
+            }
+            $grupos[$best][] = $np;
+        }
+
+        $buildSeg = function(array $nps) use ($rowByTd): array {
             $n = 0; $kva = 0.0; $list = [];
-            foreach ($tds as $r) {
+            foreach ($nps as $np) {
+                $r = $rowByTd[$np] ?? null; if (!$r) continue;
                 $n++; $kva += (float)($r['potencia'] ?? 0);
-                $list[] = [
-                    'numpos' => (string)($r['numpos_td'] ?? ''),
-                    'nombre' => (string)($r['nombre']    ?? ''),
-                    'kva'    => (float)($r['potencia'] ?? 0),
-                ];
+                $list[] = ['numpos' => $np, 'nombre' => (string)($r['nombre'] ?? ''),
+                           'kva' => (float)($r['potencia'] ?? 0)];
             }
             usort($list, fn($a, $b) => ($b['kva'] ?? 0) <=> ($a['kva'] ?? 0));
             return ['n' => $n, 'kva' => round($kva, 0), 'tps' => array_slice($list, 0, 30)];
         };
 
-        jsonOk(['alta' => $buildSide($list23), 'baja' => $buildSide($list12),
-                'rec_alta' => $recAlta, 'rec_baja' => $recBaja ?: null]);
+        // Cabecera: 12 kV solo si el feeder es enteramente elevador (nace en baja), else 23 kV.
+        $todoElevador = $segMeta && !array_filter($segMeta, fn($m) => $m['tipo'] !== 'elevador');
+        $segmentos = [array_merge(
+            ['orden' => 0, 'label' => 'Cabecera', 'tension_kv' => $todoElevador ? 12 : 23,
+             'rec_borde' => null, 'tipo' => null],
+            $buildSeg($grupos[-1]))];
+
+        // Segmentos de ATR de menos a más profundo (set grande → chico).
+        $ordenSeg = array_keys($segMeta);
+        usort($ordenSeg, fn($x, $y) => $segMeta[$y]['size'] <=> $segMeta[$x]['size']);
+        $orden = 1;
+        foreach ($ordenSeg as $i) {
+            $seg = $buildSeg($grupos[$i]);
+            if ($seg['n'] === 0) continue;
+            $m = $segMeta[$i];
+            $segmentos[] = array_merge(
+                ['orden' => $orden++, 'label' => 'Segmento ' . $m['borde'],
+                 'tension_kv' => $m['tension'], 'rec_borde' => $m['borde'], 'tipo' => $m['tipo']],
+                $seg);
+        }
+
+        jsonOk(['segmentos' => $segmentos]);
     }
 
     if ($modo === 'tp') {

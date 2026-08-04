@@ -473,9 +473,6 @@ function renderCfgAlimDetalle(data) {
         ? `<code>${at.rec_alta}</code>`
         : `<span class="text-muted fst-italic" style="font-size:.78rem">feeder en alta (sin equipo)</span>`;
       const recBajaEsc = (at.rec_baja ?? '').replace(/'/g, "\\'");
-      const tpsDiv = autotrafos.length === 1
-        ? `<div id="cfg-at-tps-info" class="mt-2 pt-2" style="border-top:1px solid #ffe082;font-size:.8rem"><span class="text-muted">Cargando TPs…</span></div>`
-        : '';
       const atTipo      = at.tipo ?? 'reductor';
       const atTipoLabel = atTipo === 'elevador' ? '↑ Elevador 12→23 kV' : '↓ Reductor 23→12 kV';
       const [labelAlta, labelBaja] = atTipo === 'elevador'
@@ -499,9 +496,12 @@ function renderCfgAlimDetalle(data) {
                     onclick="cfgAlimEliminarAutotrafo('${nomEsc}', '${recBajaEsc}')">× Eliminar</button>
           </div>
         </div>
-        ${tpsDiv}
       </div>`;
     });
+    // Desglose de TPs por segmento de tensión del feeder (cabecera + uno por ATR).
+    if (autotrafos.length) {
+      atHtml += `<div id="cfg-at-tps-info" class="mt-1 mb-1 p-2 rounded" style="background:#fffdf5;border:1px dashed #ffc107;font-size:.8rem"><span class="text-muted">Cargando TPs por segmento…</span></div>`;
+    }
     if (eqsBorde.length) {
       const opcsBorde = eqsBorde.map(e => `<option value="${e.numpos}">${e.numpos}</option>`).join("");
       const addLabel = autotrafos.length ? 'Agregar otro autotrafo:' : 'Selecciona los equipos que delimitan el autotrafo:';
@@ -647,30 +647,36 @@ async function cfgCargarTpsAt(nomAlim) {
   const el = document.getElementById("cfg-at-tps-info");
   if (!el) return;
   try {
-    const r = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlim)}?modo=tps_at`);
-    const alta = r.alta ?? {n:0, kva:0, tps:[]};
-    const baja = r.baja ?? {n:0, kva:0, tps:[]};
+    const r    = await apiFetch(`/api/vcc/equipos/${encodeURIComponent(nomAlim)}?modo=tps_at`);
+    const segs = r.segmentos ?? [];
+    if (!segs.length) { el.innerHTML = `<span class="text-muted" style="font-size:.75rem">Sin segmentos de ATR.</span>`; return; }
 
     const _tpList = (tps) => tps.length
       ? tps.map(t => `<span class="badge bg-light text-dark border me-1 mb-1" style="font-size:.7rem;font-weight:normal">
           ${t.nombre || t.numpos} <span class="text-muted">${t.kva > 0 ? t.kva + " kVA" : ""}</span></span>`).join("")
-      : `<span class="text-muted" style="font-size:.75rem">Sin TPs en este tramo</span>`;
+      : `<span class="text-muted" style="font-size:.75rem">Sin TPs en este segmento</span>`;
+
+    // 23 kV → ámbar (cabecera/alta), 12 kV → azul (baja). Cabecera sin rec_borde.
+    const totalN = segs.reduce((s, g) => s + (g.n || 0), 0);
+    const cols = segs.map((g, i) => {
+      const color = g.tension_kv === 12 ? "#0c63e4" : "#856404";
+      const titulo = g.rec_borde
+        ? `${g.label} <code style="font-size:.7rem">${g.rec_borde}</code>`
+        : g.label;
+      const sep = i === 0 ? "" : "border-left:2px dashed #ffc107;padding-left:10px";
+      return `<div class="col-auto" style="${sep}">
+          <div style="font-size:.72rem;color:${color}" class="fw-semibold mb-1">
+            ⚡ ${g.tension_kv} kV · ${titulo} — ${g.n} TP${g.n !== 1 ? "s" : ""}, ${(g.kva || 0).toLocaleString()} kVA
+          </div>
+          <div>${_tpList(g.tps)}</div>
+        </div>`;
+    }).join("");
 
     el.innerHTML = `
-      <div class="row g-2">
-        <div class="col-auto">
-          <div style="font-size:.72rem;color:#856404" class="fw-semibold mb-1">
-            ⚡ 23 kV — ${alta.n} TP${alta.n !== 1 ? "s" : ""}, ${alta.kva.toLocaleString()} kVA
-          </div>
-          <div>${_tpList(alta.tps)}</div>
-        </div>
-        <div class="col-auto" style="border-left:2px dashed #ffc107;padding-left:10px">
-          <div style="font-size:.72rem;color:#0c63e4" class="fw-semibold mb-1">
-            ⚡ 12 kV — ${baja.n} TP${baja.n !== 1 ? "s" : ""}, ${baja.kva.toLocaleString()} kVA
-          </div>
-          <div>${_tpList(baja.tps)}</div>
-        </div>
-      </div>`;
+      <div class="text-muted mb-2" style="font-size:.72rem">
+        Segmentos de tensión del feeder — ${segs.length} segmento${segs.length !== 1 ? "s" : ""}, ${totalN} TP${totalN !== 1 ? "s" : ""} en total (partición disjunta).
+      </div>
+      <div class="row g-2">${cols}</div>`;
   } catch(e) {
     el.innerHTML = `<span class="text-danger small">Error al cargar TPs: ${e.message}</span>`;
   }
