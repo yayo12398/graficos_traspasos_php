@@ -1731,21 +1731,29 @@ function vccTablaFU(tabla, vccResult, opts = {}) {
 }
 
 // ─── tabla equipos upstream ────────────────────────────────────────────────
-function vccTablaEquipos(equipos, deltaI) {
+function vccTablaEquipos(equipos, deltaI, opts = {}) {
+  // notasAjuste=false (panel de traspaso): sin mensajes de "omitido(s)" ni
+  // "ningún ajuste"; en casos vacíos devuelve "" para que el llamador haga
+  // fallback a una lista simple. Por defecto true (comportamiento tab VCC).
+  const notasAjuste = opts.notasAjuste !== false;
   if (!equipos?.length)
-    return "<p class='text-muted small mt-1'>Sin equipos upstream con ajuste relevante.</p>";
+    return notasAjuste
+      ? "<p class='text-muted small mt-1'>Sin equipos upstream con ajuste relevante.</p>"
+      : "";
 
   // Solo mostrar equipos con CN configurado (evaluados)
   const equiposEval = equipos.filter(e => e.cn != null);
   const nTotal      = equipos.length;
   const nOmitidos   = nTotal - equiposEval.length;
-  const omitidosTxt = nOmitidos > 0
+  const omitidosTxt = (notasAjuste && nOmitidos > 0)
     ? `<p class="text-muted small mb-1">
         <i class="bi bi-info-circle me-1"></i>${nOmitidos} equipo(s) sin ajuste configurado omitido(s).
        </p>`
     : "";
   if (!equiposEval.length)
-    return omitidosTxt + "<p class='text-muted small'>Ningún equipo tiene ajuste vigente configurado.</p>";
+    return notasAjuste
+      ? omitidosTxt + "<p class='text-muted small'>Ningún equipo tiene ajuste vigente configurado.</p>"
+      : "";
 
   // Etiqueta de tipo: conductor especial; el resto por prefijo (aéreo/subt./REC).
   const _tipoLbl = eq => eq.tipo === "conductor_intermedio" ? "Conductor" : _labelTipoEquipo(eq.nombre);
@@ -1815,26 +1823,27 @@ function vccTablaEquipos(equipos, deltaI) {
       <th rowspan="2">Equipo</th><th rowspan="2">Tipo</th>
       <th class="r" rowspan="2">Ajuste (A)</th>
       <th class="r" rowspan="2">ΔI (A)</th>
-      <th colspan="3" class="c" style="${SEP}">Enfoque A — conservador
+      <th colspan="4" class="c" style="${SEP}">Enfoque A — conservador
         <span data-bs-toggle="tooltip" data-bs-placement="top"
               data-bs-title="${TIP_A}"
               style="${TIP_ST}">ⓘ</span></th>
-      <th colspan="3" class="c" style="${SEP}">Enfoque B — demanda real
+      <th colspan="4" class="c" style="${SEP}">Enfoque B — demanda real
         <span data-bs-toggle="tooltip" data-bs-placement="top"
               data-bs-title="${TIP_B}"
               style="${TIP_ST}">ⓘ</span></th>
-      <th rowspan="2">Estado</th>
     </tr>
     <tr>
       <th class="r" style="${SEP}">I_base (A)</th>
       <th class="r">I+ΔI (A)</th>
       <th class="r">% Ajuste</th>
+      <th>Estado</th>
       <th class="r" style="${SEP}">I_base_max (A)</th>
       <th class="r">I+ΔI (A)</th>
       <th class="r">% Ajuste</th>
+      <th>Estado</th>
     </tr>`;
 
-  const _atSepDual = (prevKv, curKv) => `<tr class="vcc-at-sep-row"><td colspan="11" style="padding:4px 8px;` +
+  const _atSepDual = (prevKv, curKv) => `<tr class="vcc-at-sep-row"><td colspan="12" style="padding:4px 8px;` +
     `background:#fff9e6;border-top:2px dashed #ffc107;border-bottom:2px dashed #ffc107;font-size:.77rem">` +
     `<span class="badge bg-warning text-dark me-2">⚡ Autotrafo</span>` +
     `<span class="text-muted">${Number(prevKv)} kV <span class="mx-1">↕</span> ${Number(curKv)} kV</span>` +
@@ -1849,9 +1858,6 @@ function vccTablaEquipos(equipos, deltaI) {
       ? ` <span style="font-size:.62rem;color:#b08000" title="${eq.tension_kv_override} kV">⚡</span>` : "";
     const dI    = eqDI != null ? Number(eqDI).toFixed(2) + atTag : "—";
     const tipo  = _tipoLbl(eq);
-    const est   = eq.estado || "sin_cn";
-    const bcls  = BADGE_CLS[est] || "bg-secondary";
-    const blbl  = BADGE_LBL[est] || est;
 
     const enf_a = eq.enfoque_a;
     const enf_b = eq.enfoque_b;
@@ -1860,6 +1866,10 @@ function vccTablaEquipos(equipos, deltaI) {
       const bg = ROW_BG[estado] || "";
       return `<td class="r" style="${bg ? `background:${bg}` : ''}">${Number(pct).toFixed(1)}%</td>`;
     };
+    // Estado por enfoque (independiente): badge propio de cada enfoque.
+    const _estBadge = est => est
+      ? `<span class="badge ${BADGE_CLS[est] || "bg-secondary"}">${BADGE_LBL[est] || est}</span>`
+      : '<span class="text-muted">—</span>';
 
     // base: 'CN' → reducción sobre CN máx | 'real' → sobre demanda histórica
     const _alivioTag = (alivio, iBaseOrig, base = null) => {
@@ -1882,15 +1892,17 @@ function vccTablaEquipos(equipos, deltaI) {
     const cellsA = enf_a
       ? `<td class="r" style="${SEP}">${Number(enf_a.I_base).toFixed(1)}${_alivioTag(enf_a.I_alivio, iBaseAOrig, 'CN')}</td>
          <td class="r">${Number(enf_a.I_total).toFixed(1)}</td>
-         ${pctCell(enf_a.pct, enf_a.estado)}`
-      : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td>`;
+         ${pctCell(enf_a.pct, enf_a.estado)}
+         <td>${_estBadge(enf_a.estado)}</td>`
+      : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td><td class="text-muted">—</td>`;
 
     const cellsB = enf_b
       ? `<td class="r" style="${SEP}">${Number(enf_b.I_base_max).toFixed(1)}${_alivioTag(enf_b.I_alivio, iBaseBOrig, 'real')}
            <br><small class="text-muted" style="font-size:.68rem">(${_mesLabel(enf_b.mes_max)})</small></td>
          <td class="r">${Number(enf_b.I_total).toFixed(1)}</td>
-         ${pctCell(enf_b.pct, enf_b.estado)}`
-      : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td>`;
+         ${pctCell(enf_b.pct, enf_b.estado)}
+         <td>${_estBadge(enf_b.estado)}</td>`
+      : `<td class="r text-muted" style="${SEP}">—</td><td class="r text-muted">—</td><td class="r text-muted">—</td><td class="text-muted">—</td>`;
 
     const nombreDisplay2 = eq.tipo === "conductor_intermedio"
       ? `<span class="text-muted">tramo</span> <code>${eq.nombre.replace("Conductor(","").replace(")","")}</code>`
@@ -1899,7 +1911,6 @@ function vccTablaEquipos(equipos, deltaI) {
       <td>${nombreDisplay2}</td><td>${tipo}</td>
       <td class="r">${cn}</td><td class="r">${dI}</td>
       ${cellsA}${cellsB}
-      <td><span class="badge ${bcls}">${blbl}</span></td>
     </tr>`;
 
     // Sub-fila: serie mensual Enfoque B (colapsable)
@@ -1913,7 +1924,7 @@ function vccTablaEquipos(equipos, deltaI) {
         return `<td style="font-size:.72rem;padding:2px 5px;text-align:right;${bg?`background:${bg}`:''}">` +
                `${Number(s.pct).toFixed(1)}%</td>`;
       }).join("");
-      serieRow = `<tr><td colspan="11" style="padding:0 0 6px 2rem;border-top:none">
+      serieRow = `<tr><td colspan="12" style="padding:0 0 6px 2rem;border-top:none">
         <details><summary style="cursor:pointer;color:#666;font-size:.78rem">
           Serie mensual — Enfoque B</summary>
           <div style="overflow-x:auto;margin-top:4px">

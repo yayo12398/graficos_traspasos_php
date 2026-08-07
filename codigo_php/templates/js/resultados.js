@@ -1108,15 +1108,48 @@ function _prepararClonPanel(panel) {
   return _limpiarPanelInforme(clon);
 }
 
-// Ensambla un documento HTML autónomo: clona los estilos del documento vivo,
-// inserta el cuerpo (via buildBody(doc)) y, si hay configs de Chart.js, un
-// script que los recrea. Los gráficos dentro de un <details> cerrado se crean
-// recién al abrirlo (un canvas de tamaño 0 no dibuja bien). Se arma con DOM APIs
-// para no incluir literales de <head>/<body>/script que el router inyecta.
+// Vuelca los estilos del documento vivo al informe dejándolo self-contained
+// (se comparte y abre offline). Los <link> con href relativo NO resuelven al
+// abrir el archivo desde disco → Bootstrap/iconos no cargan y se rompe la
+// maquetación. Por eso: los <style> se clonan tal cual; cada <link> mismo-origen
+// se INLINA leyendo sus cssRules a un <style>, absolutizando los url(...)
+// relativos (fuentes de bootstrap-icons, imágenes) respecto de link.href. Si la
+// hoja es cross-origin (cssRules lanza SecurityError) se cae a un <link> con
+// href absoluto, que al menos carga con el servidor arriba.
+function _inlineEstilos(doc) {
+  document.querySelectorAll('link[rel="stylesheet"], style').forEach(n => {
+    if (n.tagName === "STYLE") { doc.head.appendChild(n.cloneNode(true)); return; }
+    let cssText = null;
+    try {
+      const reglas = n.sheet && n.sheet.cssRules;
+      if (reglas) {
+        const base = n.href;
+        cssText = Array.from(reglas).map(r => r.cssText).join("\n")
+          .replace(/url\((['"]?)(?!data:|https?:|\/\/)([^'")]+)\1\)/g,
+                   (_, q, u) => `url("${new URL(u, base).href}")`);
+      }
+    } catch (e) { cssText = null; }   // cross-origin: cssRules no legible
+    if (cssText != null) {
+      const st = doc.createElement("style");
+      st.textContent = cssText;
+      doc.head.appendChild(st);
+    } else {
+      const link = n.cloneNode(true);
+      link.setAttribute("href", n.href);  // href absoluto ya resuelto
+      doc.head.appendChild(link);
+    }
+  });
+}
+
+// Ensambla un documento HTML autónomo: inlina los estilos del documento vivo
+// (via _inlineEstilos), inserta el cuerpo (via buildBody(doc)) y, si hay configs
+// de Chart.js, un script que los recrea. Los gráficos dentro de un <details>
+// cerrado se crean recién al abrirlo (un canvas de tamaño 0 no dibuja bien). Se
+// arma con DOM APIs para no incluir literales de <head>/<body>/script que el
+// router inyecta.
 function _ensamblarDocInforme(titulo, buildBody, cfgs) {
   const doc = document.implementation.createHTMLDocument(titulo);
-  document.querySelectorAll('link[rel="stylesheet"], style').forEach(n =>
-    doc.head.appendChild(n.cloneNode(true)));
+  _inlineEstilos(doc);
   const bodyStyle = doc.createElement("style");
   bodyStyle.textContent = "body{background:#fff;padding:1rem}";
   doc.head.appendChild(bodyStyle);

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Datos.php  (876 L)                                               ║
+// ║  ÍNDICE DE Datos.php  (903 L)                                               ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  CONSTANTES Y CONFIG                                                L.65–88 ║
 // ║    require_once ../conexion.php (db() singleton)                   L.65     ║
@@ -28,7 +28,7 @@ declare(strict_types=1);
 // ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.379    ║
 // ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.462    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.492–722  ║
+// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.492–749  ║
 // ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.492    ║
 // ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.512    ║
 // ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.536    ║
@@ -37,14 +37,16 @@ declare(strict_types=1);
 // ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.601    ║
 // ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.613    ║
 // ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.640    ║
-// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.656    ║
-// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.667    ║
-// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.686    ║
-// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.702    ║
+// ║    mesesAnioCorrido($meses)   año corrido (últimos 12 meses)       L.656    ║
+// ║    resolverPeriodoEstudio(..) periodo estudio ?meses= o a.corrido  L.669    ║
+// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.683    ║
+// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.694    ║
+// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.713    ║
+// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.729    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.723–876  ║
-// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.723    ║
-// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.821    ║
+// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.750–903  ║
+// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.750    ║
+// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.848    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /**
@@ -647,6 +649,33 @@ function mesesDisponibles(array $df): array
     }
     sort($meses);
     return $meses;
+}
+
+/**
+ * Año corrido: meses desde el mismo mes del año anterior al último disponible.
+ * Mismo criterio que _limiteAnioCorrido() del frontend.
+ */
+function mesesAnioCorrido(array $mesesAll): array
+{
+    if (!$mesesAll) return [];
+    $max    = $mesesAll[count($mesesAll) - 1];
+    $limite = sprintf('%04d-%s', (int)substr($max, 0, 4) - 1, substr($max, 5, 2));
+    return array_values(array_filter($mesesAll, fn($m) => $m >= $limite));
+}
+
+/**
+ * Resuelve el periodo de estudio desde el parámetro ?meses=YYYY-MM,YYYY-MM,...
+ * Intersecta con los meses realmente disponibles; si queda vacío (o no llegó el
+ * parámetro), cae al año corrido para no considerar meses fuera del estudio.
+ */
+function resolverPeriodoEstudio(?string $param, array $mesesAll): array
+{
+    $sel = array_filter(
+        array_map('trim', explode(',', (string)$param)),
+        fn($m) => preg_match('/^\d{4}-\d{2}$/', $m)
+    );
+    $sel = array_values(array_intersect($sel, $mesesAll));
+    return $sel ?: mesesAnioCorrido($mesesAll);
 }
 
 /**

@@ -1,49 +1,49 @@
 <?php
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Reportes.php  (~1578 L)                                          ║
+// ║  ÍNDICE DE Reportes.php  (1577 L)                                           ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONSTANTES                                                        L.56–84  ║
+// ║  CONSTANTES                                                        L.49–77  ║
 // ║    _REP_CHARTJS_CDN, _REP_TD_GRANDE_KVA                                     ║
 // ║    _REP_CJS_ESTADO_BG/BRD, _REP_ETIQUETAS, _REP_MESES_ES                   ║
 // ║    _REP_ESTADO_BADGE_VCC, _REP_ESTADO_BG_VCC                                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS INTERNOS                                                 L.85–634  ║
-// ║    _repCss()                  bloque <style> inline del reporte    L.85     ║
-// ║    _repTipoEquipoTroncal($n)  {label,color} por prefijo numpos     L.169    ║
-// ║    _repHtmlTablaEquipos($eq)  tabla HTML equipos troncal           L.182    ║
-// ║    _repSafe($v)               convierte false→null, NaN→null       L.197    ║
-// ║    _h($v)                     htmlspecialchars shorthand           L.203    ║
-// ║    _repWorstIdx($vals)        índice del valor máximo en array     L.207    ║
-// ║    _repMesLbl($yyyymm)        'Ene 24' a partir de 'YYYY-MM'       L.216    ║
-// ║    _repTrafoLabel($trafo)     "Nombre · kVA · Barra"              L.228    ║
-// ║    _repTrafoLabelAlim($t,$n)  idem con nombre alimentador          L.238    ║
-// ║    _repTablaHtml($df,$o,$d)   tabla principal mes a mes traspaso   L.250    ║
-// ║    _repTdsTableHtml($det,$t)  tabla TDs involucrados               L.304    ║
-// ║    _repTablaTrafHtml($t,$n,$m,$a) tabla trafo mes a mes            L.332    ║
-// ║    _repTarjetaPeorCaso(...)   tarjeta peor caso Δ fijo             L.395    ║
-// ║    _repCjsBarras(...)         Chart.js barras I_antes/I_despues    L.444    ║
-// ║    _repCjsEstados(...)        Chart.js dona de estados             L.481    ║
-// ║    _repCjsTrafo(...)          Chart.js línea trafo I_antes/despues L.509    ║
-// ║    _repCjsFeederCarg(...)     Chart.js cargabilidad feeder nuevo   L.553    ║
-// ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.593    ║
-// ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.606    ║
+// ║  HELPERS INTERNOS                                                 L.78–627  ║
+// ║    _repCss()                  bloque <style> inline del reporte    L.78     ║
+// ║    _repTipoEquipoTroncal($n)  {label,color} por prefijo numpos     L.162    ║
+// ║    _repHtmlTablaEquipos($eq)  tabla HTML equipos troncal           L.175    ║
+// ║    _repSafe($v)               convierte false→null, NaN→null       L.190    ║
+// ║    _h($v)                     htmlspecialchars shorthand           L.196    ║
+// ║    _repWorstIdx($vals)        índice del valor máximo en array     L.200    ║
+// ║    _repMesLbl($yyyymm)        'Ene 24' a partir de 'YYYY-MM'       L.209    ║
+// ║    _repTrafoLabel($trafo)     "Nombre · kVA · Barra"              L.221    ║
+// ║    _repTrafoLabelAlim($t,$n)  idem con nombre alimentador          L.231    ║
+// ║    _repTablaHtml($df,$o,$d)   tabla principal mes a mes traspaso   L.243    ║
+// ║    _repTdsTableHtml($det,$t)  tabla TDs involucrados               L.297    ║
+// ║    _repTablaTrafHtml($t,$n,$m,$a) tabla trafo mes a mes            L.325    ║
+// ║    _repTarjetaPeorCaso(...)   tarjeta peor caso Δ fijo             L.388    ║
+// ║    _repCjsBarras(...)         Chart.js barras I_antes/I_despues    L.437    ║
+// ║    _repCjsEstados(...)        Chart.js dona de estados             L.474    ║
+// ║    _repCjsTrafo(...)          Chart.js línea trafo I_antes/despues L.502    ║
+// ║    _repCjsFeederCarg(...)     Chart.js cargabilidad feeder nuevo   L.546    ║
+// ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.586    ║
+// ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.599    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.635–888  ║
-// ║    generarReporteHtml($body,$ruta)                                 L.635    ║
+// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.628–881  ║
+// ║    generarReporteHtml($body,$ruta)                                 L.628    ║
 // ║      ← recibe cuerpo completo del POST /api/descargar_html                  ║
 // ║      → HTML autónomo con tabla mes a mes + gráficos Chart.js                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.889–1172  ║
-// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.889    ║
+// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.882–1165  ║
+// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.882    ║
 // ║      → HTML por feeder con tabla de transferencias + gráfico acum.          ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE VCC                                                   L.1173–1578  ║
-// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1173   ║
-// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1251   ║
-// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1341   ║
-// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1393   ║
-// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1437   ║
+// ║  REPORTE VCC                                                   L.1166–1577  ║
+// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1166   ║
+// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1244   ║
+// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1340   ║
+// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1392   ║
+// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1436   ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 const _REP_CHARTJS_CDN   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
@@ -1274,51 +1274,57 @@ function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
     $TIPB = 'Demanda real ponderada: I_base = I_alim_real(mes) × (kVA aguas abajo / kVA total). Usa la demanda mensual medida del alimentador escalada por la fracción de carga que pasa por el equipo. Se muestra el peor mes del año corrido.';
     $cabecera = "<thead><tr><th rowspan='2'>Equipo</th><th rowspan='2'>Tipo</th>"
         . "<th class='r' rowspan='2'>Ajuste (A)</th><th class='r' rowspan='2'>ΔI (A)</th>"
-        . "<th colspan='3' class='c' style='$SEP'>Enfoque A &#8212; cota conservadora <span class='tip' data-tip='$TIPA'>&#9432;</span></th>"
-        . "<th colspan='3' class='c' style='$SEP'>Enfoque B &#8212; demanda real <span class='tip' data-tip='$TIPB'>&#9432;</span></th>"
-        . "<th rowspan='2'>Estado</th></tr><tr>"
-        . "<th class='r' style='$SEP'>I_base (A)</th><th class='r'>I+ΔI (A)</th><th class='r'>% Ajuste</th>"
-        . "<th class='r' style='$SEP'>I_base_max (A)</th><th class='r'>I+ΔI (A)</th><th class='r'>% Ajuste</th>"
+        . "<th colspan='4' class='c' style='$SEP'>Enfoque A &#8212; cota conservadora <span class='tip' data-tip='$TIPA'>&#9432;</span></th>"
+        . "<th colspan='4' class='c' style='$SEP'>Enfoque B &#8212; demanda real <span class='tip' data-tip='$TIPB'>&#9432;</span></th>"
+        . "</tr><tr>"
+        . "<th class='r' style='$SEP'>I_base (A)</th><th class='r'>I+ΔI (A)</th><th class='r'>% Ajuste</th><th>Estado</th>"
+        . "<th class='r' style='$SEP'>I_base_max (A)</th><th class='r'>I+ΔI (A)</th><th class='r'>% Ajuste</th><th>Estado</th>"
         . "</tr></thead>";
     $pctTd = function(float $pct, string $estado, string $extra='') use ($SEP): string {
         $bg = _REP_ESTADO_BG_VCC[$estado] ?? ''; $st = ($bg ? "background:$bg;" : '') . $extra;
         return "<td class='r' style='$st'>" . number_format($pct,1) . '%</td>';
+    };
+    // Estado por enfoque (independiente): badge propio de cada enfoque.
+    $estBadgeTd = function(?string $estado): string {
+        if ($estado === null || $estado === '') return "<td class='text-muted'>&#8212;</td>";
+        [$badge,$label] = _REP_ESTADO_BADGE_VCC[$estado] ?? ['badge-s','Sin ajuste'];
+        return "<td><span class='badge $badge'>$label</span></td>";
     };
     $filas = [];
     foreach ($equipos as $eq) {
         $tipoLbl   = $tipoMap[$eq['tipo'] ?? ''] ?? ($eq['tipo'] ?? '');
         $fuente    = $eq['fuente_ajuste'] ?? 'equipo';
         $cnStr     = isset($eq['cn']) ? number_format((float)$eq['cn'],0).$fuenteBadge($fuente) : '&#8212;';
-        [$badge,$label] = _REP_ESTADO_BADGE_VCC[$eq['estado'] ?? 'sin_cn'] ?? ['badge-s','Sin ajuste'];
-        $badgeHtml = "<span class='badge $badge'>$label</span>";
         $enfA = $eq['enfoque_a'] ?? null;
         $enfB = $eq['enfoque_b'] ?? null;
         $cellsA = $enfA
             ? "<td class='r' style='$SEP'>" . number_format($enfA['I_base'],1) . '</td>'
               . "<td class='r'>" . number_format($enfA['I_total'],1) . '</td>'
               . $pctTd($enfA['pct'], $enfA['estado'])
-            : "<td class='r text-muted' style='$SEP'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='r text-muted'>&#8212;</td>";
+              . $estBadgeTd($enfA['estado'] ?? null)
+            : "<td class='r text-muted' style='$SEP'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='text-muted'>&#8212;</td>";
         if ($enfB) {
             $mesLbl = _repMesLbl((string)$enfB['mes_max']);
             $cellsB = "<td class='r' style='$SEP'>" . number_format($enfB['I_base_max'],1) . " <small style='color:#888'>($mesLbl)</small></td>"
                 . "<td class='r'>" . number_format($enfB['I_total'],1) . '</td>'
-                . $pctTd($enfB['pct'], $enfB['estado']);
+                . $pctTd($enfB['pct'], $enfB['estado'])
+                . $estBadgeTd($enfB['estado'] ?? null);
         } else {
-            $cellsB = "<td class='r text-muted' style='$SEP'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='r text-muted'>&#8212;</td>";
+            $cellsB = "<td class='r text-muted' style='$SEP'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='r text-muted'>&#8212;</td><td class='text-muted'>&#8212;</td>";
         }
         $nombreHtml2 = ($eq['tipo'] ?? '') === 'conductor_intermedio'
             ? 'tramo ' . _h(str_replace(['Conductor(', ')'], ['→', ''], $eq['nombre']))
             : '<code>' . _h($eq['nombre']) . '</code>';
         $filas[] = "<tr><td>$nombreHtml2</td><td>" . _h($tipoLbl) . "</td>"
             . "<td class='r'>$cnStr</td><td class='r'>" . number_format($deltaI,2) . "</td>"
-            . "$cellsA$cellsB<td>$badgeHtml</td></tr>";
+            . "$cellsA$cellsB</tr>";
         if ($enfB && !empty($enfB['serie'])) {
             $serie  = $enfB['serie'];
             $thsM   = implode('', array_map(fn($s) => "<th style='font-size:.72rem;padding:2px 6px'>" . _repMesLbl((string)$s['mes']) . '</th>', $serie));
             $tdsPct = implode('', array_map(fn($s) =>
                 "<td style='font-size:.72rem;padding:2px 6px;text-align:right;background:" . (_REP_ESTADO_BG_VCC[$s['estado'] ?? ''] ?? '') . "'>"
                 . number_format($s['pct'],1) . '%</td>', $serie));
-            $filas[] = "<tr><td colspan='11' style='padding:0 0 8px 2rem;border-top:none'>"
+            $filas[] = "<tr><td colspan='12' style='padding:0 0 8px 2rem;border-top:none'>"
                 . "<details><summary style='cursor:pointer;color:#555;font-size:.8rem'>Serie mensual — Enfoque B</summary>"
                 . "<div style='overflow-x:auto;margin-top:4px'>"
                 . "<table style='font-size:.72rem;border-collapse:collapse'>"

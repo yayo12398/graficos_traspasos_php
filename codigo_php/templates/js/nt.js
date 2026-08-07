@@ -858,11 +858,9 @@ function renderSecEquiposInvolucrados(data) {
   }
 
   // ── Card 1: Equipos troncales ────────────────────────────────────────────
+  // Bloque plano (sin <details> propio): la sección padre "det-equipos-lz" ya es
+  // el colapsable; anidar otro creaba dos barras de título seguidas.
   if (troncal.length || vccB.length) {
-    const kvaIsla = data.isla?.kva_isla ?? null;
-    const vLz     = data.v_lz ?? 23.0;
-    const deltaI  = kvaIsla != null ? kvaIsla / (1.7320508075688772 * vLz) : null;
-
     const tieneRec = troncal.some(eq => eq.slice(0,3).toUpperCase() === "REC")
                    || vccB.some(e => (e.nombre||"").slice(0,3).toUpperCase() === "REC");
     const tieneReg = troncal.some(eq => eq.slice(0,3).toUpperCase() === "REG")
@@ -870,15 +868,7 @@ function renderSecEquiposInvolucrados(data) {
     const iconoTroncal = (tieneRec || tieneReg) ? "bi-exclamation-triangle text-warning" : "bi-diagram-3 text-muted";
     const numposLZ = selDev?.numpos_lz || "";
 
-    // Cabecera resumen ΔI del traspaso
-    let headerEval = "";
-    if (deltaI != null) {
-      headerEval = `<div class="d-flex gap-3 small mb-2 p-2 rounded" style="background:rgba(255,255,255,.05)">
-        <span><strong>ΔI traspaso:</strong> ${deltaI.toFixed(1)} A</span>
-      </div>`;
-    }
-
-    // Evaluación del backend (mes a mes, CN desde config guardada o panel) o tabla simple
+    // Cuerpo = solo la tabla de equipos (evaluados con CN o, si no hay, lista simple).
     let tablaBody, estadoBadge = "";
     if (vccB.length) {
       const _ord = { critico: 3, prealerta: 2, viable: 1, sin_cn: 0 };
@@ -887,33 +877,27 @@ function renderSecEquiposInvolucrados(data) {
       const BADGE_CLS = { viable:"badge-viable", prealerta:"badge-prealerta", critico:"badge-critico", sin_cn:"bg-secondary" };
       const BADGE_LBL = { viable:"Viable", prealerta:"Prealerta", critico:"Crítico", sin_cn:"Sin ajuste" };
       estadoBadge = `<span class="badge ${BADGE_CLS[estadoGlobal] || "bg-secondary"} ms-1">${BADGE_LBL[estadoGlobal] || estadoGlobal}</span>`;
-      tablaBody = `<p class="small text-muted mb-1">
-          <i class="bi bi-info-circle me-1"></i>
-          I<sub>eq</sub>[mes] = I<sub>alim B</sub>[mes] × fracción + I<sub>seg</sub>[mes]
-          — CN desde configuración guardada del equipo o panel receptor.
-        </p>` + vccTablaEquipos(vccB, null);
+      // Sin notas de ajuste; si no hay equipos evaluados, fallback a lista simple.
+      tablaBody = vccTablaEquipos(vccB, null, { notasAjuste: false }) || _htmlTablaEquiposTroncal(troncal);
     } else {
       tablaBody = _htmlTablaEquiposTroncal(troncal);
     }
     const countEq = vccB.length || troncal.length;
 
-    partes.push(`<details class="card step-card mb-2" open>
-      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
+    partes.push(`<div class="mb-2">
+      <div class="fw-semibold small mb-1 d-flex align-items-center gap-2">
         <i class="bi ${iconoTroncal}"></i>
         <span>Equipos troncales en alimentador receptor</span>
         <span class="badge bg-secondary ms-1">${countEq}</span>${estadoBadge}
-        ${numposLZ ? `<span class="text-white-50 small ms-auto">vía ${numposLZ}</span>` : ""}
-      </summary>
-      <div class="step-body p-2">
-        <p class="small text-muted mb-2">Equipos en el camino troncal entre el LZ y la cabecera del alimentador receptor. La carga traspasada circulará a través de ellos.</p>
-        ${headerEval}${tablaBody}
+        ${numposLZ ? `<span class="text-muted small ms-auto">vía ${numposLZ}</span>` : ""}
       </div>
-    </details>`);
+      ${tablaBody}
+    </div>`);
   }
 
   // ── Card 2: Equipos en isla a vigilar (inversión + FRG) ─────────────────
+  // Bloque plano y sin título: va directo el contenido (inversión de flujo / FRG).
   if (eqTsp.length || frgOrig || frgDest) {
-    const nItems  = eqTsp.length + ((frgOrig || frgDest) ? 1 : 0);
     const invHtml = eqTsp.length ? `
       <div class="mb-2">
         <div class="fw-semibold small mb-1 text-info">
@@ -938,22 +922,24 @@ function renderSecEquiposInvolucrados(data) {
         </div>
         <p class="small text-muted mb-0">Verificar condiciones de reconexión automática post-traspaso.</p>
       </div>` : "";
-    partes.push(`<details class="card step-card mb-2" open>
-      <summary class="step-header d-flex align-items-center gap-2" style="cursor:pointer;list-style:none">
-        <i class="bi bi-exclamation-triangle text-warning"></i>
-        <span>Equipos del segmento a vigilar</span>
-        <span class="badge bg-warning text-dark ms-1">${nItems}</span>
-      </summary>
-      <div class="step-body p-2">${invHtml}${frgHtml}</div>
-    </details>`);
+    partes.push(`<div class="mb-2">${invHtml}${frgHtml}</div>`);
   }
 
   el.innerHTML = partes.join("");
+  // Inicializar tooltips Bootstrap (ⓘ de "Enfoque A/B"): en este panel no se
+  // corren de otro modo (a diferencia del tab VCC). Idempotente y no-op si no hay.
+  initTooltips(el);
 }
 
 function renderPanelLZ(lz, nombreOrig, nombreDest) {
+  // Panel LZ retirado por completo del panel de resultados: era redundante con
+  // el "vía <numpos>" de la card de equipos troncales. Se deja la función como
+  // no-op (oculta el contenedor) para no tocar el resto del flujo de render.
   const el = document.getElementById("panel-lz");
-  if (!el) return;
+  if (el) { el.innerHTML = ""; el.style.display = "none"; }
+  return;
+
+  // eslint-disable-next-line no-unreachable
   if (!lz || lz.tiene_lz === null) { el.style.display = "none"; return; }
 
   const TIPO_LABEL = {
@@ -1249,6 +1235,21 @@ async function ejecutarSimulacion() {
 // ── CORRIMIENTOS DE CARGA ─────────────────────────────────────────────────
 const _CASO_COLORS = ["#1565c0", "#e65100", "#1b5e20"];
 
+// Badge de veredicto compartido por las sugerencias (TLC y corrimiento): compara
+// lo que el origen entrega en el peor mes del receptor contra su remanente.
+function _badgeFactible(holguraA, transferA, remanenteA, mesLbl) {
+  if (holguraA == null) return "";
+  const ok  = holguraA >= 0;
+  const mes = mesLbl ? ` en ${mesLbl}` : "";
+  const t   = v => (v != null ? Number(v).toFixed(0) : "—");
+  const tip = ok
+    ? `Factible${mes}: el origen entrega ≈${t(transferA)} A y el destino tiene ${t(remanenteA)} A de remanente → holgura +${t(holguraA)} A.`
+    : `No factible${mes}: el origen entrega ≈${t(transferA)} A pero el destino solo tiene ${t(remanenteA)} A de remanente → excede en ${t(Math.abs(holguraA))} A.`;
+  return ok
+    ? ` <span class="badge bg-success" style="font-size:.6rem" title="${tip}">Factible +${t(holguraA)} A</span>`
+    : ` <span class="badge bg-warning text-dark" style="font-size:.6rem" title="${tip}">No factible −${t(Math.abs(holguraA))} A</span>`;
+}
+
 async function renderPanelCorrimiento(numalimDest, nombreDest) {
   const el    = document.getElementById("panel-corrimiento");
   const detEl = document.getElementById("det-corrimiento");
@@ -1257,7 +1258,8 @@ async function renderPanelCorrimiento(numalimDest, nombreDest) {
 
   if (state.numeroCaso >= 3) { _hide(); return; }
 
-  const candidatos = await apiFetch(`/api/corrimiento_candidatos/${numalimDest}`);
+  const _meses = encodeURIComponent(mesesSeleccionados().join(","));
+  const candidatos = await apiFetch(`/api/corrimiento_candidatos/${numalimDest}?meses=${_meses}`);
   if (!candidatos?.length) { _hide(); return; }
 
   const filas = candidatos.map(c => {
@@ -1265,35 +1267,41 @@ async function renderPanelCorrimiento(numalimDest, nombreDest) {
     const pct    = c.remanente_pct;
     const remTxt = rem != null ? `${rem.toFixed(1)} A` : "—";
     const pctTxt = pct != null ? `${pct.toFixed(1)}%` : "—";
+    const mesTxt = c.mes_dem_max ? _mesLabel(c.mes_dem_max) : "—";
     const colorBg = pct == null ? "secondary" : pct >= 20 ? "success" : pct >= 5 ? "warning" : "danger";
     const cxBadge = c.tiene_vecinos_lz
       ? `<span class="badge bg-info text-dark ms-1" title="${c.n_vecinos_lz} vecino(s) disponibles para corrimiento posterior">→ C→X</span>`
       : "";
     return `<tr style="cursor:pointer" title="Clic para precargar corrimiento hacia ${c.nombre}"
-              onclick="precargarCorrimiento(${numalimDest}, ${c.numalim}, ${c.remanente_pct ?? null}, ${c.remanente_A ?? null})">
+              onclick="precargarCorrimiento(${numalimDest}, ${c.numalim}, ${c.remanente_pct ?? null}, ${c.remanente_A ?? null}, ${c.mes_dem_max ? `'${c.mes_dem_max}'` : null})">
       <td><span class="fw-semibold">${c.nombre}</span>${esAlimFrg(c.numalim) ? frgBadge() : ''}${cxBadge}</td>
       <td class="text-end"><span class="badge bg-${colorBg} text-${colorBg === 'warning' ? 'dark' : 'white'}">${remTxt}</span></td>
       <td class="text-end text-muted small">${pctTxt}</td>
+      <td class="text-end text-muted small">${mesTxt}</td>
     </tr>`;
   }).join("");
 
-  el.innerHTML = `<div class="card step-card">
-    <div class="step-header">
-      <i class="bi bi-arrow-repeat me-1" style="color:#1565c0"></i>
-      <span class="fw-semibold">Corrimiento de carga — candidatos desde ${nombreDest}</span>
-    </div>
-    <div class="step-body p-2">
-      <p class="small text-muted mb-2">Selecciona un alimentador destino para continuar la cadena de corrimiento:</p>
-      <table class="table table-sm table-hover mb-0" style="font-size:.85rem">
-        <thead><tr><th>Alimentador</th><th class="text-end">Remanente</th><th class="text-end">%</th></tr></thead>
-        <tbody>${filas}</tbody>
-      </table>
-    </div>
-  </div>`;
+  // Contenido plano: la sección padre "det-corrimiento" ya es el colapsable con
+  // su título; el "desde ${nombreDest}" se conserva en la línea de intro.
+  el.innerHTML = `
+    <p class="small text-muted mb-2">Selecciona un alimentador destino para continuar la cadena de corrimiento desde <strong>${nombreDest}</strong>:</p>
+    <table class="table table-sm table-hover mb-0" style="font-size:.85rem">
+      <thead><tr>
+        <th>Alimentador</th>
+        <th class="text-end" title="CN − demanda máxima del periodo de estudio (holgura en el mes de mayor carga)">Remanente</th>
+        <th class="text-end">%</th>
+        <th class="text-end">Peor mes</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p class="small text-muted mt-2 mb-0">
+      <i class="bi bi-info-circle me-1"></i>Remanente = CN − demanda máxima del periodo de estudio;
+      holgura disponible en el «peor mes» (mes de mayor carga de cada alimentador).
+    </p>`;
   if (detEl) detEl.style.display = "";
 }
 
-async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) {
+async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA, mesPeorC = null) {
   state.pendingPreselectDest = numalimC;
   state.esCorrimiento        = true;
 
@@ -1352,10 +1360,18 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
       // Eso captura el delta acumulado de A→B ya incorporado en B.
       const prevSim = state.cadenaSimulaciones.length > 0
         ? state.cadenaSimulaciones[state.cadenaSimulaciones.length - 1] : null;
+      // Demanda de B en el peor mes de C (consistente con el remanente del receptor);
+      // si ese mes no está en la tabla, se usa el pico de B como respaldo.
       let maxDemandB = null;
       if (prevSim?.tabla?.length) {
-        const vals = prevSim.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
-        if (vals.length) maxDemandB = Math.max(...vals);
+        const filaMes = mesPeorC ? prevSim.tabla.find(r => r.mes === mesPeorC) : null;
+        const valMes  = filaMes ? (filaMes.I_dest_despues ?? filaMes.I_dest_antes) : null;
+        if (valMes != null) {
+          maxDemandB = valMes;
+        } else {
+          const vals = prevSim.tabla.map(r => r.I_dest_despues ?? r.I_dest_antes).filter(v => v != null);
+          if (vals.length) maxDemandB = Math.max(...vals);
+        }
       }
       // Mapa equipo → {numpos_lz, tlc_lz} del LZ que une B→C (para maniobra completa).
       // Reusa /api/vecinos_lz: cruza equipos_troncal_orig × vecinos (igual que el backend).
@@ -1377,11 +1393,7 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
             const transfTxt = (e.transfer != null)
               ? ` · <span class="text-muted">transfiere ≈ ${e.transfer.toFixed(1)} A</span>`
               : "";
-            const factBadge = (e.factible == null)
-              ? ""
-              : (e.factible
-                  ? ` <span class="badge bg-success" style="font-size:.6rem">cabe</span>`
-                  : ` <span class="badge bg-warning text-dark" style="font-size:.6rem" title="Excede la cargabilidad del destino">excede ${Math.abs(e.holgura).toFixed(1)} A</span>`);
+            const factBadge = _badgeFactible(e.holgura, e.transfer, remanenteA, mesPeorC ? _mesLabel(mesPeorC) : null);
             const lzTxt = e.numpos_lz
               ? ` <span class="text-muted">→ cierra</span> <code>${e.numpos_lz}</code>${_tlcBadge(e.tlc_lz, 'manual')}`
               : "";
@@ -1396,9 +1408,10 @@ async function precargarCorrimiento(numalimB, numalimC, remanenteC, remanenteA) 
                 </button>
               </div>`;
           }).join("");
+          const mesPeorTxt = mesPeorC ? ` (peor mes ${_mesLabel(mesPeorC)})` : "";
           elSug.innerHTML = `<div class="mb-1"><i class="bi bi-lightbulb-fill text-warning me-1"></i>
             <strong>Candidatos para el corrimiento</strong>
-            <span class="text-muted ms-1">— remanente ${nombreC}: ${remTxt}</span></div>${filas}`;
+            <span class="text-muted ms-1">— remanente ${nombreC}: ${remTxt}${mesPeorTxt}</span></div>${filas}`;
         } else {
           elSug.innerHTML = `<span class="text-muted"><i class="bi bi-dash me-1"></i>Sin equipo sugerido para este rango de carga</span>`;
         }
@@ -1530,7 +1543,7 @@ async function sugerirTraspasoTLC() {
   cont.innerHTML = `<div class="text-muted small">
     <span class="spinner-border spinner-border-sm me-2" role="status"></span>Buscando maniobras TLC…</div>`;
   try {
-    const maniobras = await apiFetch(`/api/sugerencias_traspaso/${state.origenNumalim}`);
+    const maniobras = await apiFetch(`/api/sugerencias_traspaso/${state.origenNumalim}?meses=${encodeURIComponent(mesesSeleccionados().join(","))}`);
     state._sugTraspaso = Array.isArray(maniobras) ? maniobras : [];
     if (!state._sugTraspaso.length) {
       cont.innerHTML = `<div class="alert alert-secondary py-2 px-3 small mb-0">
@@ -1541,9 +1554,9 @@ async function sugerirTraspasoTLC() {
       ? ` <span class="badge bg-success" style="font-size:.6rem"><i class="bi bi-broadcast me-1"></i>TLC</span>`
       : ` <span class="badge bg-secondary" style="font-size:.6rem">${txtNo}</span>`;
     const filas = state._sugTraspaso.slice(0, 3).map((m, i) => {
-      const factB = m.factible
-        ? ` <span class="badge bg-success" style="font-size:.6rem">cabe</span>`
-        : ` <span class="badge bg-warning text-dark" style="font-size:.6rem" title="Excede la cargabilidad del destino">excede ${Math.abs(m.holgura_A).toFixed(0)} A</span>`;
+      const mesLbl = m.mes_ref ? _mesLabel(m.mes_ref) : null;
+      const factB  = _badgeFactible(m.holgura_A, m.transfer_A, m.remanente_A, mesLbl);
+      const mesTxt = mesLbl ? ` <span class="text-muted">(peor mes ${mesLbl})</span>` : "";
       return `<div class="border rounded p-2 mb-1" style="cursor:pointer;background:#f6fff6"
                    onclick="precargarTraspasoSugerido(${i})" title="Clic para precargar esta maniobra">
         <div class="small">
@@ -1552,7 +1565,7 @@ async function sugerirTraspasoTLC() {
           <span class="text-muted mx-1">→</span> <strong>${m.dest_nom}</strong>
         </div>
         <div class="small text-muted mt-1">
-          transfiere ≈ <strong>${m.transfer_A.toFixed(0)} A</strong> · remanente destino ${m.remanente_A.toFixed(0)} A${factB}
+          transfiere ≈ <strong>${m.transfer_A.toFixed(0)} A</strong> · remanente destino ${m.remanente_A.toFixed(0)} A${mesTxt}${factB}
         </div>
       </div>`;
     }).join("");

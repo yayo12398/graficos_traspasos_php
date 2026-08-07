@@ -337,7 +337,7 @@ if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
         }
     }
 
-    $meses     = mesesDisponibles($dfAlim);
+    $meses     = resolverPeriodoEstudio($_GET['meses'] ?? null, mesesDisponibles($dfAlim));
     $resultado = [];
 
     foreach (array_keys($vecinosSet) as $nm) {
@@ -347,11 +347,11 @@ if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
         $cn = isset($row['cn']) ? (float)$row['cn'] : NAN;
         if (!is_finite($cn) || $cn <= 0) continue;
 
-        // dem_max sobre meses disponibles
-        $demMax = NAN;
+        // dem_max sobre meses disponibles (con el mes en que ocurre el máximo)
+        $demMax = NAN; $mesDemMax = null;
         foreach ($meses as $mes) {
             $v = isset($row[$mes]) && $row[$mes] !== '' ? (float)$row[$mes] : NAN;
-            if (is_finite($v) && (!is_finite($demMax) || $v > $demMax)) $demMax = $v;
+            if (is_finite($v) && (!is_finite($demMax) || $v > $demMax)) { $demMax = $v; $mesDemMax = $mes; }
         }
 
         $remanenteA   = is_finite($demMax) ? $cn - $demMax : NAN;
@@ -371,6 +371,7 @@ if ($method === 'GET' && $a === 'corrimiento_candidatos' && $b0 && !$b1) {
             'nombre'           => nombreDisplayAlim($row),
             'cn'               => is_finite($cn)          ? round($cn, 3)           : null,
             'dem_max'          => is_finite($demMax)       ? round($demMax, 3)       : null,
+            'mes_dem_max'      => $mesDemMax,
             'remanente_A'      => is_finite($remanenteA)   ? round($remanenteA, 3)   : null,
             'remanente_pct'    => is_finite($remanentesPct)? round($remanentesPct, 2): null,
             'tiene_vecinos_lz' => count($vecinosPropios) > 0,
@@ -398,27 +399,23 @@ if ($method === 'GET' && $a === 'sugerencias_traspaso' && $b0 && !$b1) {
     $nomAlim = nomAlimDeNumalim($dfAb, $numalim);
     if ($nomAlim === null || !$dfLz) { jsonPy([]); }
 
-    $meses = mesesDisponibles($dfAlim);
-    $demMax = function(int $nm) use ($dfAlim, $meses): float {
+    $meses = resolverPeriodoEstudio($_GET['meses'] ?? null, mesesDisponibles($dfAlim));
+    $valMes = fn(?array $row, string $mes): float =>
+        (isset($row[$mes]) && $row[$mes] !== '') ? (float)$row[$mes] : NAN;
+    // Pico y mes en que ocurre (dentro del periodo de estudio).
+    $demMaxMes = function(int $nm) use ($dfAlim, $meses, $valMes): array {
         $row = $dfAlim[$nm] ?? null;
-        if ($row === null) return NAN;
-        $mx = NAN;
+        $mx = NAN; $mesMx = null;
         foreach ($meses as $mes) {
-            $v = isset($row[$mes]) && $row[$mes] !== '' ? (float)$row[$mes] : NAN;
-            if (is_finite($v) && (!is_finite($mx) || $v > $mx)) $mx = $v;
+            $v = $valMes($row, $mes);
+            if (is_finite($v) && (!is_finite($mx) || $v > $mx)) { $mx = $v; $mesMx = $mes; }
         }
-        return $mx;
-    };
-    $remanente = function(int $nm) use ($dfAlim, $demMax): float {
-        $row = $dfAlim[$nm] ?? null;
-        if ($row === null) return NAN;
-        $cn = (isset($row['cn']) && is_numeric($row['cn'])) ? (float)$row['cn'] : NAN;
-        $dm = $demMax($nm);
-        return (is_finite($cn) && is_finite($dm)) ? $cn - $dm : NAN;
+        return [$mx, $mesMx];
     };
 
-    $demMaxOrig = $demMax($numalim);
+    [$demMaxOrig, ] = $demMaxMes($numalim);
     if (!is_finite($demMaxOrig)) $demMaxOrig = 0.0;
+    $rowOrig = $dfAlim[$numalim] ?? null;
 
     // Mapa equipo → {nombre, pct_feeder, tlc} (misma computación que /feeder/{nom}/equipos)
     $allTds = tdsDeFeeder($dfAb, $nomAlim);
@@ -467,12 +464,19 @@ if ($method === 'GET' && $a === 'sugerencias_traspaso' && $b0 && !$b1) {
             ));
             $viable = $vRows ? (bool)$vRows[0]['viable'] : true;
             if (!$viable) continue;
-            $rem = $remanente($vn);
-            if (!is_finite($rem)) continue;
+            // Peor mes del receptor: su demanda máxima → menor remanente.
+            $rowDest = $dfAlim[$vn] ?? null;
+            $cnDest  = ($rowDest !== null && isset($rowDest['cn']) && is_numeric($rowDest['cn'])) ? (float)$rowDest['cn'] : NAN;
+            [$demDest, $mesRef] = $demMaxMes($vn);
+            if (!is_finite($cnDest) || !is_finite($demDest)) continue;
+            $rem = $cnDest - $demDest;
             $destNom = $numalimMap[$vn] ?? (string)$vn;
+            // Carga que el origen entrega en ESE mismo mes (consistencia del mes problemático).
+            $demOrigMes = $mesRef !== null ? $valMes($rowOrig, $mesRef) : NAN;
+            $baseOrig   = is_finite($demOrigMes) ? $demOrigMes : $demMaxOrig;
 
             foreach ($equiposAbre as $eq) {
-                $transfer = $demMaxOrig * $eq['pct_feeder'] / 100.0;
+                $transfer = $baseOrig * $eq['pct_feeder'] / 100.0;
                 $holgura  = $rem - $transfer;
                 $tlcAbre  = (bool)$eq['tlc'];
                 $tier     = $tlcAbre ? ($tlcLz ? 1 : 2) : 3;
@@ -487,6 +491,7 @@ if ($method === 'GET' && $a === 'sugerencias_traspaso' && $b0 && !$b1) {
                     'remanente_A'  => round($rem, 1),
                     'holgura_A'    => round($holgura, 1),
                     'factible'     => $holgura >= 0,
+                    'mes_ref'      => $mesRef,
                     'tier'         => $tier,
                     'tier_label'   => [1 => 'abre+cierra TLC', 2 => 'abre TLC · cierra manual', 3 => 'sin TLC'][$tier],
                 ];
