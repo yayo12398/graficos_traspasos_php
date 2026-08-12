@@ -164,7 +164,7 @@ function renderNotaATR(data) {
     cont.className = "mb-2";
   }
   const ai = data.atr_info;
-  if (!ai || !ai.notas?.length) {
+  if (!ai || (!ai.notas?.length && !ai.warning)) {
     cont.innerHTML = "";
     cont.style.display = "none";
     return;
@@ -197,7 +197,7 @@ function renderNotaATR(data) {
       `Las corrientes mostradas ya consideran esta transformación.</div>`;
   };
 
-  const notas = ai.notas.map(_nota).join("");
+  const notas = (ai.notas || []).map(_nota).join("");
   const efectiva = ai.transformado
     ? `<div class="mt-1 pt-1" style="border-top:1px solid #f0d68a">` +
       `<i class="bi bi-arrow-left-right me-1"></i>Se traspasan ` +
@@ -205,10 +205,14 @@ function renderNotaATR(data) {
       `por el ATR llegan <strong>${fmt(ai.delta_recibido, 1)} A</strong> a la cabecera de ` +
       `${data.nombre_dest} (${fmt(ai.v_cab_dest, 0)} kV).</div>`
     : "";
+  const warn = ai.warning
+    ? `<div class="mt-1 pt-1" style="border-top:1px solid #f0d68a;color:#8a4b00">` +
+      `<i class="bi bi-exclamation-triangle-fill me-1"></i>${ai.warning}</div>`
+    : "";
 
   cont.innerHTML =
     `<div class="alert py-2 mb-0" style="background:#fdf6e3;border:1px solid #f0d68a;color:#6b5900;font-size:.85rem">` +
-    `${notas}${efectiva}</div>`;
+    `${notas}${efectiva}${warn}</div>`;
   cont.style.display = "";
   if (infoEq) infoEq.insertAdjacentElement("afterend", cont);
   else document.getElementById("cards-resumen")?.insertAdjacentElement("afterend", cont);
@@ -358,16 +362,33 @@ function renderPeorCaso(data) {
   const _mismaBarra = data.misma_barra_se || _tO?.mismo_trafo_destino || _tD?.mismo_trafo_destino;
   let trafoHtml = "";
   if (_mismaBarra) {
+    // Misma barra SE: el trafo no cambia. Mostrar solo su cargabilidad (FU máx del
+    // periodo estudiado) + estado — sin tabla Antes/Después (serían iguales).
     const _t = (_tO && !_tO.sin_datos) ? _tO : _tD;
-    const _blk = _peorTrafoTabla(_t, "sin cambio neto", true);
-    if (_blk) trafoHtml = `
+    if (_t && !_t.sin_datos) {
+      let _wRow = null;
+      (_t.tabla || []).forEach(r => {
+        if (typeof r.uso_antes_pct === "number" && isFinite(r.uso_antes_pct) &&
+            (!_wRow || r.uso_antes_pct > _wRow.uso_antes_pct)) _wRow = r;
+      });
+      const _cnStr  = _t.cn_trafo != null ? ` · CN=${fmt(_t.cn_trafo,0)} A` : "";
+      const _fuTxt  = _wRow ? `${fmt(_wRow.uso_antes_pct,1)}%` : "—";
+      const _mesTxt = _wRow ? ` (${_mesLabel(_wRow.mes)})` : "";
+      const _est    = _wRow?.estado || "sin_datos";
+      const _estB   = `<span class="badge ${badgeClass[_est] || ""}">${estadoLabel[_est] || "—"}</span>`;
+      trafoHtml = `
       <div class="mt-2 pt-2" style="border-top:1px solid #c8d5ec">
         <div class="alert alert-info py-1 px-2 mb-2" style="font-size:.8rem">
           <i class="bi bi-info-circle me-1"></i>Alimentadores en la <strong>misma barra SE</strong> —
           el transformador de potencia no ve cambio neto en su cargabilidad.
         </div>
-        ${_blk}
+        <div class="small d-flex align-items-center flex-wrap gap-2">
+          <span><i class="bi bi-lightning me-1"></i><strong>${_trafoLabel(_t)}</strong>${_cnStr}</span>
+          <span class="text-muted">— cargabilidad máx. en el periodo:</span>
+          <strong>${_fuTxt}</strong><span class="text-muted">${_mesTxt}</span> ${_estB}
+        </div>
       </div>`;
+    }
   } else {
     const _blkO = _peorTrafoTabla(_tO, "alivio", false);
     const _blkD = _peorTrafoTabla(_tD, "carga adicional", true);
@@ -445,7 +466,9 @@ function _renderTrafoChart(canvasId, trafoData, titulo, modo, ajMeses = new Set(
 
   const worstIdx = trafoData.tabla.reduce((best, r, i) =>
     (r.uso_despues_pct || 0) > (trafoData.tabla[best]?.uso_despues_pct || 0) ? i : best, 0);
-  const bgFinal  = bgCol.map((c, i)  => i === worstIdx ? "rgba(180,0,0,0.85)" : c);
+  // El peor mes conserva su color de estado como relleno (verde/ámbar/rojo) y solo
+  // se marca con borde rojo grueso — como la tabla. El estado crítico ya es rojo.
+  const bgFinal  = bgCol;
   const brdFinal = brdCol.map((c, i) => {
     if (i === worstIdx) return "rgba(140,0,0,1)";
     if (ajMeses.has(trafoData.tabla[i].mes)) return "#f5a623";
@@ -620,12 +643,12 @@ function renderMamCharts(data) {
   const bgDest  = tabla.map(r => ESTADO_COLOR[r.estado_dest]  || ESTADO_COLOR.sin_datos);
   const brdDest = tabla.map(r => ESTADO_BORDER[r.estado_dest] || ESTADO_BORDER.sin_datos);
 
-  // Destacar el peor mes (máx FU destino después) en rojo oscuro, como los trafos.
-  // bgDest/brdDest los comparten el chart de corriente y el de FU → aplica a ambos.
+  // Marcar el peor mes (máx FU destino después) con borde rojo grueso, como los trafos.
+  // El relleno conserva el color de estado (crítico ya es rojo); solo el borde lo destaca.
+  // brdDest lo comparten el chart de corriente y el de FU → aplica a ambos.
   const worstIdx = tabla.reduce((best, r, i) =>
     (r.uso_dest_despues_pct || 0) > (tabla[best]?.uso_dest_despues_pct || 0) ? i : best, 0);
   if (tabla.length) {
-    bgDest[worstIdx]  = "rgba(180,0,0,0.85)";
     brdDest[worstIdx] = "rgba(140,0,0,1)";
   }
   const brdWDest = tabla.map((r, i) => i === worstIdx ? 2 : 1);
@@ -776,19 +799,14 @@ function renderMamTrafos(trafoOrig, trafoDest, nomOrig="Origen", nomDest="Destin
   const sec     = document.getElementById("sec-trafos-mam");
   const secOrig = document.getElementById("trafo-orig-mam-section");
   const secDest = document.getElementById("trafo-dest-mam-section");
-  const notaEl  = document.getElementById("misma-barra-nota");
   _destroyCharts("canvas-trafo-orig-mam", "canvas-trafo-dest-mam");
 
-  if (notaEl) notaEl.style.display = "none";
-  if (!trafoOrig && !trafoDest) {
-    if (mismaBarra) {
-      sec.style.display = "";
-      if (secOrig) secOrig.style.display = "none";
-      if (secDest) secDest.style.display = "none";
-      if (notaEl)  notaEl.style.display  = "";
-    } else {
-      sec.style.display = "none";
-    }
+  // Misma barra SE (trafo sin cambio neto) o sin datos de trafos individuales: ocultar
+  // los gráficos de trafo del MAM. En misma barra la cargabilidad base ya se ve en la
+  // tabla ejecutiva (Δ=0); el gráfico plano no aporta. La nota "misma barra" también
+  // vive en la tabla ejecutiva (nota-misma-barra-ej), siempre visible.
+  if (mismaBarra || (!trafoOrig && !trafoDest)) {
+    sec.style.display = "none";
     return;
   }
   sec.style.display = "";
@@ -943,21 +961,29 @@ function renderTablaTrafosEjecutivo(data) {
     </tr>`;
 
   const filas = [];
-  const _addTrafoFilas = (trafo, label, ajSet) => {
+  const _addTrafoFilas = (trafo, label, ajSet, soloCarga = false) => {
     if (!trafo || trafo.sin_datos) return;
     const datos = trafo.tabla || [];
     const byMes = Object.fromEntries(datos.map(d => [d.mes, d]));
-    filas.push({ lbl: `${label} — Antes (A)`,      key: "I_antes",        trafo, byMes, ajSet, fu: false });
-    filas.push({ lbl: `${label} — Después (A)`,     key: "I_despues",      trafo, byMes, ajSet, fu: false });
+    // Misma barra SE (soloCarga): el trafo no cambia → se omiten Antes/Después y se
+    // muestra solo su cargabilidad (FU + estado) en el periodo estudiado.
+    if (!soloCarga) {
+      filas.push({ lbl: `${label} — Antes (A)`,      key: "I_antes",        trafo, byMes, ajSet, fu: false });
+      filas.push({ lbl: `${label} — Después (A)`,     key: "I_despues",      trafo, byMes, ajSet, fu: false });
+    }
     if (trafo.cn_trafo) {
-      filas.push({ lbl: `FU (%) ${label}`,           key: "uso_despues_pct", trafo, byMes, ajSet, fu: true });
+      filas.push({ lbl: `FU (%) ${label}`,           key: soloCarga ? "uso_antes_pct" : "uso_despues_pct", trafo, byMes, ajSet, fu: true });
       filas.push({ lbl: `Estado`,                     key: "estado",          trafo, byMes, ajSet, isEstado: true });
     }
   };
 
   // Citar el transformador por su barra (ej. "Tr Lo Valledor 4"), no el alimentador.
   const _nomTrafo = (t, fb) => (t && (t.barra || "").trim()) ? t.barra.trim() : `Trafo ${fb}`;
-  if (trafoOrig) _addTrafoFilas(trafoOrig, `${_nomTrafo(trafoOrig, nomOrig)} — alivio`, ajOrig);
+  if (trafoOrig) {
+    // Misma barra: el origen llega con Δ=0 (mismo_trafo_destino) → solo cargabilidad, sin "alivio".
+    const _mb = !!trafoOrig.mismo_trafo_destino || mismaBarra;
+    _addTrafoFilas(trafoOrig, _mb ? _nomTrafo(trafoOrig, nomOrig) : `${_nomTrafo(trafoOrig, nomOrig)} — alivio`, ajOrig, _mb);
+  }
   if (trafoDest) _addTrafoFilas(trafoDest, `${_nomTrafo(trafoDest, nomDest)} — carga`, ajDest);
 
   document.getElementById("tabla-trafos-ej-body").innerHTML = filas.map(f => {
@@ -2272,7 +2298,8 @@ function _renderTrafoChartGeneric(canvasId, trafoData, modo, chartsStore) {
 
   const worstIdx = trafoData.tabla.reduce((best, r, i) =>
     (r.uso_despues_pct || 0) > (trafoData.tabla[best]?.uso_despues_pct || 0) ? i : best, 0);
-  const bgFinal2  = bgCol.map((c, i)  => i === worstIdx ? "rgba(180,0,0,0.85)" : c);
+  // Peor mes: relleno = color de estado, solo borde rojo grueso lo marca (como la tabla).
+  const bgFinal2  = bgCol;
   const brdFinal2 = brdCol.map((c, i) => i === worstIdx ? "rgba(140,0,0,1)"    : c);
   const brdWidth2 = brdCol.map((_, i) => i === worstIdx ? 2 : 1);
 

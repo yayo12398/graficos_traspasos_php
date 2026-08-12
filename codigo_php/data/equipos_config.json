@@ -720,5 +720,239 @@
         "notas": "",
         "fecha_registro": "2026-07-30",
         "historial": []
+    },
+    "CGP116018": {
+        "corriente_a": 186,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "G33_96118": {
+        "corriente_a": 189,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "RTB61515": {
+        "corriente_a": 325,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "GMT61471": {
+        "corriente_a": 432,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ORM61447": {
+        "corriente_a": 432,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "SCH99861": {
+        "corriente_a": 432,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ABB55481": {
+        "corriente_a": 432,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "CLB55440": {
+        "corriente_a": 432,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ORM96678": {
+        "corriente_a": 301,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ORM94581": {
+        "corriente_a": 301,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "RTB1170050": {
+        "corriente_a": 360,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "GMT61470": {
+        "corriente_a": 790,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "G33_101250": {
+        "corriente_a": 790,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "CGP116334": {
+        "corriente_a": 790,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ABB98027": {
+        "corriente_a": 500,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "ABB73710": {
+        "corriente_a": 790,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "DBC113777": {
+        "corriente_a": 400,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "DBC113675": {
+        "corriente_a": 400,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "REC100235": {
+        "corriente_a": 300,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-06",
+        "historial": []
+    },
+    "DBC52073": {
+        "corriente_a": 300,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "DBC108952": {
+        "corriente_a": 370,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "REC96484": {
+        "corriente_a": 425,
+        "tipo_limite": "setpoint",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "PPF1415334": {
+        "corriente_a": 712,
+        "tipo_limite": "fusible",
+        "corriente_conductor_a": null,
+        "es_hdlb": true,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "DBC79289": {
+        "corriente_a": 538,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "CLB85684": {
+        "corriente_a": 538,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
+    },
+    "CLB104557": {
+        "corriente_a": 370,
+        "tipo_limite": "conductor",
+        "corriente_conductor_a": null,
+        "es_hdlb": null,
+        "notas": "",
+        "fecha_registro": "2026-08-07",
+        "historial": []
     }
 }

@@ -196,5 +196,20 @@
     },
     "S.JOAQUIN": {
         "conductores_intermedios": []
+    },
+    "TUPPER": {
+        "conductores_intermedios": []
+    },
+    "HUAMACHUCO": {
+        "conductores_intermedios": []
+    },
+    "ALARCON": {
+        "conductores_intermedios": []
+    },
+    "PORTEZUELO": {
+        "conductores_intermedios": []
+    },
+    "LIRA": {
+        "conductores_intermedios": []
     }
 }

@@ -1,7 +1,7 @@
 <?php
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Reportes.php  (1577 L)                                           ║
+// ║  ÍNDICE DE Reportes.php  (1572 L)                                           ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  CONSTANTES                                                        L.49–77  ║
 // ║    _REP_CHARTJS_CDN, _REP_TD_GRANDE_KVA                                     ║
@@ -29,21 +29,21 @@
 // ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.586    ║
 // ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.599    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.628–881  ║
+// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.628–876  ║
 // ║    generarReporteHtml($body,$ruta)                                 L.628    ║
 // ║      ← recibe cuerpo completo del POST /api/descargar_html                  ║
 // ║      → HTML autónomo con tabla mes a mes + gráficos Chart.js                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.882–1165  ║
-// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.882    ║
+// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.877–1160  ║
+// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.877    ║
 // ║      → HTML por feeder con tabla de transferencias + gráfico acum.          ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE VCC                                                   L.1166–1577  ║
-// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1166   ║
-// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1244   ║
-// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1340   ║
-// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1392   ║
-// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1436   ║
+// ║  REPORTE VCC                                                   L.1161–1572  ║
+// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1161   ║
+// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1239   ║
+// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1335   ║
+// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1387   ║
+// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1431   ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 const _REP_CHARTJS_CDN   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
@@ -699,11 +699,9 @@ function generarReporteHtml(
             $numpos = $lzInfo['numpos_lz_sel'] ?? '';
             $via    = $numpos ? ' <span style="color:#888;font-size:.85em">vía ' . _h($numpos) . '</span>' : '';
             $cnt    = '<span class="cnt-badge">' . count($troncal) . '</span>';
-            $desc   = '<p style="color:#555;font-size:.87em;margin:4px 0 8px">Equipos en el camino troncal '
-                    . 'entre el LZ y la cabecera del alimentador receptor. La carga traspasada circulará a través de ellos.</p>';
             $troncalHtml = "<details class='equip-det troncal' open>"
                          . "<summary>{$icono}Equipos troncales en alimentador receptor{$via}{$cnt}</summary>"
-                         . "<div class='equip-det-body'>{$desc}" . _repHtmlTablaEquipos($troncal) . "</div>"
+                         . "<div class='equip-det-body'>" . _repHtmlTablaEquipos($troncal) . "</div>"
                          . "</details>";
         }
     }
@@ -723,7 +721,7 @@ function generarReporteHtml(
                   . "<thead><tr><th>Equipo</th><th>Tipo</th></tr></thead>"
                   . "<tbody>{$filasInv}</tbody></table>"
                   . "<p style='color:#555;font-size:.85em;margin:4px 0 0'>Estos equipos quedan dentro "
-                  . "de la isla y recibirán corriente desde la dirección opuesta a la habitual. "
+                  . "del segmento y recibirán corriente desde la dirección opuesta a la habitual. "
                   . "Verificar si aplica.</p></div>";
     }
     $ct = trim($cambioTopologico ?? '');
@@ -733,12 +731,9 @@ function generarReporteHtml(
     }
     $islaVigilarHtml = '';
     if ($invInner || $topoInner) {
-        $nItems = count($equiposTraspasados ?? []) + ($topoInner ? 1 : 0);
-        $cnt    = "<span class='cnt-badge'>{$nItems}</span>";
-        $islaVigilarHtml = "<details class='equip-det isla' open>"
-                         . "<summary>Equipos en isla a vigilar{$cnt}</summary>"
-                         . "<div class='equip-det-body'>{$invInner}{$topoInner}</div>"
-                         . "</details>";
+        // Bloque plano y sin título (espeja el panel vivo renderSecEquiposInvolucrados):
+        // el contenido de inversión de flujo / cambio topológico va directo, sin <details>.
+        $islaVigilarHtml = "<div class='equip-det-body'>{$invInner}{$topoInner}</div>";
     }
 
     $ajustesHtml = '';

@@ -100,56 +100,76 @@ async function cargarEstadoCache() {
   } catch(e) { /* silencioso */ }
 }
 
+// Formatea 'YYYY-MM-DD HH:MM:SS' → 'DD/MM/YY HH:MM' (o '—')
+function _fmtFechaCache(s) {
+  if (!s) return '—';
+  const dt = new Date(s.includes('T') ? s : s.replace(' ', 'T'));
+  if (isNaN(dt)) return '—';
+  return dt.toLocaleDateString('es-CL', {day:'2-digit', month:'2-digit', year:'2-digit'})
+       + ' ' + dt.toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit'});
+}
+
+// Tiempo relativo compacto ('recién', 'hace 12 min', 'hace 3 h', 'hace 5 d', 'hace 2 meses')
+function tiempoRelativo(s) {
+  if (!s) return '—';
+  const dt = new Date(s.includes('T') ? s : s.replace(' ', 'T'));
+  if (isNaN(dt)) return '—';
+  const seg = Math.max(0, (Date.now() - dt) / 1000);
+  if (seg < 60)    return 'recién';
+  if (seg < 3600)  return `hace ${Math.floor(seg/60)} min`;
+  if (seg < 86400) return `hace ${Math.floor(seg/3600)} h`;
+  const dias = Math.floor(seg/86400);
+  if (dias < 30)   return `hace ${dias} d`;
+  const meses = Math.floor(dias/30);
+  return `hace ${meses} mes${meses > 1 ? 'es' : ''}`;
+}
+
 function actualizarLabelTlc(d) {
-  const fmt = s => {
-    if (!s) return '—';
-    const dt = new Date(s.includes('T') ? s : s.replace(' ', 'T'));
-    return dt.toLocaleDateString('es-CL', {day:'2-digit', month:'2-digit', year:'2-digit'})
-           + ' ' + dt.toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit'});
-  };
   const lbl = document.getElementById('lbl-cache-tlc');
   if (!lbl) return;
   if (!d?.existe) {
-    lbl.textContent = 'TLC: —';
-    lbl.style.color = 'var(--enel-amber, #f5a623)';
-    lbl.title = 'Caché TLC no generado — haz clic en ↺ para generar';
+    lbl.textContent = 'no generado';
+    lbl.style.color = 'var(--enel-amber)';
+    lbl.title = 'Caché TLC no generado — usa el botón “↻ TLC” para generarlo';
   } else {
-    lbl.textContent = 'TLC: ' + fmt(d.mtime);
-    lbl.title = `Telecontrol: ${d.n_equipos} equipos, ${d.n_frg_alim} alim. FRG — actualizado: ${d.mtime}`;
+    lbl.textContent = `${tiempoRelativo(d.mtime)} · ${_fmtFechaCache(d.mtime)}`;
+    lbl.title = `Telecontrol: ${d.n_equipos} equipos, ${d.n_frg_alim} alim. FRG — ${d.mtime}`;
     lbl.style.color = '';
   }
 }
 
 function actualizarLabelesCache(d) {
-  const fmt = s => {
-    if (!s) return '—';
-    const dt = new Date(s.replace(' ', 'T'));
-    return dt.toLocaleDateString('es-CL', {day:'2-digit', month:'2-digit', year:'2-digit'})
-           + ' ' + dt.toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit'});
-  };
-  const lblT = document.getElementById('lbl-cache-topo');
-  const lblD = document.getElementById('lbl-cache-dem');
-  const lblL = document.getElementById('lbl-cache-lz');
   const topoStr = d.cache_ab_mtime  || null;
   const demStr  = d.cache_dem_mtime || null;
   const lzStr   = d.cache_lz_mtime  || null;
-  lblT.textContent = 'Topol: ' + fmt(topoStr);
-  lblT.title = 'Topología (aguas abajo) — actualizado: ' + (topoStr || '—');
-  lblD.textContent = 'Dem: ' + fmt(demStr);
-  lblD.title = 'Demandas (alimentadores y trafos) — actualizado: ' + (demStr || '—');
-  if (lblL) {
-    lblL.textContent = 'LZ: ' + fmt(lzStr);
-    lblL.title = 'Límite de zona — actualizado: ' + (lzStr || '—');
-  }
-  // Resaltar en ámbar si la topología tiene más de 3 días
-  if (topoStr) {
-    const dias = (Date.now() - new Date(topoStr.replace(' ', 'T'))) / 86400000;
-    lblT.style.color = dias > 3 ? 'var(--enel-amber)' : '';
-  }
-  // LZ en ámbar si supera su TTL (7 días)
-  if (lblL && lzStr) {
-    const diasLz = (Date.now() - new Date(lzStr.replace(' ', 'T'))) / 86400000;
-    lblL.style.color = diasLz > 7 ? 'var(--enel-amber)' : '';
+  const diasDe    = s => s ? (Date.now() - new Date(s.replace(' ', 'T'))) / 86400000 : null;
+  const topoStale = diasDe(topoStr) != null && diasDe(topoStr) > 3;  // TTL topología 3 d
+  const lzStale   = diasDe(lzStr)   != null && diasDe(lzStr)   > 7;  // TTL LZ 7 d
+
+  const setRow = (id, str, stale) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = str ? `${tiempoRelativo(str)} · ${_fmtFechaCache(str)}` : '—';
+    el.style.color = stale ? 'var(--enel-amber)' : '';
+    el.title = str || '—';
+  };
+  setRow('lbl-cache-topo', topoStr, topoStale);
+  setRow('lbl-cache-dem',  demStr,  false);
+  setRow('lbl-cache-lz',   lzStr,   lzStale);
+
+  // Resumen del botón navbar: el timestamp más antiguo de topo/dem/lz (conservador)
+  const resumenEl = document.getElementById('lbl-datos-resumen');
+  if (resumenEl) {
+    const stamps = [topoStr, demStr, lzStr].filter(Boolean);
+    if (!stamps.length) {
+      resumenEl.textContent = 'Datos: —';
+      resumenEl.style.color = '';
+    } else {
+      const oldest = stamps.reduce((a, b) =>
+        new Date(a.replace(' ', 'T')) < new Date(b.replace(' ', 'T')) ? a : b);
+      resumenEl.textContent = `Datos: ${tiempoRelativo(oldest)}`;
+      resumenEl.style.color = (topoStale || lzStale) ? 'var(--enel-amber)' : '';
+    }
   }
 }
 

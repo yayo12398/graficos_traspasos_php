@@ -216,78 +216,93 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     $deltaMax  = $deltaInfo['delta_max'];
     $isla['mes_peor'] = $deltaInfo['mes_peor'] ?? '';
 
-    // ── Corrección ATR: tensión en el LZ (lado A) y tensión de conexión de B ────
-    // serie_deltas = I_trunk_A × p  (unidades 23 kV siempre).
-    // Si la isla de A está en zona de baja tensión (aguas abajo de un ATR de A),
-    // la corriente real en B = serie_deltas × (23 / V_eq), donde V_eq depende de
-    // la posición topológica de cada equipo respecto al ATR de A o de B.
+    // ── Corrección ATR — reencuadre por tensión del punto de enlace ────────────
+    // deltaMax se mide en la cabecera del origen → ya integra los ATR *internos* a
+    // la isla. Solo importa el ATR que el enlace (LZ) cruza. Un LZ es un interruptor
+    // (no transforma) → la tensión del punto de enlace es única a ambos lados.
+    //   escala de cabecera:  ΔB = deltaMax × (V_cab_orig / V_cab_dest)
+    //   escala por-equipo:   I_eq = serie × (V_cab_orig / V_eq)   (V_eq topológico)
     $alimConfA  = acGetAlim($nomOrig);
     $alimConfBc = ($tipoDest === 'excel' && $nomDest !== '') ? acGetAlim($nomDest) : null;
+    $atrOrigList = $alimConfA['autotrafos']  ?? [];
+    $atrDestList = $alimConfBc['autotrafos'] ?? [];
 
-    // V_lz: tensión física en el LZ (determinada topológicamente por ATR de A).
-    // Se verifica si algún TD de la isla es aguas abajo del borde del ATR de A.
-    // No depende de equipo_abre; usa los TDs reales de la isla.
-    $vLz = 23.0;
-    $islaBajoAtrA = false;   // ¿la isla del origen queda en zona baja de un ATR del origen?
-    $atrOrigMatched = null;  // config del ATR del origen que participa (para la nota)
-    if ($alimConfA && !empty($alimConfA['autotrafos'])) {
-        $nomOrigUp = strtoupper(trim($nomOrig));
-        $tdIslandSet = [];
-        foreach ($tds as $_tdRow) {
-            $td = trim((string)($_tdRow['numpos_td'] ?? ''));
-            if ($td !== '') $tdIslandSet[$td] = true;
-        }
-        foreach ($alimConfA['autotrafos'] as $_atA) {
-            $atATipo  = $_atA['tipo'] ?? 'reductor';
-            $atABound = strtoupper(trim($atATipo === 'elevador'
-                ? ($_atA['rec_baja'] ?? '')
-                : (($_atA['rec_alta'] ?? '') ?: ($_atA['rec_baja'] ?? ''))));
-            if ($atABound === '') continue;
-            foreach ($dfAb as $_row) {
-                if (strtoupper(trim($_row['nom_alim']    ?? '')) !== $nomOrigUp) continue;
-                if (strtoupper(trim($_row['numpos_equip'] ?? '')) !== $atABound)  continue;
-                $td = trim($_row['numpos_td'] ?? '');
-                if ($td !== '' && isset($tdIslandSet[$td])) {
-                    $vLz = $atATipo === 'elevador' ? (float)($_atA['tension_alta'] ?? 23) : 12.0;
-                    $islaBajoAtrA = true;
-                    $atrOrigMatched = $_atA;
-                    break 2;
-                }
+    // Tensión base de cabecera del feeder: 12 si todos sus ATR son elevadores; si no 23.
+    // (null cuando el feeder no tiene ATR → se infiere de la tensión del enlace).
+    $cabTension = function(array $atrs): ?int {
+        if (!$atrs) return null;
+        foreach ($atrs as $_a) { if (($_a['tipo'] ?? 'reductor') !== 'elevador') return 23; }
+        return 12;
+    };
+
+    // Mapas tensión-por-equipo (numpos_equip → kV), robustos a multi-ATR.
+    $vmapOrig = $atrOrigList ? tensionPorEquipoAtr($dfAb, $nomOrig, $atrOrigList) : [];
+    $vmapDest = ($atrDestList && $nomDest !== '') ? tensionPorEquipoAtr($dfAb, $nomDest, $atrDestList) : [];
+
+    // V_tie (origen): tensión del equipo que abre. En modo TDs/corte (sin equipo que
+    // abre), 12 sólo si TODA la isla queda bajo un borde de ATR (todos sus TDs a 12).
+    $vTieOrig = null;
+    if ($atrOrigList) {
+        if ($equipoAbre !== '' && isset($vmapOrig[$equipoAbre])) {
+            $vTieOrig = (float)$vmapOrig[$equipoAbre];
+        } else {
+            $vTieOrig = (float)($cabTension($atrOrigList) ?? 23);
+            $islTds = [];
+            foreach ($tds as $_r) { $t = trim((string)($_r['numpos_td'] ?? '')); if ($t !== '') $islTds[$t] = true; }
+            if ($islTds) foreach ($atrOrigList as $_atA) {
+                $tipoA = ($_atA['tipo'] ?? 'reductor');
+                $borde = trim($tipoA === 'elevador'
+                    ? (string)($_atA['rec_baja'] ?? '')
+                    : ((string)($_atA['rec_alta'] ?? '') ?: (string)($_atA['rec_baja'] ?? '')));
+                if ($borde === '') continue;
+                $bajo = [];
+                foreach (tdsDeEquipo($dfAb, $borde, null) as $_br) { $t = trim((string)($_br['numpos_td'] ?? '')); if ($t !== '') $bajo[$t] = true; }
+                if (!$bajo) continue;
+                $todaBajo = true;
+                foreach ($islTds as $t => $_) { if (!isset($bajo[$t])) { $todaBajo = false; break; } }
+                if ($todaBajo) { $vTieOrig = $tipoA === 'elevador' ? (float)($_atA['tension_alta'] ?? 23) : 12.0; break; }
             }
         }
     }
 
-    // V_se_B: tensión a la que B conecta con el LZ.
-    // Si B tiene ATR registrado en el path upstream → su SE está en zona de alta (23 kV).
-    // Si no tiene ATR en path → B conecta directamente al nivel del LZ (V_lz).
-    $atB  = null;
-    $vSeB = $vLz;
-    if ($alimConfBc && !empty($alimConfBc['autotrafos'])) {
-        $nombresRawBUp = array_map('strtoupper', array_column($b['equipos_b'] ?? [], 'nombre'));
-        foreach ($alimConfBc['autotrafos'] as $_at) {
-            $ra = strtoupper(trim($_at['rec_alta'] ?? ''));
-            $rb = strtoupper(trim($_at['rec_baja'] ?? ''));
-            if ($ra !== '' && in_array($ra, $nombresRawBUp, true)) { $atB = $_at; break; }
+    // V_tie (destino): tensión del equipo del troncal receptor más cercano al LZ
+    // (mín. tensión del troncal para ATR reductor).
+    $vTieDest = null;
+    if ($vmapDest && !empty($b['equipos_b'])) {
+        foreach ($b['equipos_b'] as $_eb) {
+            $nm = trim((string)($_eb['nombre'] ?? ''));
+            if ($nm === '' || !isset($vmapDest[$nm])) continue;
+            $v = (float)$vmapDest[$nm];
+            if ($vTieDest === null || $v < $vTieDest) $vTieDest = $v;
         }
-        if (!$atB) {
-            foreach ($alimConfBc['autotrafos'] as $_at) {
-                $ra = strtoupper(trim($_at['rec_alta'] ?? ''));
-                $rb = strtoupper(trim($_at['rec_baja'] ?? ''));
-                if ($ra === '' && $rb !== '' && in_array($rb, $nombresRawBUp, true)) { $atB = $_at; break; }
-            }
-        }
-        if ($atB) $vSeB = 23.0;
     }
 
-    // Tensión de cabecera del origen (donde se mide deltaMax). Normalmente 23 kV;
-    // pero si el origen NO tiene ATR y el destino SÍ (LZ en su zona 12 kV), el origen
-    // conecta/mide en 12 kV → deltaMax está en 12 kV. Así el receptor con ATR recibe el
-    // aporte transformado (12→23 al subir por su ATR a la cabecera). scaleFeederB general:
-    //   ΔB = deltaMax × (V_cab_orig / V_cab_dest),  con V_cab_dest = $vSeB.
-    $vCabOrig = (!$islaBajoAtrA && $atB) ? 12.0 : 23.0;
+    // Tensión única del enlace: preferir el lado con ATR; si ambos, deben coincidir.
+    $atrWarning = null;
+    if ($vTieOrig !== null && $vTieDest !== null && abs($vTieOrig - $vTieDest) > 0.001) {
+        $atrWarning = sprintf('Tensión del enlace inconsistente (origen %.0f kV vs destino %.0f kV); un LZ no transforma. Se omite la conversión de cabecera.', $vTieOrig, $vTieDest);
+    }
+    $vTie = $vTieOrig ?? $vTieDest;   // si ambos, coinciden (o se marca warning)
 
-    // Factores de escala para análisis de cabecera/trafo de B
-    $scaleFeederB    = $vCabOrig / $vSeB;
+    // Tensiones base de cabecera. Feeder sin ATR = tensión uniforme → V_cab = V_tie.
+    $vCabOrig = (float)($cabTension($atrOrigList) ?? ($vTie ?? 23.0));
+    $vCabDest = (float)($cabTension($atrDestList) ?? ($vTie ?? 23.0));
+    $vSeB     = $vCabDest;             // compat: cabecera del receptor
+    $vLz      = $vTie ?? 23.0;         // tensión del enlace (para respuesta/notas)
+
+    // Legacy para notas / avisos.
+    $islaBajoAtrA   = ($vTie !== null && $atrOrigList && abs($vTie - $vCabOrig) > 0.001);
+    $atrOrigMatched = $atrOrigList[0] ?? null;
+    $atB            = $atrDestList[0] ?? null;   // sólo notas; desactiva el falso atr_omitido
+
+    // Escala de cabecera/trafo — sólo tensiones base. Guardrail de banda sana.
+    $scaleFeederB = $vCabDest > 0 ? $vCabOrig / $vCabDest : 1.0;
+    if ($atrWarning) $scaleFeederB = 1.0;   // enlace inconsistente → no transformar
+    if ($scaleFeederB < 0.4 || $scaleFeederB > 2.5) {
+        $atrWarning = ($atrWarning ? $atrWarning . ' ' : '')
+            . sprintf('Escala de tensión fuera de banda (%.2f); revisar topología/ATR.', $scaleFeederB);
+        $scaleFeederB = 1.0;
+    }
     $deltaMaxB       = round($deltaMax * $scaleFeederB, 2);
     $pForB           = $isla['p'] * $scaleFeederB;
     $serieAdicionBSc = abs($scaleFeederB - 1.0) > 0.001
@@ -363,6 +378,14 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $mismaBarra = $_barraO !== '' && $_barraO === $_barraD;
     }
     if ($mismaBarra) {
+        // El trafo compartido no ve cambio neto: el destino (mismo trafo) recoge la
+        // carga que alivia el origen. Recomputar el origen con Δ=0 para mostrar su
+        // cargabilidad BASE (Antes = Después) en la tabla, sin el alivio ficticio;
+        // anular el destino. Los gráficos de trafo se omiten en el frontend.
+        $trafoOrig    = $trafoOrigRow ? analizarTrafo($trafoOrigRow, 0.0, 'alivio', 0.90, $mesesSel) : null;
+        $trafoOrigMam = $trafoOrigRow
+            ? analizarTrafoMesAMes($trafoOrigRow, array_fill_keys(array_keys($deltaInfo['serie_deltas']), 0.0), 'alivio', 0.90, $mesesSel)
+            : null;
         if ($trafoOrig)    $trafoOrig['mismo_trafo_destino']    = true;
         if ($trafoOrigMam) $trafoOrigMam['mismo_trafo_destino'] = true;
         $trafoDest = $trafoDestMam = null;
@@ -451,57 +474,30 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
                 ]);
             }
         }
-        // ── Corrección de tensión por equipo (VCC equipos B) ─────────────────
-        // Corriente en equipo = serie_deltas × (23 / V_eq).
-        // V_eq se determina topológicamente: posición del equipo relativa al ATR de B.
-        // Si B no tiene ATR en el path upstream, todos los equipos están al nivel del LZ (V_lz).
-        if ($atB) {
-            // B tiene ATR en el path: corrección por zona (alta / baja)
-            $atBTipo      = $atB['tipo'] ?? 'reductor';
-            $atBRecAlta   = $atB['rec_alta'] ?? '';
-            $atBRecBaja   = $atB['rec_baja'] ?? '';
-            $atBTensAlta  = (float)($atB['tension_alta'] ?? 23);
-            $atBBoundary  = $atBTipo === 'elevador' ? $atBRecBaja : ($atBRecAlta ?: $atBRecBaja);
-            // Si boundary = rec_alta → el recloser de borde está en zona de alta (23 kV)
-            // Si boundary = rec_baja → el recloser de borde está en zona de baja (12 kV)
-            $boundaryIsHigh = ($atBBoundary === $atBRecAlta && $atBRecAlta !== '');
-
-            foreach ($equiposBEval as &$_eqB) {
-                $nB = $_eqB['nombre'] ?? '';
-                if ($nB === $atBBoundary) {
-                    $vEq = $boundaryIsHigh ? $atBTensAlta : 12.0;
-                } else {
-                    $isDown = equipoEsAguasAbajoDe($dfAb, $nomDest, $atBBoundary, $nB);
-                    // Elevador: downstream de rec_baja = zona de alta (23 kV, salida del ATR)
-                    // Reductor: downstream de rec_alta/rec_baja = zona de baja (12 kV, salida)
-                    $vEq = ($atBTipo === 'elevador')
-                        ? ($isDown ? $atBTensAlta : 12.0)
-                        : ($isDown ? 12.0 : $atBTensAlta);
-                }
-                // Tensión del equipo (para badge ⚡ y separador de nivel en la tabla)
+        // ── Corrección de tensión por equipo (receptor) — topológica, multi-ATR ──
+        // Cada equipo del troncal ve la corriente a su tensión local (tensionPorEquipoAtr).
+        // La adición se referencia a la cabecera del origen: I_eq = serie × (V_cab_orig / V_eq).
+        // La base (CN/demanda) se mide en la cabecera del receptor: ×(V_cab_dest / V_eq).
+        $hayAtrDest = !empty($vmapDest);
+        foreach ($equiposBEval as &$_eqB) {
+            if (($_eqB['tipo'] ?? '') === 'conductor_intermedio') continue;
+            $nB  = trim((string)($_eqB['nombre'] ?? ''));
+            $vEq = ($hayAtrDest && $nB !== '' && isset($vmapDest[$nB]) && (float)$vmapDest[$nB] > 0)
+                ? (float)$vmapDest[$nB] : $vCabDest;
+            if ($vEq <= 0) $vEq = $vCabDest > 0 ? $vCabDest : 23.0;
+            if ($hayAtrDest) {
+                // Marca de tensión/badge por-equipo sólo si el receptor tiene ATR.
                 $_eqB['tension_kv_override'] = $vEq;
-                // Escala de la BASE: la demanda/CN del receptor se mide en su cabecera
-                // ($vSeB); bajo el ATR (12 kV) la misma potencia da más corriente → ×vSeB/vEq.
-                $_eqB['v_base_scale'] = $vEq > 0 ? $vSeB / $vEq : 1.0;
-                // Escala de la ADICIÓN (corriente transferida) respecto a la cabecera origen.
-                $scale = $vCabOrig / $vEq;
-                if (abs($scale - 1.0) > 0.001) {
-                    $sc = [];
-                    foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scale, 4);
-                    $_eqB['serie_adicion_override'] = $sc;
-                }
+                $_eqB['v_base_scale']        = $vEq > 0 ? $vCabDest / $vEq : 1.0;
             }
-            unset($_eqB);
-        } elseif (abs($vLz - 23.0) > 0.001) {
-            // Sin ATR de B en path: todos los equipos están al nivel del LZ
-            $scaleLz = $vCabOrig / $vLz;
-            foreach ($equiposBEval as &$_eqB) {
+            $scale = $vEq > 0 ? $vCabOrig / $vEq : 1.0;
+            if (abs($scale - 1.0) > 0.001) {
                 $sc = [];
-                foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scaleLz, 4);
+                foreach ($serieAdicionB as $__m => $__v) $sc[$__m] = round((float)$__v * $scale, 4);
                 $_eqB['serie_adicion_override'] = $sc;
             }
-            unset($_eqB);
         }
+        unset($_eqB);
 
         // ── Aviso: corrección de tensión ATR no aplicada (silent $atB=null) ──
         // Si el receptor tiene ATR pero no se ancló ($atB null) y algún equipo del
@@ -557,8 +553,12 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
 
     // Respuesta en formato Python plano
     // ── Info ATR para la nota del panel (solo si un ATR participa del traspaso) ──
-    $atrNotas = [];
-    if ($islaBajoAtrA && $atrOrigMatched) {
+    // Una nota sólo si el enlace CRUZA el ATR (V_tie ≠ V_cab de ese lado); un ATR
+    // interno a la isla ya está reflejado en deltaMax y no genera nota.
+    $atrNotas  = [];
+    $origCruza = $atrOrigList && $vTie !== null && abs($vTie - $vCabOrig) > 0.001;
+    $destCruza = $atrDestList && $vTie !== null && abs($vTie - $vCabDest) > 0.001;
+    if ($origCruza && $atrOrigMatched) {
         $atrNotas[] = [
             'feeder'       => $nomOrig,
             'rol'          => 'entrega',
@@ -568,7 +568,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
             'tension_alta' => (float)($atrOrigMatched['tension_alta'] ?? 23),
         ];
     }
-    if ($atB) {
+    if ($destCruza && $atB) {
         $atrNotas[] = [
             'feeder'       => $nomDest,
             'rol'          => 'recibe',
@@ -578,13 +578,15 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
             'tension_alta' => (float)($atB['tension_alta'] ?? 23),
         ];
     }
-    $atrInfo = $atrNotas ? [
+    $atrInfo = ($atrNotas || $atrWarning) ? [
         'notas'           => $atrNotas,
         'delta_entregado' => $deltaMax,
         'delta_recibido'  => $deltaMaxB,
         'v_cab_orig'      => $vCabOrig,
-        'v_cab_dest'      => $vSeB,
+        'v_cab_dest'      => $vCabDest,
+        'v_tie'           => $vTie,
         'transformado'    => $atrScale,
+        'warning'         => $atrWarning,
     ] : null;
 
     jsonPy([
@@ -626,6 +628,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'v_lz'                => $vLz,
         'traspaso_forzado'    => $traspasoForzado,
         'atr_omitido'         => $atrOmitido,
+        'atr_warning'         => $atrWarning,
         'frg_orig'            => tlcAlimEsFrg($nomOrig),
         'frg_dest'            => $nomDest ? tlcAlimEsFrg($nomDest) : false,
         'serie_raw_orig'      => $serieOrigRaw['serie'] ?? [],
