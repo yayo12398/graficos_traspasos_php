@@ -1,3 +1,9 @@
+> ⚠️ **OBSOLETO (2026-08-13).** Este es un documento histórico de la *migración* Python→PHP
+> (jun-2026). Ya no refleja el estado del programa. Para la documentación técnica actual ver
+> **[`DOCUMENTACION.md`](DOCUMENTACION.md)**. Se conserva solo como registro de la traducción.
+
+---
+
 # Documentación Técnica — Traducción a PHP 8.5.6
 ## Sistema de Análisis de Traspasos de Carga — ENEL Chile
 
