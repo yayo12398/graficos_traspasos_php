@@ -327,7 +327,10 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $serieOrigClean,
         $atrScale ? $isla['p'] : 0.0
     ), $mesesSel);
-    $resumen  = resumenEstados($dfSim);
+    // Veredicto de cabecera (alerta + conteo + pct_max_uso) sobre el escenario
+    // PROPORCIONAL ($dfSimMam), consistente con la tabla mes-a-mes que ve el usuario.
+    // El escenario conservador Δ-fijo ($dfSim) va aparte en 'tabla' → sección "Peor caso".
+    $resumen  = resumenEstados($dfSimMam);
 
     $trafoOrigRowRaw = trafoDeFeeder($dfTrafo, $nOrig);
     $trafoOrigRow    = $trafoOrigRowRaw ? aplicarAjustesFila($trafoOrigRowRaw, 'trafo', $nOrig) : null;

@@ -53,7 +53,9 @@ function mostrarResultados(data) {
   if (_hero) {
     const _pctMax  = data.resumen?.pct_max_uso;
     const _holg    = (typeof _pctMax === "number" && isFinite(_pctMax)) ? (100 - _pctMax) : null;
-    const _mesPeor = data.delta?.mes_peor;
+    // Peor mes = mes de mayor FU del DESTINO (mismo escenario que pct_max_uso),
+    // no delta.mes_peor (que es el mes pico del ORIGEN → puede diferir).
+    const _mesPeor = data.resumen?.mes_max_uso;
     let _cls, _icon, _titulo, _detalle;
     if (ncrit > 0) {
       _cls = "danger";  _icon = "bi-x-octagon-fill";           _titulo = "No factible";
