@@ -211,5 +211,11 @@
     },
     "LIRA": {
         "conductores_intermedios": []
+    },
+    "L.INDUSTRI": {
+        "conductores_intermedios": []
+    },
+    "CHILOE": {
+        "conductores_intermedios": []
     }
 }
