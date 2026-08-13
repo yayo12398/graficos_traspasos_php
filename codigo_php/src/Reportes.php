@@ -1266,7 +1266,7 @@ function _repTablaEquiposHtml(array $equipos, float $deltaI): string {
 
     $SEP  = 'border-left:2px solid #adb5bd';
     $TIPA = 'Cota conservadora: I_base = CN_alim × (kVA aguas abajo del equipo / kVA total del alimentador). Representa el peor caso teórico: toda la potencia instalada aguas abajo se consume simultáneamente.';
-    $TIPB = 'Demanda real ponderada: I_base = I_alim_real(mes) × (kVA aguas abajo / kVA total). Usa la demanda mensual medida del alimentador escalada por la fracción de carga que pasa por el equipo. Se muestra el peor mes del año corrido.';
+    $TIPB = 'Demanda real ponderada: I_base = I_alim_real(mes) × (kVA aguas abajo / kVA total). Usa la demanda mensual medida del alimentador escalada por la fracción de carga que pasa por el equipo. Se muestra el peor mes del año móvil.';
     $cabecera = "<thead><tr><th rowspan='2'>Equipo</th><th rowspan='2'>Tipo</th>"
         . "<th class='r' rowspan='2'>Ajuste (A)</th><th class='r' rowspan='2'>ΔI (A)</th>"
         . "<th colspan='4' class='c' style='$SEP'>Enfoque A &#8212; cota conservadora <span class='tip' data-tip='$TIPA'>&#9432;</span></th>"

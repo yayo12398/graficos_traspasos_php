@@ -292,11 +292,14 @@ function fmtMes(yyyymm) {
   return `${MESES_ES[parseInt(m,10)-1]} ${y}`;
 }
 
-function _limiteAnioCorrido(meses) {
-  // Mismo criterio que el backend: desde el mismo mes del año anterior al último disponible
+function _limiteAnioMovil(meses) {
+  // Año móvil: ventana de 12 meses terminando en el último mes disponible (data-driven).
+  // Mismo criterio que mesesAnioMovil() del backend. Retrocede 11 meses desde el máximo.
   if (!meses.length) return null;
   const max = meses[meses.length - 1];
-  return `${parseInt(max.slice(0, 4)) - 1}-${max.slice(5, 7)}`;
+  let y = parseInt(max.slice(0, 4)), m = parseInt(max.slice(5, 7)) - 11;
+  while (m <= 0) { m += 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, "0")}`;
 }
 
 async function cargarEquiposConfig() {
@@ -326,7 +329,7 @@ async function cargarMeses() {
     const meses = await apiFetch("/api/meses");
     state.mesesDisponibles = meses;
     dbg(`✓ Meses cargados: ${meses.length} (${meses[0] || "?"} → ${meses[meses.length-1] || "?"})`, "ok");
-    // Resetear toggle a modo año corrido
+    // Resetear toggle a modo año móvil
     const tog = document.getElementById("toggle-historico");
     if (tog) tog.checked = false;
     _renderMeses(false);
@@ -338,7 +341,7 @@ async function cargarMeses() {
 
 function _renderMeses(historico) {
   const meses  = state.mesesDisponibles;
-  const limite = _limiteAnioCorrido(meses);
+  const limite = _limiteAnioMovil(meses);
   const cont   = document.getElementById("meses-checklist");
 
   cont.innerHTML = meses.map(m => {

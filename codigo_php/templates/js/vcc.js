@@ -1338,7 +1338,7 @@ async function fichaEliminar() {
 // ─── período VCC ───────────────────────────────────────────────────────────
 function vccRenderMeses(historico = false) {
   const meses  = state.mesesDisponibles;
-  const limite = _limiteAnioCorrido(meses);
+  const limite = _limiteAnioMovil(meses);
   const cont   = document.getElementById("vcc-meses-checklist");
   if (!cont) return;
   const tog = document.getElementById("vcc-toggle-historico");
@@ -1815,7 +1815,7 @@ function vccTablaEquipos(equipos, deltaI, opts = {}) {
     "Peor caso teórico: toda la potencia instalada aguas abajo se consume simultáneamente.";
   const TIP_B = "Demanda real ponderada: I​base = I​alim​real(mes) × (kVA aguas abajo / kVA total). " +
     "Usa la demanda mensual medida del alimentador escalada por la fracción de carga que pasa por el equipo. " +
-    "Se muestra el peor mes del año corrido.";
+    "Se muestra el peor mes del año móvil.";
   const TIP_ST = "cursor:help;font-size:.8rem;opacity:.7;margin-left:4px;text-decoration:none;border:none";
 
   const head = `

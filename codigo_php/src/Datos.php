@@ -2,51 +2,51 @@
 declare(strict_types=1);
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Datos.php  (903 L)                                               ║
+// ║  ÍNDICE DE Datos.php  (908 L)                                               ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONSTANTES Y CONFIG                                                L.65–88 ║
-// ║    require_once ../conexion.php (db() singleton)                   L.65     ║
-// ║    D_BASE, D_CACHE, TTL_AB, TTL_DEM, TTL_LZ                       L.69     ║
+// ║  CONSTANTES Y CONFIG                                                L.67–90 ║
+// ║    require_once ../conexion.php (db() singleton)                   L.67     ║
+// ║    D_BASE, D_CACHE, TTL_AB, TTL_DEM, TTL_LZ                       L.71     ║
 // ║    TIPOS_INVERSION = ['DBC','REC','RTS']                                    ║
 // ║    _LZ_EXCEPCIONES  correcciones manuales de BD LZ                          ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CACHÉ                                                            L.90–116  ║
-// ║    _cacheRuta($key)           ruta del archivo de caché            L.92     ║
-// ║    _cacheValida($key,$ttl)    true si caché existe y no expiró     L.97     ║
-// ║    _cacheCargar($key)         deserializa caché desde disco        L.103    ║
-// ║    _cacheGuardar($key,$data)  serializa y guarda caché en disco    L.108    ║
+// ║  CACHÉ                                                            L.92–118  ║
+// ║    _cacheRuta($key)           ruta del archivo de caché            L.94     ║
+// ║    _cacheValida($key,$ttl)    true si caché existe y no expiró     L.99     ║
+// ║    _cacheCargar($key)         deserializa caché desde disco        L.105    ║
+// ║    _cacheGuardar($key,$data)  serializa y guarda caché en disco    L.110    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  NORMALIZACIÓN DE FILAS                                          L.117–240  ║
-// ║    _normCol($s)               snake_case sin tildes                L.119    ║
-// ║    normalizarMes($v)          'YYYY-MM' o null                     L.135    ║
-// ║    _nomRapidaDeAlim($nombre)  quita prefijo "Alim."                L.160    ║
-// ║    _normalizarFilasAb($rows)  normaliza filas aguas_abajo crudas   L.173    ║
+// ║  NORMALIZACIÓN DE FILAS                                          L.119–242  ║
+// ║    _normCol($s)               snake_case sin tildes                L.121    ║
+// ║    normalizarMes($v)          'YYYY-MM' o null                     L.137    ║
+// ║    _nomRapidaDeAlim($nombre)  quita prefijo "Alim."                L.162    ║
+// ║    _normalizarFilasAb($rows)  normaliza filas aguas_abajo crudas   L.175    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  PIVOT / CARGA PRINCIPAL                                         L.241–491  ║
-// ║    pivotarAlim($rows)         wide table keyed by numalim          L.241    ║
-// ║    pivotarTrafos($rows)       wide table keyed by numalim trafo    L.309    ║
-// ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.379    ║
-// ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.462    ║
+// ║  PIVOT / CARGA PRINCIPAL                                         L.243–493  ║
+// ║    pivotarAlim($rows)         wide table keyed by numalim          L.243    ║
+// ║    pivotarTrafos($rows)       wide table keyed by numalim trafo    L.311    ║
+// ║    cargarAguasAbajo($force)   MySQL → caché aguas_abajo (~285k f.) L.381    ║
+// ║    cargarDemandas($force)     MySQL → [dfAlim, dfTrafo] con caché  L.464    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.492–749  ║
-// ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.492    ║
-// ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.512    ║
-// ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.536    ║
-// ║    equiposEnIsla($dfAb,$tds,$raiz,$alim) DBC/REC/RTS en la isla   L.556    ║
+// ║  HELPERS DE TOPOLOGÍA (aguas_abajo)                              L.494–754  ║
+// ║    tdsDeFeeder($dfAb,$nom)    TDs de cabecera de un alimentador    L.494    ║
+// ║    tdsDeEquipo($dfAb,$nom,$np) TDs aguas abajo de un equipo        L.514    ║
+// ║    tdsSeleccionados($dfAb,$lista) TDs por lista de numpos_td       L.538    ║
+// ║    equiposEnIsla($dfAb,$tds,$raiz,$alim) DBC/REC/RTS en la isla   L.558    ║
 // ║      ↳ filtra por "todos sus TDs ⊆ island set" (topología real)            ║
-// ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.601    ║
-// ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.613    ║
-// ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.640    ║
-// ║    mesesAnioCorrido($meses)   año corrido (últimos 12 meses)       L.656    ║
-// ║    resolverPeriodoEstudio(..) periodo estudio ?meses= o a.corrido  L.669    ║
-// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.683    ║
-// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.694    ║
-// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.713    ║
-// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.729    ║
+// ║    kvaTotalFeeder($dfAb,$nom) kVA total instalado del alimentador  L.603    ║
+// ║    equiposDeFeeder($dfAb,$nom)lista equipos únicos (sec/RTB)       L.615    ║
+// ║    mesesDisponibles($df)      meses YYYY-MM del wide table dfAlim  L.642    ║
+// ║    mesesAnioMovil($meses)     año móvil (últimos 12 meses)         L.658    ║
+// ║    resolverPeriodoEstudio(..) periodo estudio ?meses= o a.móvil    L.674    ║
+// ║    trafoDeFeeder($dfTrafo,$numalim) fila trafo dado numalim        L.688    ║
+// ║    obtenerSerieAlim($dfAlim,$numalim) serie mensual de un alim.    L.699    ║
+// ║    numalimDeNomAlim($dfAb,$nomAlim)  numalim ← nom_alim           L.718    ║
+// ║    nombreDisplayAlim($row)    nombre legible para mostrar en UI    L.734    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.750–903  ║
-// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.750    ║
-// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.848    ║
+// ║  CARGA LÍMITE DE ZONA Y EQUIPOS                                  L.755–908  ║
+// ║    cargarLimiteZona($force)   MySQL → caché LZ con vecinos/tipo    L.755    ║
+// ║    cargarEquiposIndex($force) MySQL → índice equipos+LZ por nombre L.853    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /**
@@ -652,21 +652,24 @@ function mesesDisponibles(array $df): array
 }
 
 /**
- * Año corrido: meses desde el mismo mes del año anterior al último disponible.
- * Mismo criterio que _limiteAnioCorrido() del frontend.
+ * Año móvil: ventana de 12 meses terminando en el último mes disponible.
+ * Mismo criterio que _limiteAnioMovil() del frontend. Retrocede 11 meses desde el máximo.
  */
-function mesesAnioCorrido(array $mesesAll): array
+function mesesAnioMovil(array $mesesAll): array
 {
     if (!$mesesAll) return [];
-    $max    = $mesesAll[count($mesesAll) - 1];
-    $limite = sprintf('%04d-%s', (int)substr($max, 0, 4) - 1, substr($max, 5, 2));
+    $max = $mesesAll[count($mesesAll) - 1];
+    $y   = (int)substr($max, 0, 4);
+    $m   = (int)substr($max, 5, 2) - 11;
+    while ($m <= 0) { $m += 12; $y -= 1; }
+    $limite = sprintf('%04d-%02d', $y, $m);
     return array_values(array_filter($mesesAll, fn($m) => $m >= $limite));
 }
 
 /**
  * Resuelve el periodo de estudio desde el parámetro ?meses=YYYY-MM,YYYY-MM,...
  * Intersecta con los meses realmente disponibles; si queda vacío (o no llegó el
- * parámetro), cae al año corrido para no considerar meses fuera del estudio.
+ * parámetro), cae al año móvil para no considerar meses fuera del estudio.
  */
 function resolverPeriodoEstudio(?string $param, array $mesesAll): array
 {
@@ -675,7 +678,7 @@ function resolverPeriodoEstudio(?string $param, array $mesesAll): array
         fn($m) => preg_match('/^\d{4}-\d{2}$/', $m)
     );
     $sel = array_values(array_intersect($sel, $mesesAll));
-    return $sel ?: mesesAnioCorrido($mesesAll);
+    return $sel ?: mesesAnioMovil($mesesAll);
 }
 
 /**
