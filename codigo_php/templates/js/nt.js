@@ -472,15 +472,20 @@ function _clasificarDestinosLZ(equipoAbre = null) {
 // (Re)construye el TomSelect de destino con grupos: viables primero, sin-troncal al final.
 // Devuelve { grupos, selActual, sigueValida } para que el llamador arme el mensaje.
 function _rebuildDropdownDestinos(equipoAbre = null) {
+  state._ultimoEquipoAbre = equipoAbre;   // recordado para re-togglear la vista simple
   const g = _clasificarDestinosLZ(equipoAbre);
   const _txt = d => `${d.frg ? '[FRG] ' : ''}${d.nombre}  (CN=${d.cn?.toFixed(0) ?? "?"} A)`;
+  const simple = !!state.modoSimple;   // en simple solo se ofrecen destinos con LZ viable (sin forzados)
   const options = [];
   g.viable.forEach(d      => options.push({ value: d.numalim, text: _txt(d), grupo: 'viable' }));
-  g.noViable.forEach(d    => options.push({ value: d.numalim, text: _txt(d), grupo: 'no_viable' }));
-  g.sinSegmento.forEach(d => options.push({ value: d.numalim, text: _txt(d), grupo: 'sin_segmento' }));
+  if (!simple) {
+    g.noViable.forEach(d    => options.push({ value: d.numalim, text: _txt(d), grupo: 'no_viable' }));
+    g.sinSegmento.forEach(d => options.push({ value: d.numalim, text: _txt(d), grupo: 'sin_segmento' }));
+  }
 
   // Vecinos LZ del origen no ligados al segmento → forzables con troncal manual.
-  state.destinosSinSegmento = new Set(g.sinSegmento.map(d => d.numalim));
+  // En simple no se exponen: el set se vacía para no habilitar un forzado por otra vía.
+  state.destinosSinSegmento = simple ? new Set() : new Set(g.sinSegmento.map(d => d.numalim));
 
   const selActual = ts.destino?.getValue() ? parseInt(ts.destino.getValue()) : null;
   if (ts.destino) ts.destino.destroy();
@@ -509,14 +514,20 @@ function _rebuildDropdownDestinos(equipoAbre = null) {
 // Mensaje de estado bajo el selector de destino.
 function _mensajeDestinosLZ(lzInfoEl, grupos, equipoAbre) {
   if (!lzInfoEl) return;
+  const simple = !!state.modoSimple;
   const nV = grupos.viable.length, nNV = grupos.noViable.length, nSS = grupos.sinSegmento.length;
   const ecuacion = equipoAbre ? ` para equipo <code>${equipoAbre.toUpperCase()}</code>` : "";
-  if (nV + nNV + nSS) {
-    const icon  = equipoAbre ? "bi-funnel-fill text-primary" : "bi-geo-alt-fill text-success";
-    const extra = nNV ? ` · <span class="text-warning-emphasis">${nNV} sin troncal (forzar)</span>` : "";
-    const extraSS = nSS ? ` · <span class="text-warning-emphasis">${nSS} sin LZ en el segmento (forzar)</span>` : "";
+  if (nV) {
+    const icon    = equipoAbre ? "bi-funnel-fill text-primary" : "bi-geo-alt-fill text-success";
+    const extra   = (!simple && nNV) ? ` · <span class="text-warning-emphasis">${nNV} sin troncal (forzar)</span>` : "";
+    const extraSS = (!simple && nSS) ? ` · <span class="text-warning-emphasis">${nSS} sin LZ en el segmento (forzar)</span>` : "";
     lzInfoEl.innerHTML = `<i class="bi ${icon} me-1"></i>${nV} con LZ viable${extra}${extraSS}${ecuacion}`;
     lzInfoEl.className = "small text-success mt-1";
+  } else if (simple && (nNV + nSS)) {
+    // En simple hay caminos posibles pero solo forzados → no seleccionables aquí.
+    lzInfoEl.innerHTML = `<i class="bi bi-lock me-1"></i>Sin LZ viable${ecuacion} — este traspaso `
+      + `requiere <a href="#" onclick="toggleModoSimple(false);return false;">modo avanzado</a>`;
+    lzInfoEl.className = "small text-warning-emphasis mt-1";
   } else {
     lzInfoEl.innerHTML = `<i class="bi bi-x-circle me-1"></i>Sin vecinos LZ${ecuacion} — este alimentador no puede traspasar`;
     lzInfoEl.className = "small text-danger mt-1";
@@ -1529,6 +1540,24 @@ function toggleSugerenciasTLC(on) {
   if (!on && banner) banner.innerHTML = "";
   // Persistir preferencia (localStorage: por navegador, no se comparte entre usuarios)
   try { localStorage.setItem("sugerenciasTLC", on ? "1" : "0"); } catch (_) {}
+}
+
+// Vista "simple" (light): oculta secciones de trabajo vía la clase body.modo-simple
+// (reglas CSS en index.html) y gatea los destinos forzados. Ocultar ≠ apagar cálculo:
+// el troncal receptor y la tensión por-equipo se siguen calculando. Default ON,
+// persistido en localStorage (por navegador). Sincroniza ambos switches (Paso 1 + pie).
+function toggleModoSimple(on) {
+  state.modoSimple = !!on;
+  document.body.classList.toggle("modo-simple", state.modoSimple);
+  document.querySelectorAll("#chk-modo-simple, #chk-modo-simple-pie").forEach(chk => {
+    if (chk) chk.checked = state.modoSimple;
+  });
+  // Al reconstruir el dropdown de destino se aplica/retira el gateo de forzados
+  // (si hay un origen ya seleccionado con vecinos LZ cargados).
+  if (state.lzVecinos?.length && typeof _rebuildDropdownDestinos === "function") {
+    _rebuildDropdownDestinos(state._ultimoEquipoAbre ?? null);
+  }
+  try { localStorage.setItem("modoSimple", state.modoSimple ? "1" : "0"); } catch (_) {}
 }
 
 // Consulta el backend y muestra las mejores maniobras TLC (top-3) como banner.

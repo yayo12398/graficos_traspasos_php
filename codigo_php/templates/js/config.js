@@ -1041,6 +1041,20 @@ function renderAjustePanel(data) {
     badge.style.display = totalAjustes ? "" : "none";
   }
 
+  // Vista simple: el editor de ajustes está oculto, pero si el caso ya aplica
+  // ajustes guardados (afectan el veredicto), avisarlo de forma no-editable con
+  // acceso al modo completo. Solo se muestra bajo body.modo-simple (CSS :empty).
+  const avisoAj = document.getElementById("simple-aviso-ajustes");
+  if (avisoAj) {
+    avisoAj.innerHTML = totalAjustes
+      ? `<div class="alert alert-warning py-2 mb-0 small">
+           <i class="bi bi-pencil-square me-1"></i>
+           Este caso aplica <strong>${totalAjustes} ajuste${totalAjustes !== 1 ? "s" : ""}</strong> de datos de demanda.
+           <a href="#" onclick="toggleModoSimple(false);return false;">Edítalos en modo completo →</a>
+         </div>`
+      : "";
+  }
+
   if (!entidades.length) { sec.style.display = "none"; return; }
 
   const _bloqueEntidad = e => {

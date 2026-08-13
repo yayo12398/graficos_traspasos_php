@@ -27,6 +27,7 @@ const state = {
   mesesDisponibles:[],   // lista YYYY-MM del Excel
   ultimaSimulacion: null,
   sugerenciasTLC:   false, // switch NT: activa propuestas de traspaso/corrimiento TLC (persistido en localStorage)
+  modoSimple:       true,  // switch NT: vista light (default ON, persistido en localStorage) — ver toggleModoSimple
   _sugTraspaso:     [],   // últimas maniobras sugeridas (para precargarTraspasoSugerido)
   _sugCorrimiento:  [],   // últimos candidatos de corrimiento (para precargarEquipoCorrimiento)
   // VCC
@@ -89,6 +90,10 @@ async function cargarEstadoCache() {
     const chk = document.getElementById("chk-sugerencias-tlc");
     if (chk) chk.checked = true;
     if (typeof toggleSugerenciasTLC === "function") toggleSugerenciasTLC(true);
+  }
+  // Restaurar "Vista simple" (default ON: solo apagado si el usuario lo desactivó → "0")
+  if (typeof toggleModoSimple === "function") {
+    toggleModoSimple(localStorage.getItem("modoSimple") !== "0");
   }
   try {
     const d = await apiFetch('/api/debug/status');

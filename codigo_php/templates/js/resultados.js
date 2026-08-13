@@ -46,6 +46,50 @@ function mostrarResultados(data) {
         <span class="res-chip-lbl">${c.lbl}</span>
       </div>`).join("")}</div>`;
 
+  // ── Vista simple: veredicto hero ("Factible" / "No factible") ────────────
+  // Solo visible bajo body.modo-simple (CSS). Reusa la señal de criticidad de la
+  // alerta principal; la holgura sale del FU máx. del destino (100 − pct_max_uso).
+  const _hero = document.getElementById("simple-hero");
+  if (_hero) {
+    const _pctMax  = data.resumen?.pct_max_uso;
+    const _holg    = (typeof _pctMax === "number" && isFinite(_pctMax)) ? (100 - _pctMax) : null;
+    const _mesPeor = data.delta?.mes_peor;
+    let _cls, _icon, _titulo, _detalle;
+    if (ncrit > 0) {
+      _cls = "danger";  _icon = "bi-x-octagon-fill";           _titulo = "No factible";
+      _detalle = `Supera la capacidad del destino en ${ncrit} mes${ncrit > 1 ? "es" : ""}`
+               + (data.resumen.meses_criticos?.length ? ` (${data.resumen.meses_criticos.join(", ")})` : "");
+    } else if (npre > 0) {
+      _cls = "warning"; _icon = "bi-exclamation-triangle-fill"; _titulo = "Factible con prealerta";
+      _detalle = `${npre} mes${npre > 1 ? "es" : ""} ≥ 90% de la capacidad del destino`
+               + (_holg != null ? ` · holgura ${fmt(_holg)}%` : "");
+    } else {
+      _cls = "success"; _icon = "bi-check-circle-fill";        _titulo = "Factible";
+      _detalle = _holg != null ? `Holgura ${fmt(_holg)}% sobre la capacidad del destino`
+                               : "Viable en todos los meses del histórico";
+    }
+    const _mesTxt = _mesPeor ? ` <span class="opacity-75">· peor mes ${_mesPeor}</span>` : "";
+    _hero.innerHTML = `<div class="simple-hero alert alert-${_cls} d-flex align-items-center gap-2 py-3 mb-0">
+      <i class="bi ${_icon}" style="font-size:1.6rem"></i>
+      <div>
+        <div class="fw-bold" style="font-size:1.15rem">${_titulo}</div>
+        <div class="small">${_detalle}${_mesTxt}</div>
+      </div></div>`;
+  }
+
+  // Vista simple: nudge a modo completo solo cuando hay sobrecarga (para resolver
+  // vía corrimiento, que en simple está oculto). Vacío si no hay meses críticos.
+  const _nudge = document.getElementById("simple-nudge");
+  if (_nudge) {
+    _nudge.innerHTML = (ncrit > 0)
+      ? `<div class="alert alert-light border py-2 mb-0 small">
+           <i class="bi bi-lightbulb me-1 text-warning"></i>
+           Para resolver la sobrecarga (corrimiento de carga a un tercer alimentador),
+           <a href="#" onclick="toggleModoSimple(false);return false;">usa el modo completo →</a>
+         </div>`
+      : "";
+  }
+
   // Alerta inversión de flujo
   const _alertaInv = document.getElementById("alerta-inversion-resultado");
   if (_alertaInv) {
@@ -1114,6 +1158,10 @@ function _limpiarPanelInforme(clon) {
     const el = clon.querySelector("#" + id);
     if (el) el.remove();
   });
+  // Chrome exclusivo de la vista simple (hero/nudge/aviso/pie): el informe es
+  // siempre completo, así que no lleva estos elementos ni la clase modo-simple.
+  clon.querySelectorAll(".simple-only").forEach(el => el.remove());
+  clon.classList.remove("modo-simple");
   // Controles interactivos.
   clon.querySelectorAll(".no-copy, button").forEach(el => el.remove());
   clon.querySelectorAll("[onclick]").forEach(el => el.removeAttribute("onclick"));
