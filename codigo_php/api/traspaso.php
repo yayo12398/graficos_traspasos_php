@@ -180,7 +180,13 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
     // recibido → se SUMA al baseline de display (serieOrig) para arrastrar la
     // carga entre casos. El delta transferido se sigue calculando desde la BD
     // limpia (serieOrigClean): el tramo transferido lleva solo su carga propia.
-    $deltaAcumOrig = $b['delta_acum_orig'] ?? [];
+    // Modo proyecto multi-alimentador: el arrastre (origen y destino) se computa del NETO
+    // persistido del alimentador dentro del proyecto, no de la sesión.
+    $proyecto  = trim((string)($b['proyecto'] ?? ''));
+    $mesesAllP = $proyecto !== '' ? mesesDisponibles($dfAlim) : [];
+    $deltaAcumOrig = $proyecto !== ''
+        ? netAdjProyecto($proyecto, $nomOrig, $mesesAllP)
+        : ($b['delta_acum_orig'] ?? []);
     $serieOrig     = $serieOrigClean;
     if ($deltaAcumOrig) {
         foreach ($deltaAcumOrig as $_m => $_d) {
@@ -201,8 +207,22 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         $feederData   = cargarFeeder($feederNuevo);
         $cnDest       = (float)$feederData['cn'];
         $mesesAll     = mesesDisponibles($dfAlim);
-        $serieDest    = serieAcumulada($feederNuevo, $mesesAll);
+        // En modo proyecto el baseline del PUSER se arma per-mes con el neto (abajo);
+        // en modo legacy, con el acumulado constante.
+        $serieDest    = $proyecto !== '' ? serieVacia($mesesAll) : serieAcumulada($feederNuevo, $mesesAll);
         $serieDestRaw = ['serie' => $serieDest, 'cn' => $cnDest];
+    }
+
+    // Espejo del arrastre para el destino: neto del proyecto (o delta_acum_dest explícito).
+    $deltaAcumDest = $proyecto !== ''
+        ? netAdjProyecto($proyecto, $nomDest, $mesesAllP)
+        : ($b['delta_acum_dest'] ?? []);
+    if ($deltaAcumDest) {
+        foreach ($deltaAcumDest as $_m => $_d) {
+            if (array_key_exists($_m, $serieDest)) {
+                $serieDest[$_m] = round((float)($serieDest[$_m] ?? 0) + (float)$_d, 2);
+            }
+        }
     }
 
     $mesesSel  = $b['meses_sel'] ?? [];
@@ -611,6 +631,7 @@ if ($method === 'POST' && $a === 'simular' && !$b0) {
         'resumen'             => $resumen,
         'tabla'               => $dfSim,
         'feeder_nuevo'        => $feederNuevo,
+        'proyecto'            => $proyecto !== '' ? $proyecto : null,
         'trafo_orig'          => $trafoOrig,
         'trafo_dest'          => $trafoDest,
         'misma_barra_se'      => $mismaBarra,

@@ -263,8 +263,17 @@ function eliminarFeeder(string $nombre): void
  */
 function deltaAcumulado(string $nombreFeeder): float
 {
-    $data = cargarFeeder($nombreFeeder);
-    return round((float) array_sum(array_column($data['transferencias'], 'delta_A')), 3);
+    $data  = cargarFeeder($nombreFeeder);
+    $puser = strtoupper(trim((string)($data['nombre'] ?? $nombreFeeder)));
+    $sum   = 0.0;
+    foreach ($data['transferencias'] ?? [] as $t) {
+        // Solo la carga que recibe el PROPIO PUSER. Las transferencias del proyecto cuyo
+        // destino es otro alimentador (rebalanceo multi-alim) NO cargan al PUSER.
+        // Legacy: nombre_dest vacío/null = carga hacia el PUSER.
+        $dest = strtoupper(trim((string)($t['nombre_dest'] ?? '')));
+        if ($dest === '' || $dest === $puser) $sum += (float)($t['delta_A'] ?? 0);
+    }
+    return round($sum, 3);
 }
 
 /**
@@ -283,6 +292,116 @@ function serieAcumulada(string $nombreFeeder, array $meses): array
 function tablaTransferencias(string $nombreFeeder): array
 {
     return cargarFeeder($nombreFeeder)['transferencias'] ?? [];
+}
+
+// ─── Neteo multi-alimentador (proyecto) ───────────────────────────────────
+
+/**
+ * Ajuste NETO de corriente per-mes que las transferencias del proyecto imponen sobre
+ * un alimentador dado: +recibido (transferencias con nombre_dest=$feeder) y −cedido
+ * (transferencias con origen=$feeder). Usa los INCREMENTOS de tabla_mam
+ * (I_dest_despues−I_dest_antes = recibido; I_orig_antes−I_orig_despues = cedido), por lo
+ * que es robusto al baseline con que se simuló cada transferencia.
+ *
+ * @return array ['YYYY-MM' => float] para los $meses solicitados (0.0 si no hay ajuste).
+ */
+function netAdjProyecto(string $proyecto, string $feeder, array $meses): array
+{
+    $feederU = strtoupper(trim($feeder));
+    $adj     = array_fill_keys($meses, 0.0);
+    foreach (tablaTransferencias($proyecto) as $t) {
+        $mam = $t['tabla_mam'] ?? [];
+        if (!$mam) continue;
+        $esDest = strtoupper(trim((string)($t['nombre_dest'] ?? ''))) === $feederU;
+        $esOrig = strtoupper(trim((string)($t['origen'] ?? '')))      === $feederU;
+        if (!$esDest && !$esOrig) continue;
+        foreach ($mam as $r) {
+            $m = $r['mes'] ?? '';
+            if (!array_key_exists($m, $adj)) continue;
+            if ($esDest) $adj[$m] += (float)($r['I_dest_despues'] ?? 0) - (float)($r['I_dest_antes'] ?? 0);
+            if ($esOrig) $adj[$m] -= (float)($r['I_orig_antes'] ?? 0) - (float)($r['I_orig_despues'] ?? 0);
+        }
+    }
+    return array_map(fn($v) => round($v, 2), $adj);
+}
+
+/**
+ * Alimentadores tocados por el proyecto (como origen o destino), con su CN (recuperado de
+ * cn_orig/cn_dest) y roles. Orden de aparición: origen del 1er traspaso, luego destinos.
+ *
+ * @return array [ ['nombre'=>string, 'cn'=>float|null, 'roles'=>array], ... ]
+ */
+function feedersTocados(string $proyecto): array
+{
+    $orden = [];
+    $info  = [];
+    $push = function (?string $nom, string $rol, ?float $cn) use (&$orden, &$info): void {
+        $nom = trim((string)$nom);
+        if ($nom === '') return;
+        $key = strtoupper($nom);
+        if (!isset($info[$key])) { $info[$key] = ['nombre' => $nom, 'cn' => null, 'roles' => []]; $orden[] = $key; }
+        if (!in_array($rol, $info[$key]['roles'], true)) $info[$key]['roles'][] = $rol;
+        if ($cn !== null && $info[$key]['cn'] === null) $info[$key]['cn'] = $cn;
+    };
+    foreach (tablaTransferencias($proyecto) as $t) {
+        $push($t['origen']      ?? '', 'orig', isset($t['cn_orig']) ? (float)$t['cn_orig'] : null);
+        $push($t['nombre_dest'] ?? '', 'dest', isset($t['cn_dest']) ? (float)$t['cn_dest'] : null);
+    }
+    return array_map(fn($k) => $info[$k], $orden);
+}
+
+/**
+ * Cargabilidad NETA por alimentador tocado por el proyecto, mes a mes: para cada feeder,
+ * baseline = demanda BD (existente) o 0 (PUSER nuevo), + netAdjProyecto (cedido/recibido).
+ * Reusa helpers de datos (numalimDeNomAlim, obtenerSerieAlim, aplicarAjustes, clasificarMes).
+ *
+ * @return array [ ['feeder'=>string,'cn'=>float,'rol'=>string,'roles'=>array,
+ *                  'tabla'=>[['mes'=>..,'I'=>float|null,'fu'=>float|null,'estado'=>string], ...]], ... ]
+ */
+function construirTablasNetoProyecto(string $proyecto, array $feederData, array $mesesVista, array $dfAlim, array $dfAb): array
+{
+    $cnPuser = (float)($feederData['cn'] ?? 0);
+    $puserU  = strtoupper(trim((string)($feederData['nombre'] ?? $proyecto)));
+    $out     = [];
+
+    foreach (feedersTocados($proyecto) as $f) {
+        $nom  = $f['nombre'];
+        $adj  = netAdjProyecto($proyecto, $nom, $mesesVista);
+        $roles = $f['roles'];
+
+        if (strtoupper($nom) === $puserU) {
+            $cn   = $cnPuser;
+            $base = array_fill_keys($mesesVista, 0.0);
+            $rol  = 'nuevo';
+        } else {
+            $num      = numalimDeNomAlim($dfAb, $nom);
+            $serieRaw = $num ? obtenerSerieAlim($dfAlim, $num) : null;
+            $cn       = $serieRaw ? (float)$serieRaw['cn'] : (float)($f['cn'] ?? 0);
+            $serie    = $serieRaw ? aplicarAjustes($serieRaw['serie'], 'alim', $num) : [];
+            $base     = [];
+            foreach ($mesesVista as $m) {
+                $base[$m] = (isset($serie[$m]) && is_numeric($serie[$m])) ? (float)$serie[$m] : null;
+            }
+            $esRec = in_array('dest', $roles, true);
+            $esDon = in_array('orig', $roles, true);
+            $rol   = ($esRec && $esDon) ? 'mixto' : ($esRec ? 'receptor' : 'donante');
+        }
+
+        $tabla = [];
+        foreach ($mesesVista as $m) {
+            $bi = $base[$m];
+            $i  = $bi === null ? null : round($bi + ($adj[$m] ?? 0.0), 1);
+            $fu = ($i !== null && $cn > 0) ? round($i / $cn * 100, 1) : null;
+            $tabla[] = [
+                'mes'    => $m,
+                'I'      => $i,
+                'fu'     => $fu,
+                'estado' => clasificarMes($i, $cn > 0 ? $cn : null),
+            ];
+        }
+        $out[] = ['feeder' => $nom, 'cn' => $cn, 'rol' => $rol, 'roles' => $roles, 'tabla' => $tabla];
+    }
+    return $out;
 }
 
 // ─── Cambios topológicos ──────────────────────────────────────────────────

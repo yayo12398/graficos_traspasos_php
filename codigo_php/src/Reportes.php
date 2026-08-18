@@ -1,7 +1,7 @@
 <?php
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Reportes.php  (1572 L)                                           ║
+// ║  ÍNDICE DE Reportes.php  (1654 L)                                           ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
 // ║  CONSTANTES                                                        L.49–77  ║
 // ║    _REP_CHARTJS_CDN, _REP_TD_GRANDE_KVA                                     ║
@@ -34,16 +34,17 @@
 // ║      ← recibe cuerpo completo del POST /api/descargar_html                  ║
 // ║      → HTML autónomo con tabla mes a mes + gráficos Chart.js                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.877–1160  ║
-// ║    generarReporteFeeder($nombre,$feeder,$ruta)                     L.877    ║
-// ║      → HTML por feeder con tabla de transferencias + gráfico acum.          ║
+// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.877–1242  ║
+// ║    _repTablaNetoMultiAlim($tn) tabla FU neta multi-alim           L.883    ║
+// ║    generarReporteFeeder($nombre,$feeder,$ruta,$tn)                 L.916    ║
+// ║      → HTML por feeder: tabla neta líder, tablas, gráficos <details>        ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE VCC                                                   L.1161–1572  ║
-// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1161   ║
-// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1239   ║
-// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1335   ║
-// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1387   ║
-// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1431   ║
+// ║  REPORTE VCC                                                   L.1243–1654  ║
+// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1243   ║
+// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1321   ║
+// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1417   ║
+// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1469   ║
+// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1513   ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 const _REP_CHARTJS_CDN   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
@@ -659,7 +660,7 @@ function generarReporteHtml(
         [number_format($pPct,1).'%',      '% carga traspasada'],
         [(string)($isla['n_td'] ?? '—'),  'Transformadores (TDs)'],
         [(string)($isla['clientes'] ?? '—'), 'Clientes'],
-        [number_format((float)($isla['kva_isla'] ?? 0),0,'.',',').' kVA',    'kVA isla'],
+        [number_format((float)($isla['kva_isla'] ?? 0),0,'.',',').' kVA',    'kVA segmento'],
         [number_format((float)($isla['kva_feeder'] ?? 0),0,'.',',').' kVA',  'kVA alimentador origen'],
         [(string)($isla['mes_peor'] ?? '—'), 'Mes peor caso'],
     ];
@@ -843,7 +844,7 @@ function generarReporteHtml(
   $islaVigilarHtml
   $ajustesHtml
 
-  <h2>Resumen de la isla</h2>
+  <h2>Resumen del segmento</h2>
   <div class="resumen">$cardsHtml</div>
 
   <h2>Estados del destino post-traspaso</h2>
@@ -874,6 +875,44 @@ HTML;
     return $rutaSalida;
 }
 
+/**
+ * Tabla NETA multi-alimentador para el informe: una fila FU(%) por alimentador tocado,
+ * neteando cedido+recibido. Peor mes de cada fila resaltado. $tablasNeto proviene de
+ * construirTablasNetoProyecto().
+ */
+function _repTablaNetoMultiAlim(?array $tablasNeto): string {
+    if (empty($tablasNeto)) return '';
+    $meses = array_map(fn($r) => $r['mes'], $tablasNeto[0]['tabla'] ?? []);
+    if (!$meses) return '';
+    $rolLbl = ['nuevo' => 'nuevo', 'receptor' => 'recibe', 'donante' => 'cede', 'mixto' => 'cede + recibe'];
+    $bgE    = ['viable' => '#d5f5e3', 'prealerta' => '#fdebd0', 'critico' => '#fadbd8'];
+    $WTD    = 'border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000';
+    $etiq   = array_map(fn($m) => substr($m, 5, 2) . '/' . substr($m, 2, 2), $meses);
+    $head   = '<th>Alimentador</th>' . implode('', array_map(fn($e) => "<th class='c'>$e</th>", $etiq));
+    $rows   = '';
+    foreach ($tablasNeto as $t) {
+        $tabla = $t['tabla'] ?? [];
+        $worst = -1; $wv = -INF;
+        foreach ($tabla as $i => $r) { if (is_numeric($r['fu'] ?? null) && $r['fu'] > $wv) { $wv = $r['fu']; $worst = $i; } }
+        $cells = '';
+        foreach ($tabla as $i => $r) {
+            $fu    = is_numeric($r['fu'] ?? null) ? number_format($r['fu'], 1) . '%' : '—';
+            $bg    = $bgE[$r['estado'] ?? ''] ?? '';
+            $style = ($bg ? "background:$bg" : '') . ($i === $worst ? ";$WTD" : '');
+            $tip   = is_numeric($r['I'] ?? null) ? ' title="' . number_format($r['I'], 0) . ' A"' : '';
+            $cells .= "<td class='c' style='$style'$tip>$fu</td>";
+        }
+        $rol = $rolLbl[$t['rol'] ?? ''] ?? ($t['rol'] ?? '');
+        $cn  = number_format((float)($t['cn'] ?? 0), 0);
+        $rows .= "<tr><td class='metrica-lbl' style='white-space:nowrap'>" . _h($t['feeder'] ?? '')
+               . " <span style='font-weight:400;color:#666'>($rol · CN $cn A)</span></td>$cells</tr>";
+    }
+    return "<h2>Cargabilidad neta por alimentador</h2>\n"
+        . "<p style='color:#555;font-size:0.9em'>FU (%) mes a mes neteando lo cedido y lo recibido por cada alimentador del proyecto. Peor mes de cada fila resaltado.</p>\n"
+        . "<div style='overflow-x:auto;width:100%'><table class='tabla-sim' style='width:100%'>"
+        . "<thead><tr>$head</tr></thead><tbody>$rows</tbody></table></div>";
+}
+
 function generarReporteFeeder(
     array   $feederData,
     float   $acumulado,
@@ -881,6 +920,7 @@ function generarReporteFeeder(
     string  $rutaSalida,
     ?array  $trafoFinal    = null,
     ?array  $trafoFinalMam = null,
+    ?array  $tablasNeto    = null,
 ): string {
     $nombre        = $feederData['nombre'];
     $cn            = (float)$feederData['cn'];
@@ -888,33 +928,60 @@ function generarReporteFeeder(
     $usoStr        = $usoPct !== null ? number_format($usoPct,1).'%' : '—';
     $colorUso      = ($usoPct ?? 0) >= 100 ? '#e74c3c' : (($usoPct ?? 0) >= 90 ? '#f39c12' : '#2ecc71');
 
-    $filasRes = ''; $acumRun = 0.0; $tdsTotal = 0; $cliTotal = 0;
-    foreach ($transferencias as $t) {
-        $acumRun += (float)$t['delta_A'];
-        $tdsT     = (int)($t['n_td'] ?? 0);
-        $cliT     = (int)($t['clientes'] ?? 0);
-        $tdsTotal += $tdsT; $cliTotal += $cliT;
-        $fuRun  = $cn > 0 ? round($acumRun / $cn * 100, 1) : null;
-        $fuStr  = $fuRun !== null ? number_format($fuRun,1).'%' : '—';
-        $filasRes .= "<tr><td>" . _h($t['idx']) . "</td><td>" . _h($t['origen']) . "</td>"
+    // Solo las transferencias cuyo destino es el PROPIO PUSER cargan su cargabilidad.
+    // Legacy: nombre_dest vacío = hacia el PUSER.
+    $puserU = strtoupper(trim((string)$nombre));
+    $destEsPuser = function (array $t) use ($puserU): bool {
+        $d = strtoupper(trim((string)($t['nombre_dest'] ?? '')));
+        return $d === '' || $d === $puserU;
+    };
+    $transPuser = array_values(array_filter($transferencias, $destEsPuser));
+
+    // Fila de una transferencia. $sumStr/$fuStr = running del PUSER ("—" para tomas a otro alim).
+    $filaTransf = function (array $t, string $sumStr, string $fuStr): string {
+        $tdsT    = (int)($t['n_td'] ?? 0);
+        $cliT    = (int)($t['clientes'] ?? 0);
+        $destStr = _h($t['nombre_dest'] ?? '') ?: '—';
+        return "<tr><td>" . _h($t['idx']) . "</td><td>" . _h($t['origen']) . "</td>"
+            . "<td>$destStr</td>"
             . "<td class='r'>" . number_format($t['delta_A'],1) . "</td><td class='r'>" . number_format($t['p_pct'],1) . "%</td>"
             . "<td class='r'>$tdsT</td><td class='r'>" . ($cliT ?: '—') . "</td>"
-            . "<td class='r'>" . number_format($acumRun,1) . "</td><td class='r'>$fuStr</td>"
+            . "<td class='r'>$sumStr</td><td class='r'>$fuStr</td>"
             . "<td>" . _h($t['fecha']) . "</td><td>" . _h($t['descripcion'] ?? '') . '</td></tr>';
+    };
+
+    // Grupo 1: tomas del PUSER (con subtotal). Grupo 2: traspasos a otros alimentadores.
+    $transOtros = array_values(array_filter($transferencias, fn($t) => !$destEsPuser($t)));
+    $grpHdr = "<tr style='background:#eef3fb;font-weight:600'><td colspan='11'>%s</td></tr>";
+
+    $filasRes = "<tr><td colspan='11' style='background:#eef3fb;font-weight:600'>Tomas del PUSER</td></tr>";
+    $acumRun = 0.0; $tdsPuser = 0; $cliPuser = 0;
+    foreach ($transPuser as $t) {
+        $acumRun  += (float)$t['delta_A'];
+        $tdsPuser += (int)($t['n_td'] ?? 0);
+        $cliPuser += (int)($t['clientes'] ?? 0);
+        $fuRun     = $cn > 0 ? round($acumRun / $cn * 100, 1) : null;
+        $filasRes .= $filaTransf($t, number_format($acumRun,1), $fuRun !== null ? number_format($fuRun,1).'%' : '—');
     }
     $fuTotal    = $cn > 0 ? round($acumulado / $cn * 100, 1) : null;
     $fuTotalStr = $fuTotal !== null ? number_format($fuTotal,1).'%' : '—';
-    $filasRes  .= "<tr style='font-weight:600;background:#f0f4fa'><td colspan='2'>Total</td>"
+    $filasRes  .= "<tr style='font-weight:600;background:#f0f4fa'><td colspan='3'>Subtotal al PUSER</td>"
         . "<td class='r'>" . number_format($acumulado,1) . "</td><td class='r'>—</td>"
-        . "<td class='r'>$tdsTotal</td><td class='r'>" . ($cliTotal ?: '—') . "</td>"
+        . "<td class='r'>$tdsPuser</td><td class='r'>" . ($cliPuser ?: '—') . "</td>"
         . "<td class='r'>" . number_format($acumulado,1) . "</td><td class='r'>$fuTotalStr</td><td colspan='2'></td></tr>";
+
+    if ($transOtros) {
+        $filasRes .= sprintf($grpHdr, 'Traspasos a otros alimentadores del proyecto');
+        foreach ($transOtros as $t) {
+            $filasRes .= $filaTransf($t, '—', '—');
+        }
+    }
 
     $deltaAcumDest = [];
     $secciones = '';
     foreach ($transferencias as $t) {
         $nomOrig = $t['origen'] ?? "Origen #{$t['idx']}";
         $nomDest = $t['nombre_dest'] ?? $nombre;
-        $cnOrig  = $t['cn_orig'] !== null ? (float)$t['cn_orig'] : NAN;
         $cnDest  = $t['cn_dest'] !== null ? (float)$t['cn_dest'] : $cn;
 
         $escLines = [];
@@ -936,7 +1003,7 @@ function generarReporteFeeder(
         if (!empty($t['equipos_traspasados'])) {
             $badges = implode(' ', array_map(fn($e) => "<span class='badge-eq-tipo'>" . _h($e['tipo']) . "</span> <code>" . _h($e['nombre']) . "</code>", $t['equipos_traspasados']));
             $inversionT = "<div class='inversion-flujo'><strong>↔ Posible inversión de flujo:</strong> $badges"
-                . "<p class='nota'>Equipos dentro de la isla con posible flujo invertido. Verificar si aplica.</p></div>";
+                . "<p class='nota'>Equipos dentro del segmento con posible flujo invertido. Verificar si aplica.</p></div>";
         }
 
         $nTdTotalStr = $nTdTotal ? "/$nTdTotal" : '';
@@ -954,7 +1021,7 @@ function generarReporteFeeder(
             $useMam  = !empty($rawMam);
             $dfPlot  = $useMam ? $rawMam : $rawFlat;
             $sfx     = $useMam ? ' Mes a mes' : '';
-            $cidB    = "cjs_b_{$t['idx']}"; $cidE = "cjs_e_{$t['idx']}";
+            $cidE = "cjs_e_{$t['idx']}";
 
             $trafoO = $useMam ? ($t['trafo_orig_mam'] ?? $t['trafo_orig'] ?? null) : ($t['trafo_orig'] ?? null);
             $trafoD = $useMam ? ($t['trafo_dest_mam'] ?? $t['trafo_dest'] ?? null) : ($t['trafo_dest'] ?? null);
@@ -979,23 +1046,28 @@ function generarReporteFeeder(
             $trafosT = '';
             if (!empty($trafoO) && !($trafoO['sin_datos'] ?? false)) {
                 $lblO    = _repTrafoLabelAlim($trafoO, $nomOrig);
-                $innerO  = _repCjsTrafo($trafoO, $nomOrig, 'alivio', "cjs_to_{$t['idx']}", $nomOrig)
-                         . _repTablaTrafHtml($trafoO, $nomOrig, 'alivio', $nomOrig);
+                $innerO  = _repTablaTrafHtml($trafoO, $nomOrig, 'alivio', $nomOrig)
+                         . "<details class='bloque'><summary>Ver gráfico</summary><div class='bloque-body'>"
+                         . _repCjsTrafo($trafoO, $nomOrig, 'alivio', "cjs_to_{$t['idx']}", $nomOrig)
+                         . "</div></details>";
                 $trafosT .= "<details class='bloque'><summary>Cargabilidad — $lblO — alivio$sfx</summary><div class='bloque-body'>$innerO</div></details>";
             }
             if (!empty($trafoD) && !($trafoD['sin_datos'] ?? false)) {
                 $lblD    = _repTrafoLabelAlim($trafoD, $nomDest);
-                $innerD  = _repCjsTrafo($trafoD, $nomDest, 'carga', "cjs_td_{$t['idx']}", $nomDest)
-                         . _repTablaTrafHtml($trafoD, $nomDest, 'carga', $nomDest);
+                $innerD  = _repTablaTrafHtml($trafoD, $nomDest, 'carga', $nomDest)
+                         . "<details class='bloque'><summary>Ver gráfico</summary><div class='bloque-body'>"
+                         . _repCjsTrafo($trafoD, $nomDest, 'carga', "cjs_td_{$t['idx']}", $nomDest)
+                         . "</div></details>";
                 $trafosT .= "<details class='bloque'><summary>Cargabilidad — $lblD — carga$sfx</summary><div class='bloque-body'>$innerD</div></details>";
             }
             $sfxLbl  = $sfx ? ', ' . trim($sfx) : '';
             $secciones .= $encabezado . $cambioTopoT . $inversionT
-                . _repCjsBarras($dfPlot, $cnOrig, $cnDest, $nomOrig, $nomDest, $cidB)
+                . "<h3>Corrientes y FU$sfxLbl</h3>\n"
+                . '<div class="bloque-body">' . _repTablaHtml($dfPlot, $nomOrig, $nomDest) . '</div>'
+                . "<details class='bloque'><summary>Ver gráfico$sfxLbl</summary><div class='bloque-body'>"
                 . _repCjsEstados($dfPlot, $nomDest, $cidE, $cnDest)
+                . '</div></details>'
                 . $trafosT
-                . "<details class='bloque'><summary>Tabla de corrientes y FU$sfxLbl</summary>"
-                . '<div class="bloque-body">' . _repTablaHtml($dfPlot, $nomOrig, $nomDest) . '</div></details>'
                 . _repTdsTableHtml($t['detalle_tds'] ?? [])
                 . '<hr>';
         } else {
@@ -1012,7 +1084,7 @@ function generarReporteFeeder(
         $mesesFeeder = array_column($trafoFinalMam['tabla'], 'mes');
     } else {
         $allM = [];
-        foreach ($transferencias as $t) {
+        foreach ($transPuser as $t) {
             foreach (array_merge($t['tabla_mam'] ?? [], $t['tabla'] ?? []) as $r) {
                 if (!empty($r['mes'])) $allM[$r['mes']] = true;
             }
@@ -1021,12 +1093,19 @@ function generarReporteFeeder(
         sort($mesesFeeder);
     }
 
+    // Escenario a mostrar del trafo del PUSER: mes a mes (fallback conservador). Se integra en la
+    // tabla de cargabilidad de arriba (ya no hay sección "Cargabilidad Final" al final).
+    $trafoFinalShow = (!empty($trafoFinalMam) && !($trafoFinalMam['sin_datos'] ?? false))
+        ? $trafoFinalMam
+        : ((!empty($trafoFinal) && !($trafoFinal['sin_datos'] ?? false)) ? $trafoFinal : null);
+    $lblTrafo = $trafoFinalShow ? _repTrafoLabel($trafoFinalShow) : '';
+
     $feederCargHtml = '';
     if (!empty($mesesFeeder) && $cn > 0) {
         $deltaMamFeeder = [];
         foreach ($mesesFeeder as $mes) {
             $total = 0.0;
-            foreach ($transferencias as $t) {
+            foreach ($transPuser as $t) {
                 $tablaMam = $t['tabla_mam'] ?? [];
                 $deltaA   = (float)$t['delta_A'];
                 $mamRow   = null;
@@ -1042,7 +1121,6 @@ function generarReporteFeeder(
 
         $BgE = ['viable'=>'#d5f5e3','prealerta'=>'#fdebd0','critico'=>'#fadbd8'];
         $EtE = ['viable'=>'Viable','prealerta'=>'Prealerta','critico'=>'Crítico'];
-        $fuConsFeeder = round($acumulado / $cn * 100, 1);
         $estFn  = fn($iv) => (($iv/$cn) >= 1.0) ? 'critico' : ((($iv/$cn) >= 0.9) ? 'prealerta' : 'viable');
 
         $WTH2 = 'border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000';
@@ -1066,41 +1144,45 @@ function generarReporteFeeder(
         $fuMamVals = array_map(fn($v) => round($v/$cn*100,1), $iMamVals);
         $estVals   = array_map(fn($v) => $estFn($v), $iMamVals);
         $bgEstFn   = fn($m) => 'background:' . ($BgE[$estFn($deltaMamFeeder[$m])] ?? '#fff');
-        $rowIMam   = '<tr><td class="metrica-lbl">I Mes a mes (A)</td>'   . $fcCells($iMamVals,  fn($v) => number_format($v,1)) . '</tr>';
-        $rowFuMam  = '<tr><td class="metrica-lbl">FU Mes a mes (%)</td>'  . $fcCells($fuMamVals, fn($v) => number_format($v,1).'%', $bgEstFn) . '</tr>';
-        $rowEst    = '<tr><td class="metrica-lbl">Estado</td>'             . $fcCells($estVals,   fn($v) => $EtE[$v] ?? $v, $bgEstFn) . '</tr>';
-        $rowICons  = '<tr><td class="metrica-lbl">I conservador (A)</td>'  . $fcCells(array_fill(0,count($mesesFeeder),$acumulado), fn($v) => number_format($v,1)) . '</tr>';
-        $rowFuCons = '<tr><td class="metrica-lbl">FU conservador (%)</td>' . $fcCells(array_fill(0,count($mesesFeeder),$fuConsFeeder), fn($v) => number_format($v,1).'%') . '</tr>';
+        $rowIMam   = '<tr><td class="metrica-lbl">I alim (A)</td>'  . $fcCells($iMamVals,  fn($v) => number_format($v,1)) . '</tr>';
+        $rowFuMam  = '<tr><td class="metrica-lbl">FU alim (%)</td>' . $fcCells($fuMamVals, fn($v) => number_format($v,1).'%', $bgEstFn) . '</tr>';
+        $rowEst    = '<tr><td class="metrica-lbl">Estado alim</td>' . $fcCells($estVals,   fn($v) => $EtE[$v] ?? $v, $bgEstFn) . '</tr>';
+
+        // Filas del transformador del PUSER, alineadas a los mismos meses (reemplazan al conservador).
+        $trafoRows = '';
+        if ($trafoFinalShow) {
+            $trByMes = [];
+            foreach ($trafoFinalShow['tabla'] ?? [] as $r) { if (!empty($r['mes'])) $trByMes[$r['mes']] = $r; }
+            $trI    = array_map(fn($m) => $trByMes[$m]['I_despues']      ?? null, $mesesFeeder);
+            $trFu   = array_map(fn($m) => $trByMes[$m]['uso_despues_pct'] ?? null, $mesesFeeder);
+            $trEst  = array_map(fn($m) => $trByMes[$m]['estado']          ?? null, $mesesFeeder);
+            $bgTrFn = fn($m) => 'background:' . ($BgE[$trByMes[$m]['estado'] ?? ''] ?? '#fff');
+            $nCols  = count($mesesFeeder) + 1;
+            $trafoRows = "<tr><td colspan='$nCols' style='background:#f4f6f9;font-weight:600;font-size:.85em'>" . _h($lblTrafo) . "</td></tr>"
+                . '<tr><td class="metrica-lbl">I trafo (A)</td>'  . $fcCells($trI,  fn($v) => $v !== null ? number_format($v,1) : '—') . '</tr>'
+                . '<tr><td class="metrica-lbl">FU trafo (%)</td>' . $fcCells($trFu, fn($v) => $v !== null ? number_format($v,1).'%' : '—', $bgTrFn) . '</tr>'
+                . '<tr><td class="metrica-lbl">Estado trafo</td>' . $fcCells($trEst,fn($v) => $v !== null ? ($EtE[$v] ?? $v) : '—', $bgTrFn) . '</tr>';
+        }
+
         $tablaFc = '<div style="overflow-x:auto;width:100%"><table class="tabla-sim" style="width:100%">'
                  . "<thead><tr>$headerFc</tr></thead>"
-                 . "<tbody>$rowIMam$rowFuMam$rowEst$rowICons$rowFuCons</tbody></table></div>";
-        $feederCargHtml = "<h2>Cargabilidad del alimentador " . _h($nombre) . "</h2>\n"
+                 . "<tbody>$rowIMam$rowFuMam$rowEst$trafoRows</tbody></table></div>";
+        $tituloCarg = "Cargabilidad del alimentador " . _h($nombre) . ($trafoFinalShow ? " y su transformador" : '');
+        $feederCargHtml = "<h2>$tituloCarg</h2>\n"
+            . $tablaFc
+            . "<details class='bloque'><summary>Ver gráficos</summary><div class='bloque-body'>"
             . _repCjsFeederCarg($mesesFeeder, $deltaMamFeeder, $acumulado, $cn, 'cjs_feeder_carg')
-            . $tablaFc;
+            . ($trafoFinalShow ? _repCjsTrafo($trafoFinalShow, $nombre, 'carga', 'cjs_trafo_final_mam') : '')
+            . "</div></details>";
     }
 
-    $trafoFinalHtml = '';
-    if (!empty($trafoFinal) && !($trafoFinal['sin_datos'] ?? false)) {
-        $lblFinal = _repTrafoLabel($trafoFinal);
-        $trafoFinalHtml = "<h2>Cargabilidad Final — $lblFinal</h2>\n"
-            . "<p><em>Refleja la suma de todos los traspasos aplicados al alimentador (" . number_format($acumulado,1) . ' A acumulados).</em></p>'
-            . "<h3>Escenario conservador (Δ acumulado fijo = " . number_format($acumulado,1) . " A)</h3>\n"
-            . _repCjsTrafo($trafoFinal, $nombre, 'carga', 'cjs_trafo_final')
-            . _repTablaTrafHtml($trafoFinal, $nombre, 'carga');
-        if (!empty($trafoFinalMam) && !($trafoFinalMam['sin_datos'] ?? false)) {
-            $trafoFinalHtml .= "<h3>Escenario Mes a mes (Δ proporcional acumulado por mes)</h3>\n"
-                . "<p style='color:#555;font-size:0.88em'>Suma de los perfiles proporcionales de cada transferencia por mes. Para meses sin datos en alguna transferencia, se usa su Δ máximo como fallback conservador.</p>\n"
-                . _repCjsTrafo($trafoFinalMam, $nombre, 'carga', 'cjs_trafo_final_mam')
-                . _repTablaTrafHtml($trafoFinalMam, $nombre, 'carga');
-        }
-    }
-
+    $netHtml          = _repTablaNetoMultiAlim($tablasNeto);
     $cambiosTopoHtml  = _repCambiosTopoFeederHtml($feederData['cambios_topologicos'] ?? []);
     $cdn              = _REP_CHARTJS_CDN;
     $css              = _repCss();
     $today            = date('Y-m-d');
     $seccionesOut     = $secciones ?: '<p>Sin transferencias registradas.</p>';
-    $filasResOut      = $filasRes  ?: "<tr><td colspan='10'>Sin transferencias.</td></tr>";
+    $filasResOut      = $filasRes  ?: "<tr><td colspan='11'>Sin transferencias.</td></tr>";
     $cnFmt            = number_format($cn, 0);
     $acumFmt          = number_format($acumulado, 1);
     $countTransf      = count($transferencias);
@@ -1130,12 +1212,13 @@ function generarReporteFeeder(
     <div class="card"><strong>$countTransf</strong><span>Transferencias</span></div>
   </div>
   $cambiosTopoHtml
+  $netHtml
   <h2>Resumen de transferencias</h2>
   <div style="overflow-x:auto">
   <table class="tabla-sim" style="width:100%">
-    <thead><tr><th>#</th><th>Origen</th><th class="r">Δ (A)</th><th class="r">% kVA</th>
+    <thead><tr><th>#</th><th>Origen</th><th>Destino</th><th class="r">Δ (A)</th><th class="r">% kVA</th>
     <th class="r">TDs</th><th class="r">Clientes</th>
-    <th class="r">Σ Δ (A)</th><th class="r">FU cons. (%)</th>
+    <th class="r">Σ Δ PUSER (A)</th><th class="r">FU PUSER (%)</th>
     <th>Fecha</th><th>Descripción</th></tr></thead>
     <tbody>$filasResOut</tbody>
   </table>
@@ -1143,7 +1226,6 @@ function generarReporteFeeder(
   $feederCargHtml
   <h2>Detalle por transferencia</h2>
   $seccionesOut
-  $trafoFinalHtml
   <div class="footer">
     Alimentador: $nombreH &nbsp;|&nbsp; CN = $cnFmt A &nbsp;|&nbsp;
     Acumulado = $acumFmt A &nbsp;|&nbsp; Uso = $usoStr

@@ -181,12 +181,13 @@ function mostrarResultados(data) {
   // Panel de ajuste de datos anómalos
   renderAjustePanel(data);
 
-  // Botón guardar
+  // Botón guardar (proyecto multi-alim: destino nuevo o cualquier simulación adjunta a un proyecto)
   const btnGuardar = document.getElementById("btn-guardar-transf");
-  if (data.feeder_nuevo) {
+  const proyectoGuardar = data.proyecto || data.feeder_nuevo;
+  if (proyectoGuardar) {
     btnGuardar.style.display = "";
     btnGuardar.innerHTML =
-      `<i class="bi bi-save me-1"></i>Guardar en alimentador "${data.feeder_nuevo}"`;
+      `<i class="bi bi-save me-1"></i>Guardar en proyecto "${proyectoGuardar}"`;
   } else {
     btnGuardar.style.display = "none";
   }
@@ -1059,10 +1060,11 @@ function renderTablaTrafosEjecutivo(data) {
 // ── GUARDAR TRANSFERENCIA ─────────────────────────────────────────────────
 async function guardarTransferencia() {
   const sim = state.ultimaSimulacion;
-  if (!sim || !sim.feeder_nuevo) return;
+  const destinoProyecto = sim?.proyecto || sim?.feeder_nuevo;
+  if (!sim || !destinoProyecto) return;
 
   const body = {
-    feeder_nombre: sim.feeder_nuevo,
+    feeder_nombre: destinoProyecto,
     origen:        sim.nombre_orig,
     delta_A:       sim.delta.delta_max,
     kva_isla:      sim.isla.kva_isla,
@@ -1770,7 +1772,7 @@ async function verDetalleFeeder(nombre) {
     const histHTML = transferencias.length ? `
       <table class="table table-sm mb-0">
         <thead><tr>
-          <th>#</th><th>Origen</th><th class="text-end">Δ (A)</th><th class="text-end">%</th>
+          <th>#</th><th>Origen</th><th>Destino</th><th class="text-end">Δ (A)</th><th class="text-end">%</th>
           <th class="text-end">TDs</th><th class="text-end">Clientes</th><th>Fecha</th><th>Descripción / Cambio topológico</th>
           <th></th>
         </tr></thead>
@@ -1779,6 +1781,7 @@ async function verDetalleFeeder(nombre) {
           <tr>
             <td>${t.idx}</td>
             <td>${t.origen}</td>
+            <td>${t.nombre_dest || "—"}</td>
             <td class="text-end">${t.delta_A.toFixed(1)}</td>
             <td class="text-end">${t.p_pct.toFixed(1)}%</td>
             <td class="text-end">${t.detalle_tds?.length
@@ -1806,18 +1809,61 @@ async function verDetalleFeeder(nombre) {
         </tbody>
       </table>` : "<p class='text-muted m-2'>Sin transferencias registradas.</p>";
 
+    // Cargabilidad NETA por alimentador tocado (multi-alim): una fila FU% por alimentador,
+    // netea cedido+recibido. Peor mes de cada fila en rojo, color por estado.
+    const netTablaHTML = d.tablas_neto?.length ? (() => {
+      const tn    = d.tablas_neto;
+      const meses = (tn[0].tabla || []).map(r => r.mes);
+      const rolLbl = { nuevo: "nuevo", receptor: "recibe", donante: "cede", mixto: "cede + recibe" };
+      const estadoBg = { viable: "#E8F7EE", prealerta: "#FEF3E2", critico: "#FCECEA" };
+      const W_TD = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
+      const head = `<tr>
+        <th class="py-1" style="min-width:150px;white-space:nowrap">Alimentador</th>
+        ${meses.map(m => `<th class="py-1 text-center" style="white-space:nowrap">${_mesLabel(m)}</th>`).join("")}
+      </tr>`;
+      const rows = tn.map(t => {
+        const tabla = t.tabla || [];
+        let worstI = -1, worstV = -Infinity;
+        tabla.forEach((r, i) => { if (typeof r.fu === "number" && r.fu > worstV) { worstV = r.fu; worstI = i; } });
+        const cells = tabla.map((r, i) => {
+          const fu  = (typeof r.fu === "number") ? r.fu.toFixed(1) + "%" : "—";
+          const bg  = estadoBg[r.estado] || "";
+          const wst = i === worstI ? W_TD : "";
+          const st  = [bg ? `background:${bg}` : "", wst].filter(Boolean).join(";");
+          const tip = (typeof r.I === "number") ? ` title="${r.I.toFixed(0)} A"` : "";
+          return `<td class="text-center" style="${st}"${tip}>${fu}</td>`;
+        }).join("");
+        const badge = `<span class="badge bg-light text-dark border ms-1" style="font-weight:400">${rolLbl[t.rol] || t.rol}</span>`;
+        return `<tr>
+          <td class="fw-semibold small" style="white-space:nowrap">${t.feeder} ${badge}
+            <div class="text-muted" style="font-size:.7rem">CN ${t.cn} A</div></td>${cells}</tr>`;
+      }).join("");
+      return `
+        <div class="mt-3">
+          <h6 class="fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Cargabilidad NETA por alimentador — FU (%) mes a mes</h6>
+          <div class="text-muted small mb-1">Netea lo cedido y lo recibido por cada alimentador del proyecto.</div>
+          <div style="overflow-x:auto">
+            <table class="table tabla-sim mb-0" style="font-size:.78rem">
+              <thead>${head}</thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    })() : "";
+
     const graficoCard = d.tabla_sim?.length
-      ? `<div class="card step-card mt-3 mb-2">
-           <div class="step-header">
-             <i class="bi bi-speedometer2 me-1"></i>
-             <span class="fw-semibold">FU (%) — carga acumulada</span>
-           </div>
-           <div class="step-body p-2">
-             <div style="position:relative;height:200px">
-               <canvas id="canvas-feeder-acum"></canvas>
+      ? `<details class="mt-2 mb-2">
+           <summary class="fw-semibold" style="cursor:pointer">
+             <i class="bi bi-speedometer2 me-1"></i>Ver gráfico de cargabilidad acumulada
+           </summary>
+           <div class="card step-card mt-2">
+             <div class="step-body p-2">
+               <div style="position:relative;height:200px">
+                 <canvas id="canvas-feeder-acum"></canvas>
+               </div>
              </div>
            </div>
-         </div>`
+         </details>`
       : "";
 
     // Cargabilidad del transformador de potencia asociado al feeder
@@ -1830,7 +1876,6 @@ async function verDetalleFeeder(nombre) {
       } else {
         const cnStr = t.cn_trafo != null ? `CN = ${t.cn_trafo.toFixed(0)} A` : "CN no disponible";
         const mesMax = t.mes_max_uso ? `Mes peor: <strong>${t.mes_max_uso}</strong> (${t.pct_max_uso?.toFixed(1)}%)` : "";
-        const _estadoClass = { viable: "row-viable", prealerta: "row-prealerta", critico: "row-critico" };
         const _badgeClass  = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico" };
         const _estadoLabel = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_datos: "—" };
         // Tabla transpuesta: filas = métricas, columnas = meses
@@ -1894,12 +1939,14 @@ async function verDetalleFeeder(nombre) {
     <div class="modal fade" id="modalDetalle" tabindex="-1">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
-          <div class="modal-header" style="background:var(--enel-blue);color:#fff">
-            <h5 class="modal-title">Alimentador: ${nombre}</h5>
-            <button class="btn btn-sm btn-light me-2" onclick="descargarInformeFeeder('${nombre}')">
-              <i class="bi bi-file-earmark-html me-1"></i>Descargar informe
-            </button>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          <div class="modal-header" style="background:var(--enel-blue);color:#fff;gap:.5rem;flex-wrap:wrap">
+            <h5 class="modal-title" style="flex:1 1 auto;min-width:0">Alimentador: ${nombre}</h5>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
+              <button class="btn btn-sm btn-light" onclick="descargarInformeFeeder('${nombre}')">
+                <i class="bi bi-file-earmark-html me-1"></i>Descargar informe
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
           </div>
           <div class="modal-body">
             <div class="row g-2 mb-3">
@@ -1908,7 +1955,12 @@ async function verDetalleFeeder(nombre) {
                 <div class="text-muted small">Corriente acumulada</div>
               </div>
               <div class="col-4 text-center">
-                <div class="fw-bold fs-4">${d.data.cn} A</div>
+                <div class="fw-bold fs-4">${d.data.cn} A
+                  <button class="btn btn-sm btn-link p-0 align-baseline" title="Editar CN"
+                          onclick="editarCnFeeder('${nombre}', ${d.data.cn})">
+                    <i class="bi bi-pencil-square"></i>
+                  </button>
+                </div>
                 <div class="text-muted small">Corriente nominal (CN)</div>
               </div>
               <div class="col-4 text-center">
@@ -1922,6 +1974,7 @@ async function verDetalleFeeder(nombre) {
 
             <h6 class="fw-semibold mt-3">Histórico de transferencias</h6>
             <div style="overflow-x:auto">${histHTML}</div>
+            ${netTablaHTML}
             ${graficoCard}
             ${trafoHTML}
           </div>
@@ -1957,6 +2010,36 @@ async function eliminarTransferencia(feeder, idx) {
     bootstrap.Modal.getInstance(document.getElementById("modalDetalle"))?.hide();
     cargarFeedersNuevos();
     mostrarToast("Transferencia eliminada.");
+  } finally {
+    spinner(false);
+  }
+}
+
+async function editarCnFeeder(nombre, cnActual) {
+  const val = prompt(`Nueva corriente nominal (CN) para "${nombre}", en A:`, cnActual);
+  if (val === null) return;
+  const cn = parseFloat(String(val).replace(",", "."));
+  if (!isFinite(cn) || cn <= 0) { mostrarError("CN inválida: ingresa un número mayor a 0."); return; }
+  spinner(true, "Actualizando CN...");
+  try {
+    const r = await apiFetch(`/api/feeders_nuevos/${encodeURIComponent(nombre)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cn }),
+    });
+    if (r && r.error) { mostrarError(r.error); return; }
+    mostrarToast(`CN de "${nombre}" actualizada a ${cn} A.`);
+    cargarFeedersNuevos();
+    cargarDestinos();
+    // Reabrir el modal ya cerrado para recalcular todas las tablas con la nueva CN.
+    const modalEl = document.getElementById("modalDetalle");
+    const inst = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+    if (inst) {
+      modalEl.addEventListener("hidden.bs.modal", () => verDetalleFeeder(nombre), { once: true });
+      inst.hide();
+    } else {
+      verDetalleFeeder(nombre);
+    }
   } finally {
     spinner(false);
   }
@@ -2075,14 +2158,14 @@ async function verDetalleTransferencia(feeder, idx) {
       : "Traspaso viable en todos los meses.";
 
     const estadoLabel = { viable:"Viable", prealerta:"Prealerta", critico:"Crítico", sin_datos:"—" };
-    const estadoClass = { viable:"row-viable", prealerta:"row-prealerta", critico:"row-critico" };
     const badgeClass  = { viable:"badge-viable", prealerta:"badge-prealerta", critico:"badge-critico" };
 
     // Tabla transpuesta (mes a mes si está disponible)
     const tTabla   = displayTabla;
     const tRowBg   = { viable:"#E8F7EE", prealerta:"#FEF3E2", critico:"#FCECEA" };
+    // Peor mes = mayor FU del destino (consistente con el color de los gráficos y "peor mes del destino")
     const tWorstIdx = tTabla.reduce((best, r, i) =>
-      (r.I_orig_antes || 0) > (tTabla[best]?.I_orig_antes || 0) ? i : best, 0);
+      (r.uso_dest_despues_pct || 0) > (tTabla[best]?.uso_dest_despues_pct || 0) ? i : best, 0);
     const TW_TH = "border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000";
     const TW_TD = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
     const tMesHdrs = tTabla.map((r, i) => `<th class="text-center" style="white-space:nowrap${i === tWorstIdx ? ';' + TW_TH : ''}">${_mesLabel(r.mes)}</th>`).join("");
@@ -2160,17 +2243,19 @@ async function verDetalleTransferencia(feeder, idx) {
     <div class="modal fade" id="modalTransfDetalle" tabindex="-1">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
-          <div class="modal-header" style="background:var(--enel-blue);color:#fff">
-            <h5 class="modal-title">
+          <div class="modal-header" style="background:var(--enel-blue);color:#fff;gap:.5rem;flex-wrap:wrap">
+            <h5 class="modal-title" style="flex:1 1 auto;min-width:0">
               <i class="bi bi-lightning-charge me-1"></i>
               Traspaso: <strong>${nomOrig}</strong> → <strong>${nomDest}</strong>
               &nbsp;<span class="badge bg-light text-dark fw-normal" style="font-size:.8rem">${t.fecha}</span>
             </h5>
-            <button class="btn btn-sm btn-light me-2"
-                    onclick="descargarTransferencia('${feeder}', ${idx})">
-              <i class="bi bi-file-earmark-html me-1"></i>Descargar informe
-            </button>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
+              <button class="btn btn-sm btn-light"
+                      onclick="descargarTransferencia('${feeder}', ${idx})">
+                <i class="bi bi-file-earmark-html me-1"></i>Descargar informe
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
           </div>
           <div class="modal-body">
             <div class="row g-2 mb-3 text-center">
@@ -2208,28 +2293,6 @@ async function verDetalleTransferencia(feeder, idx) {
             <div class="alert ${alertaCls} py-2 mb-3 small">${alertaTxt}</div>
 
             <div class="card step-card mb-2">
-              <div class="step-header"><i class="bi bi-bar-chart-fill me-1"></i>
-                <span class="fw-semibold">Corriente antes / después${useMam ? " Mes a mes" : ""} (A)</span></div>
-              <div class="step-body p-2">
-                <div style="position:relative;height:240px">
-                  <canvas id="canvas-mt-barras"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <div class="card step-card mb-2">
-              <div class="step-header"><i class="bi bi-speedometer2 me-1"></i>
-                <span class="fw-semibold">FU (%)${useMam ? " Mes a mes" : ""} — ${nomDest}</span></div>
-              <div class="step-body p-2">
-                <div style="position:relative;height:200px">
-                  <canvas id="canvas-mt-estados"></canvas>
-                </div>
-              </div>
-            </div>
-
-            ${trafosCard}
-
-            <div class="card step-card mb-2">
               <div class="step-header"><i class="bi bi-table me-1"></i>
                 <span class="fw-semibold">Detalle mensual</span></div>
               <div class="step-body p-0" style="overflow-x:auto">
@@ -2241,6 +2304,23 @@ async function verDetalleTransferencia(feeder, idx) {
                 </table>
               </div>
             </div>
+
+            <details class="mb-2">
+              <summary class="fw-semibold mb-2" style="cursor:pointer">
+                <i class="bi bi-bar-chart-line me-1"></i>Ver gráficos
+              </summary>
+              <div class="card step-card mb-2 mt-2">
+                <div class="step-header"><i class="bi bi-speedometer2 me-1"></i>
+                  <span class="fw-semibold">FU (%)${useMam ? " Mes a mes" : ""} — ${nomDest}</span></div>
+                <div class="step-body p-2">
+                  <div style="position:relative;height:200px">
+                    <canvas id="canvas-mt-estados"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              ${trafosCard}
+            </details>
           </div>
         </div>
       </div>
@@ -2250,11 +2330,16 @@ async function verDetalleTransferencia(feeder, idx) {
     _destroyModalTCharts();
     document.body.insertAdjacentHTML("beforeend", modalHTML);
     const modal = new bootstrap.Modal(document.getElementById("modalTransfDetalle"));
+    // Un modal a la vez: ocultar la ficha PUSER mientras se ve el caso; reabrirla al cerrar.
+    const _fichaAbierta = !!bootstrap.Modal.getInstance(document.getElementById("modalDetalle"));
+    if (_fichaAbierta) bootstrap.Modal.getInstance(document.getElementById("modalDetalle")).hide();
     document.getElementById("modalTransfDetalle").addEventListener("shown.bs.modal", () => {
-      _renderModalCharts(displayTabla, nomOrig, nomDest, mLabels, bgDest, brdDest, maxPct, t.cn_dest, trafoOrigMT, trafoDestMT);
+      _renderModalCharts(displayTabla, nomDest, mLabels, bgDest, brdDest, maxPct, trafoOrigMT, trafoDestMT);
     }, { once: true });
     document.getElementById("modalTransfDetalle").addEventListener("hidden.bs.modal", () => {
       _destroyModalTCharts();
+      document.getElementById("modalTransfDetalle")?.remove();
+      if (_fichaAbierta) verDetalleFeeder(feeder);
     }, { once: true });
     modal.show();
   } catch(e) {
@@ -2264,41 +2349,8 @@ async function verDetalleTransferencia(feeder, idx) {
   }
 }
 
-function _renderModalCharts(tabla, nomOrig, nomDest, labels, bgDest, brdDest, maxPct, cnDest, trafoOrig, trafoDest) {
-  // Chart 1: barras
-  const cnDestArr = tabla.map(() => cnDest);
-  _modalTCharts.barras = new Chart(document.getElementById("canvas-mt-barras"), {
-    data: {
-      labels,
-      datasets: [
-        { type:"bar",  label:`${nomDest} — Antes (A)`,
-          data: tabla.map(r => r.I_dest_antes),
-          backgroundColor:"rgba(100,149,237,0.45)", borderColor:"rgba(100,149,237,0.9)",
-          borderWidth:1, order:3 },
-        { type:"bar",  label:`${nomDest} — Después (A)`,
-          data: tabla.map(r => r.I_dest_despues),
-          backgroundColor:bgDest, borderColor:brdDest, borderWidth:1, order:2 },
-        { type:"line", label:`${nomOrig} — Antes (A)`,
-          data: tabla.map(r => r.I_orig_antes),
-          borderColor:"rgba(52,73,94,0.65)", borderDash:[5,4], borderWidth:2,
-          pointRadius:3, fill:false, order:1 },
-        { type:"line", label:`CN ${nomDest} (${fmt(cnDest,0)} A)`,
-          data: cnDestArr,
-          borderColor:"rgba(231,76,60,0.9)", borderDash:[8,4], borderWidth:2,
-          pointRadius:0, fill:false, order:0 },
-      ],
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins: { legend:{ position:"bottom", labels:{font:{size:11}} } },
-      scales: {
-        x:{ ticks:{font:{size:10}} },
-        y:{ title:{display:true, text:"Corriente (A)", font:{size:11}}, beginAtZero:true },
-      },
-    },
-  });
-
-  // Chart 2: % uso
+function _renderModalCharts(tabla, nomDest, labels, bgDest, brdDest, maxPct, trafoOrig, trafoDest) {
+  // Chart: FU (%) uso del destino
   _modalTCharts.estados = new Chart(document.getElementById("canvas-mt-estados"), {
     type:"bar",
     data: {

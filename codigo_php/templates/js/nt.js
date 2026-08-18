@@ -434,6 +434,15 @@ async function cargarDestinos() {
     maxOptions: 30,
     placeholder: "Seleccionar alimentador...",
   });
+
+  // Selector "Adjuntar a proyecto" (rebalanceo multi-alimentador): mismos feeders nuevos.
+  const selP = document.getElementById("sel-proyecto");
+  if (selP) {
+    const prev = selP.value;
+    selP.innerHTML = `<option value="">— Ninguno —</option>` +
+      feedersNuevos.map(f => `<option value="${f.nombre}">${f.nombre}</option>`).join("");
+    if (prev && feedersNuevos.some(f => f.nombre === prev)) selP.value = prev;
+  }
 }
 
 // ── FILTRO LZ DESTINO ─────────────────────────────────────────────────────
@@ -1140,6 +1149,12 @@ async function ejecutarSimulacion() {
       body.feeder_nuevo_nombre = selNuevo || "";
     }
   }
+
+  // Proyecto multi-alimentador: netea la simulación y fija el destino de guardado.
+  // Explícito por el selector, o implícito cuando el destino es el propio feeder nuevo.
+  const proyectoSel = document.getElementById("sel-proyecto")?.value || "";
+  const proyecto = proyectoSel || (tipoDest === "nuevo" ? (body.feeder_nuevo_nombre || "") : "");
+  if (proyecto) body.proyecto = proyecto;
 
   // Validaciones básicas
   if (body.numalim_orig == null) return mostrarErrorSim("Selecciona un alimentador origen.");

@@ -26,23 +26,32 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && $b1 === 'informe' && 
     $cn     = (float)$feeder['cn'];
     $usoPct = $cn > 0 ? round($acum / $cn * 100, 1) : null;
 
-    ['dfAlim' => $dfAlim, 'dfTrafo' => $dfTrafo] = gd();
+    ['dfAlim' => $dfAlim, 'dfTrafo' => $dfTrafo, 'dfAb' => $dfAb] = gd();
+    $meses      = mesesDisponibles($dfAlim);
+    $mesesVista = mesesAnioMovil($meses) ?: $meses;   // año móvil de 12 meses
+
+    // Cargabilidad NETA por alimentador tocado (multi-alim), líder ejecutivo del informe.
+    $tablasNeto = construirTablasNetoProyecto($nombreFeeder, $feeder, $mesesVista, $dfAlim, $dfAb);
+
     $trafoFinal = $trafoFinalMam = null;
     $numalimT   = $feeder['numalim_trafo'] ?? null;
     if ($numalimT) {
         $trafoRow = trafoDeFeeder($dfTrafo, (int)$numalimT);
         if ($trafoRow) {
             $trafoRow      = aplicarAjustesFila($trafoRow, 'trafo', (int)$numalimT);
-            $meses         = mesesDisponibles($dfAlim);
             $serieDel      = serieAcumulada($nombreFeeder, $meses);
-            $trafoFinal    = analizarTrafo($trafoRow, $acum, 'carga');
-            $trafoFinalMam = analizarTrafoMesAMes($trafoRow, $serieDel, 'carga');
+            $trafoFinal    = analizarTrafo($trafoRow, $acum, 'carga', 0.90, $mesesVista);
+            $trafoFinalMam = analizarTrafoMesAMes($trafoRow, $serieDel, 'carga', 0.90, $mesesVista);
+            // Identificación del trafo (para _repTrafoLabel: tabla + título del gráfico).
+            $barraTrafo = trim((string)($trafoRow['barra'] ?? '')) ?: null;
+            $trafoFinal['barra']       = $trafoFinalMam['barra']       = $barraTrafo;
+            $trafoFinal['subestacion'] = $trafoFinalMam['subestacion'] = null;
         }
     }
 
     $slug = slugFeeder($nombreFeeder) . '_' . date('Ymd_His');
     $ruta = tempnam(sys_get_temp_dir(), 'rpt');
-    generarReporteFeeder($feeder, $acum, $usoPct, $ruta, $trafoFinal, $trafoFinalMam);
+    generarReporteFeeder($feeder, $acum, $usoPct, $ruta, $trafoFinal, $trafoFinalMam, $tablasNeto);
 
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="feeder_' . $slug . '.html"');
@@ -59,21 +68,20 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && !$b1) {
     $acum   = deltaAcumulado($nombre);
     $cn     = (float)($d['cn'] ?? 0);
 
-    ['dfAlim' => $dfAlim, 'dfTrafo' => $dfTrafo] = gd();
+    ['dfAlim' => $dfAlim, 'dfTrafo' => $dfTrafo, 'dfAb' => $dfAb] = gd();
     $meses = mesesDisponibles($dfAlim);
 
-    // Últimos ~12 meses (criterio Python)
-    if (!empty($meses)) {
-        $maxMes     = max($meses);
-        $iniMes     = sprintf('%04d-%02d', (int)substr($maxMes, 0, 4) - 1, (int)substr($maxMes, 5, 2));
-        $mesesVista = array_values(array_filter($meses, fn($m) => $m >= $iniMes)) ?: $meses;
-    } else {
-        $mesesVista = $meses;
-    }
+    // Año móvil de 12 meses (mismo criterio que el flujo principal / _limiteAnioMovil)
+    $mesesVista = mesesAnioMovil($meses) ?: $meses;
 
-    // Acumular delta mes a mes desde transferencias
+    // Acumular delta mes a mes desde transferencias — SOLO las que cargan al propio PUSER
+    // (destino == este feeder). Las transferencias del proyecto hacia otro alimentador no
+    // suman a la cargabilidad del PUSER. Legacy: nombre_dest vacío = hacia el PUSER.
+    $puserU  = strtoupper(trim((string)($d['nombre'] ?? $nombre)));
     $acumMam = array_fill_keys($mesesVista, 0.0);
     foreach ($d['transferencias'] ?? [] as $t) {
+        $destU = strtoupper(trim((string)($t['nombre_dest'] ?? '')));
+        if ($destU !== '' && $destU !== $puserU) continue;
         if (!empty($t['tabla_mam'])) {
             foreach ($t['tabla_mam'] as $trow) {
                 $m = $trow['mes'] ?? '';
@@ -100,6 +108,9 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && !$b1) {
     }
     $resumen = resumenEstados($tablaSim);
 
+    // Cargabilidad NETA por alimentador tocado por el proyecto (multi-alim, mes a mes).
+    $tablasNeto = construirTablasNetoProyecto($nombre, $d, $mesesVista, $dfAlim, $dfAb);
+
     // Trafo del feeder nuevo
     $trafoData = null;
     $nmTrafo   = $d['numalim_trafo'] ?? null;
@@ -118,9 +129,10 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && !$b1) {
         'acumulado' => $acum,
         'cn'        => $cn,
         'uso_pct'   => $cn > 0 ? round($acum / $cn * 100, 1) : null,
-        'resumen'   => $resumen,
-        'tabla_sim' => $tablaSim,
-        'trafo'     => $trafoData,
+        'resumen'    => $resumen,
+        'tabla_sim'  => $tablaSim,
+        'tablas_neto'=> $tablasNeto,
+        'trafo'      => $trafoData,
     ]);
 }
 

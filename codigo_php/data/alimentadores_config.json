@@ -217,5 +217,20 @@
     },
     "CHILOE": {
         "conductores_intermedios": []
+    },
+    "COMENDADOR": {
+        "conductores_intermedios": [],
+        "autotrafos": [
+            {
+                "rec_alta": "REC88241",
+                "rec_baja": "REC98248",
+                "tension_alta": 23,
+                "tipo": "reductor",
+                "fecha_registro": "2026-08-14"
+            }
+        ]
+    },
+    "PINCOYA": {
+        "conductores_intermedios": []
     }
 }
