@@ -32,6 +32,8 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && $b1 === 'informe' && 
 
     // Cargabilidad NETA por alimentador tocado (multi-alim), líder ejecutivo del informe.
     $tablasNeto = construirTablasNetoProyecto($nombreFeeder, $feeder, $mesesVista, $dfAlim, $dfAb);
+    // Cargabilidad NETA de los trafos de los alimentadores existentes tocados (espejo del detalle).
+    $tablasNetoTrafos = construirTablasNetoTrafos($nombreFeeder, $feeder, $mesesVista, $dfAlim, $dfAb, $dfTrafo);
 
     $trafoFinal = $trafoFinalMam = null;
     $numalimT   = $feeder['numalim_trafo'] ?? null;
@@ -51,7 +53,7 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && $b1 === 'informe' && 
 
     $slug = slugFeeder($nombreFeeder) . '_' . date('Ymd_His');
     $ruta = tempnam(sys_get_temp_dir(), 'rpt');
-    generarReporteFeeder($feeder, $acum, $usoPct, $ruta, $trafoFinal, $trafoFinalMam, $tablasNeto);
+    generarReporteFeeder($feeder, $acum, $usoPct, $ruta, $trafoFinal, $trafoFinalMam, $tablasNeto, $tablasNetoTrafos);
 
     header('Content-Type: text/html; charset=utf-8');
     header('Content-Disposition: attachment; filename="feeder_' . $slug . '.html"');
@@ -110,6 +112,8 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && !$b1) {
 
     // Cargabilidad NETA por alimentador tocado por el proyecto (multi-alim, mes a mes).
     $tablasNeto = construirTablasNetoProyecto($nombre, $d, $mesesVista, $dfAlim, $dfAb);
+    // Cargabilidad NETA de los trafos de los alimentadores existentes tocados (excluye el del PUSER).
+    $tablasNetoTrafos = construirTablasNetoTrafos($nombre, $d, $mesesVista, $dfAlim, $dfAb, $dfTrafo);
 
     // Trafo del feeder nuevo
     $trafoData = null;
@@ -132,6 +136,7 @@ if ($method === 'GET' && $a === 'feeders_nuevos' && $b0 && !$b1) {
         'resumen'    => $resumen,
         'tabla_sim'  => $tablaSim,
         'tablas_neto'=> $tablasNeto,
+        'trafos_neto'=> $tablasNetoTrafos,
         'trafo'      => $trafoData,
     ]);
 }

@@ -404,6 +404,66 @@ function construirTablasNetoProyecto(string $proyecto, array $feederData, array 
     return $out;
 }
 
+/**
+ * Cargabilidad NETA de los TRANSFORMADORES de los alimentadores EXISTENTES tocados por el
+ * proyecto (excluye el PUSER, cuyo trafo ya se muestra vía d.trafo). Para cada alimentador
+ * tocado se toma su fila de trafo (dfTrafo por numalim) y se le aplica, como serie de deltas
+ * mes a mes, el ajuste neto del alimentador (netAdjProyecto, con signo: +recibe / −cede) vía
+ * analizarTrafoMesAMes en modo 'carga' (I_despues = I_antes + delta; delta<0 = alivio).
+ *
+ * Deduplica por trafo físico (barra): si dos alimentadores tocados cuelgan del mismo trafo,
+ * se suman sus netos sobre la misma fila base (el trafo ve la suma).
+ *
+ * @return array [ salida de analizarTrafoMesAMes + {barra, feeders:[...], rol, roles:[...]}, ... ]
+ */
+function construirTablasNetoTrafos(string $proyecto, array $feederData, array $mesesVista, array $dfAlim, array $dfAb, array $dfTrafo): array
+{
+    $puserU = strtoupper(trim((string)($feederData['nombre'] ?? $proyecto)));
+    $grupos = [];   // barra => ['trafoRow'=>..., 'adj'=>[mes=>float], 'feeders'=>[], 'roles'=>[]]
+    $orden  = [];
+
+    foreach (feedersTocados($proyecto) as $f) {
+        $nom = $f['nombre'];
+        if (strtoupper($nom) === $puserU) continue;   // el trafo del PUSER ya es d.trafo
+
+        $num = numalimDeNomAlim($dfAb, $nom);
+        if (!$num) continue;
+        $trafoRow = trafoDeFeeder($dfTrafo, $num);
+        if (!$trafoRow) continue;
+        $trafoRow = aplicarAjustesFila($trafoRow, 'trafo', $num);
+
+        $adj  = netAdjProyecto($proyecto, $nom, $mesesVista);
+        $barra = trim((string)($trafoRow['barra'] ?? '')) ?: ('num:' . $num);
+
+        if (!isset($grupos[$barra])) {
+            $grupos[$barra] = ['trafoRow' => $trafoRow, 'adj' => array_fill_keys($mesesVista, 0.0), 'feeders' => [], 'roles' => []];
+            $orden[] = $barra;
+        }
+        foreach ($mesesVista as $m) {
+            $grupos[$barra]['adj'][$m] += (float)($adj[$m] ?? 0.0);
+        }
+        $grupos[$barra]['feeders'][] = $nom;
+        foreach ($f['roles'] as $r) {
+            if (!in_array($r, $grupos[$barra]['roles'], true)) $grupos[$barra]['roles'][] = $r;
+        }
+    }
+
+    $out = [];
+    foreach ($orden as $barra) {
+        $g   = $grupos[$barra];
+        $blk = analizarTrafoMesAMes($g['trafoRow'], $g['adj'], 'carga', 0.90, $mesesVista);
+
+        $esRec = in_array('dest', $g['roles'], true);
+        $esDon = in_array('orig', $g['roles'], true);
+        $blk['rol']     = ($esRec && $esDon) ? 'mixto' : ($esRec ? 'receptor' : 'donante');
+        $blk['roles']   = $g['roles'];
+        $blk['feeders'] = $g['feeders'];
+        $blk['barra']   = trim((string)($g['trafoRow']['barra'] ?? '')) ?: null;
+        $out[] = $blk;
+    }
+    return $out;
+}
+
 // ─── Cambios topológicos ──────────────────────────────────────────────────
 
 /**

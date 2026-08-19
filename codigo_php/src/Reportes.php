@@ -1,50 +1,51 @@
 <?php
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  ÍNDICE DE Reportes.php  (1654 L)                                           ║
+// ║  ÍNDICE DE Reportes.php  (1699 L)                                           ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  CONSTANTES                                                        L.49–77  ║
+// ║  CONSTANTES                                                        L.50–78  ║
 // ║    _REP_CHARTJS_CDN, _REP_TD_GRANDE_KVA                                     ║
 // ║    _REP_CJS_ESTADO_BG/BRD, _REP_ETIQUETAS, _REP_MESES_ES                   ║
 // ║    _REP_ESTADO_BADGE_VCC, _REP_ESTADO_BG_VCC                                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  HELPERS INTERNOS                                                 L.78–627  ║
-// ║    _repCss()                  bloque <style> inline del reporte    L.78     ║
-// ║    _repTipoEquipoTroncal($n)  {label,color} por prefijo numpos     L.162    ║
-// ║    _repHtmlTablaEquipos($eq)  tabla HTML equipos troncal           L.175    ║
-// ║    _repSafe($v)               convierte false→null, NaN→null       L.190    ║
-// ║    _h($v)                     htmlspecialchars shorthand           L.196    ║
-// ║    _repWorstIdx($vals)        índice del valor máximo en array     L.200    ║
-// ║    _repMesLbl($yyyymm)        'Ene 24' a partir de 'YYYY-MM'       L.209    ║
-// ║    _repTrafoLabel($trafo)     "Nombre · kVA · Barra"              L.221    ║
-// ║    _repTrafoLabelAlim($t,$n)  idem con nombre alimentador          L.231    ║
-// ║    _repTablaHtml($df,$o,$d)   tabla principal mes a mes traspaso   L.243    ║
-// ║    _repTdsTableHtml($det,$t)  tabla TDs involucrados               L.297    ║
-// ║    _repTablaTrafHtml($t,$n,$m,$a) tabla trafo mes a mes            L.325    ║
-// ║    _repTarjetaPeorCaso(...)   tarjeta peor caso Δ fijo             L.388    ║
-// ║    _repCjsBarras(...)         Chart.js barras I_antes/I_despues    L.437    ║
-// ║    _repCjsEstados(...)        Chart.js dona de estados             L.474    ║
-// ║    _repCjsTrafo(...)          Chart.js línea trafo I_antes/despues L.502    ║
-// ║    _repCjsFeederCarg(...)     Chart.js cargabilidad feeder nuevo   L.546    ║
-// ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.586    ║
-// ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.599    ║
+// ║  HELPERS INTERNOS                                                 L.79–628  ║
+// ║    _repCss()                  bloque <style> inline del reporte    L.79     ║
+// ║    _repTipoEquipoTroncal($n)  {label,color} por prefijo numpos     L.163    ║
+// ║    _repHtmlTablaEquipos($eq)  tabla HTML equipos troncal           L.176    ║
+// ║    _repSafe($v)               convierte false→null, NaN→null       L.191    ║
+// ║    _h($v)                     htmlspecialchars shorthand           L.197    ║
+// ║    _repWorstIdx($vals)        índice del valor máximo en array     L.201    ║
+// ║    _repMesLbl($yyyymm)        'Ene 24' a partir de 'YYYY-MM'       L.210    ║
+// ║    _repTrafoLabel($trafo)     "Nombre · kVA · Barra"              L.222    ║
+// ║    _repTrafoLabelAlim($t,$n)  idem con nombre alimentador          L.232    ║
+// ║    _repTablaHtml($df,$o,$d)   tabla principal mes a mes traspaso   L.244    ║
+// ║    _repTdsTableHtml($det,$t)  tabla TDs involucrados               L.298    ║
+// ║    _repTablaTrafHtml($t,$n,$m,$a) tabla trafo mes a mes            L.326    ║
+// ║    _repTarjetaPeorCaso(...)   tarjeta peor caso Δ fijo             L.389    ║
+// ║    _repCjsBarras(...)         Chart.js barras I_antes/I_despues    L.438    ║
+// ║    _repCjsEstados(...)        Chart.js dona de estados             L.475    ║
+// ║    _repCjsTrafo(...)          Chart.js línea trafo I_antes/despues L.503    ║
+// ║    _repCjsFeederCarg(...)     Chart.js cargabilidad feeder nuevo   L.547    ║
+// ║    _repCambiosTopoFeederHtml  lista cambios topológicos feeder     L.587    ║
+// ║    _repAcumularTrafo(...)     aplica delta acumulado al trafo      L.600    ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.628–876  ║
-// ║    generarReporteHtml($body,$ruta)                                 L.628    ║
+// ║  REPORTE TRASPASO (Nuevo Traspaso)                               L.629–882  ║
+// ║    generarReporteHtml($body,$ruta)                                 L.629    ║
 // ║      ← recibe cuerpo completo del POST /api/descargar_html                  ║
 // ║      → HTML autónomo con tabla mes a mes + gráficos Chart.js                ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.877–1242  ║
+// ║  REPORTE FEEDER EN COMISIONAMIENTO                              L.883–1287  ║
 // ║    _repTablaNetoMultiAlim($tn) tabla FU neta multi-alim           L.883    ║
-// ║    generarReporteFeeder($nombre,$feeder,$ruta,$tn)                 L.916    ║
+// ║    _repTablaNetoTrafos($tnt)  tabla FU neta trafos involucrados    L.921    ║
+// ║    generarReporteFeeder($nombre,$feeder,$ruta,$tn,$tnt)            L.958    ║
 // ║      → HTML por feeder: tabla neta líder, tablas, gráficos <details>        ║
 // ╠══════════════════════════════════════════════════════════════════════════════╣
-// ║  REPORTE VCC                                                   L.1243–1654  ║
-// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1243   ║
-// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1321   ║
-// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1417   ║
-// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1469   ║
-// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1513   ║
+// ║  REPORTE VCC                                                   L.1288–1699  ║
+// ║    _repTablaMensualVcc($t,$n,$dtA,$dtPct,$lbl) tabla FU mes a mes L.1288   ║
+// ║    _repTablaEquiposHtml($eq,$dI) tabla equipos upstream con ΔI     L.1366   ║
+// ║    _repSeccionReceptorHtml($dest) bloque receptor en reporte VCC   L.1462   ║
+// ║    _repSeccionVccHtml($esc,$r,$n,$nd,$kva,$mB) bloque escenario   L.1514   ║
+// ║    generarReporteVcc($body,$ruta)  HTML completo VCC               L.1558   ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 const _REP_CHARTJS_CDN   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
@@ -913,6 +914,48 @@ function _repTablaNetoMultiAlim(?array $tablasNeto): string {
         . "<thead><tr>$head</tr></thead><tbody>$rows</tbody></table></div>";
 }
 
+/**
+ * Cargabilidad NETA de los transformadores de los alimentadores existentes tocados por el
+ * proyecto (espejo del detalle). Una fila FU (%) por trafo involucrado, mes a mes.
+ * $tablasNetoTrafos = salida de construirTablasNetoTrafos() (analizarTrafoMesAMes + barra/feeders/rol).
+ */
+function _repTablaNetoTrafos(?array $tablasNetoTrafos): string {
+    if (empty($tablasNetoTrafos)) return '';
+    $meses = array_map(fn($r) => $r['mes'], $tablasNetoTrafos[0]['tabla'] ?? []);
+    if (!$meses) return '';
+    $rolLbl = ['nuevo' => 'nuevo', 'receptor' => 'recibe', 'donante' => 'cede', 'mixto' => 'cede + recibe'];
+    $bgE    = ['viable' => '#d5f5e3', 'prealerta' => '#fdebd0', 'critico' => '#fadbd8'];
+    $WTD    = 'border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000';
+    $etiq   = array_map(fn($m) => substr($m, 5, 2) . '/' . substr($m, 2, 2), $meses);
+    $head   = '<th>Transformador</th>' . implode('', array_map(fn($e) => "<th class='c'>$e</th>", $etiq));
+    $rows   = '';
+    foreach ($tablasNetoTrafos as $t) {
+        if ($t['sin_datos'] ?? false) continue;
+        $tabla = $t['tabla'] ?? [];
+        $worst = -1; $wv = -INF;
+        foreach ($tabla as $i => $r) { if (is_numeric($r['uso_despues_pct'] ?? null) && $r['uso_despues_pct'] > $wv) { $wv = $r['uso_despues_pct']; $worst = $i; } }
+        $cells = '';
+        foreach ($tabla as $i => $r) {
+            $fu    = is_numeric($r['uso_despues_pct'] ?? null) ? number_format($r['uso_despues_pct'], 1) . '%' : '—';
+            $bg    = $bgE[$r['estado'] ?? ''] ?? '';
+            $style = ($bg ? "background:$bg" : '') . ($i === $worst ? ";$WTD" : '');
+            $tip   = is_numeric($r['I_despues'] ?? null) ? ' title="' . number_format($r['I_despues'], 0) . ' A"' : '';
+            $cells .= "<td class='c' style='$style'$tip>$fu</td>";
+        }
+        $rol     = $rolLbl[$t['rol'] ?? ''] ?? ($t['rol'] ?? '');
+        $cn      = number_format((float)($t['cn_trafo'] ?? 0), 0);
+        $feeders = implode(', ', $t['feeders'] ?? []);
+        $barra   = $t['barra'] ?? 'Transformador';
+        $rows .= "<tr><td class='metrica-lbl' style='white-space:nowrap'>" . _h($barra)
+               . " <span style='font-weight:400;color:#666'>(" . _h($feeders) . " · $rol · CN $cn A)</span></td>$cells</tr>";
+    }
+    if ($rows === '') return '';
+    return "<h2>Cargabilidad neta de transformadores involucrados</h2>\n"
+        . "<p style='color:#555;font-size:0.9em'>FU (%) mes a mes de los transformadores de los alimentadores existentes tocados por el proyecto (neto: los que ceden se alivian, los que reciben suben). Peor mes de cada fila resaltado.</p>\n"
+        . "<div style='overflow-x:auto;width:100%'><table class='tabla-sim' style='width:100%'>"
+        . "<thead><tr>$head</tr></thead><tbody>$rows</tbody></table></div>";
+}
+
 function generarReporteFeeder(
     array   $feederData,
     float   $acumulado,
@@ -921,6 +964,7 @@ function generarReporteFeeder(
     ?array  $trafoFinal    = null,
     ?array  $trafoFinalMam = null,
     ?array  $tablasNeto    = null,
+    ?array  $tablasNetoTrafos = null,
 ): string {
     $nombre        = $feederData['nombre'];
     $cn            = (float)$feederData['cn'];
@@ -1177,6 +1221,7 @@ function generarReporteFeeder(
     }
 
     $netHtml          = _repTablaNetoMultiAlim($tablasNeto);
+    $netTrafosHtml    = _repTablaNetoTrafos($tablasNetoTrafos);
     $cambiosTopoHtml  = _repCambiosTopoFeederHtml($feederData['cambios_topologicos'] ?? []);
     $cdn              = _REP_CHARTJS_CDN;
     $css              = _repCss();
@@ -1213,6 +1258,7 @@ function generarReporteFeeder(
   </div>
   $cambiosTopoHtml
   $netHtml
+  $netTrafosHtml
   <h2>Resumen de transferencias</h2>
   <div style="overflow-x:auto">
   <table class="tabla-sim" style="width:100%">

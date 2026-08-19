@@ -1152,7 +1152,9 @@ async function ejecutarSimulacion() {
 
   // Proyecto multi-alimentador: netea la simulación y fija el destino de guardado.
   // Explícito por el selector, o implícito cuando el destino es el propio feeder nuevo.
-  const proyectoSel = document.getElementById("sel-proyecto")?.value || "";
+  // En modo simple se ignora el selector (aunque tenga un valor viejo bajo un control oculto):
+  // adjuntar a proyecto cambia el resultado calculado y no pertenece a la vista rápida.
+  const proyectoSel = state.modoSimple ? "" : (document.getElementById("sel-proyecto")?.value || "");
   const proyecto = proyectoSel || (tipoDest === "nuevo" ? (body.feeder_nuevo_nombre || "") : "");
   if (proyecto) body.proyecto = proyecto;
 
@@ -1567,6 +1569,13 @@ function toggleModoSimple(on) {
   document.querySelectorAll("#chk-modo-simple, #chk-modo-simple-pie").forEach(chk => {
     if (chk) chk.checked = state.modoSimple;
   });
+  // En simple el destino es siempre un alimentador existente: se fuerza "Existente (Excel)"
+  // (oculta el panel de comisionamiento vía su handler) y se neutraliza "Adjuntar a proyecto"
+  // más abajo (gateo en el body de simular). El toggle y el selector se ocultan por CSS.
+  if (state.modoSimple) {
+    const rDest = document.getElementById("dest-excel");
+    if (rDest && !rDest.checked) { rDest.checked = true; rDest.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
   // Al reconstruir el dropdown de destino se aplica/retira el gateo de forzados
   // (si hay un origen ya seleccionado con vecinos LZ cargados).
   if (state.lzVecinos?.length && typeof _rebuildDropdownDestinos === "function") {

@@ -602,6 +602,78 @@ function _trafoLabel(trafo) {
   return "Transformador de potencia";
 }
 
+// Tabla transpuesta (métricas × meses) de un análisis de trafo (analizarTrafo / analizarTrafoMesAMes).
+// `titulo` = encabezado h6; `subtituloHtml` = línea opcional bajo el CN (badge de rol, feeders, etc.).
+function _trafoTablaTranspuestaHTML(t, titulo, subtituloHtml = "") {
+  if (!t) return "";
+  if (t.sin_datos) {
+    return `<div class="mt-3">
+      <h6 class="fw-semibold"><i class="bi bi-lightning me-1"></i>${titulo}</h6>
+      ${subtituloHtml ? `<div class="mb-1">${subtituloHtml}</div>` : ""}
+      <div class="alert alert-secondary py-2 mt-1 small">
+        <i class="bi bi-info-circle me-1"></i>Transformador encontrado pero sin datos de demanda.</div>
+    </div>`;
+  }
+  const cnStr = t.cn_trafo != null ? `CN = ${t.cn_trafo.toFixed(0)} A` : "CN no disponible";
+  const mesMax = t.mes_max_uso ? `Mes peor: <strong>${t.mes_max_uso}</strong> (${t.pct_max_uso?.toFixed(1)}%)` : "";
+  const _badgeClass  = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico" };
+  const _estadoLabel = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_datos: "—" };
+  const tTabla = t.tabla || [];
+  const worstTIdx = tTabla.reduce((best, r, i) =>
+    (r.uso_despues_pct || 0) > (tTabla[best]?.uso_despues_pct || 0) ? i : best, 0);
+  const W_TH_T = "border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000";
+  const W_TD_T = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
+  const tHead = `<tr>
+    <th class="py-1" style="min-width:140px;white-space:nowrap">Métrica</th>
+    ${tTabla.map((r, i) => `<th class="py-1 text-center" style="white-space:nowrap${i===worstTIdx?';'+W_TH_T:''}">${_mesLabel(r.mes)}</th>`).join("")}
+  </tr>`;
+  const tMetricas = [
+    { key: "I_antes",        lbl: "I antes (A)",   fmt: v => v != null ? v.toFixed(1) : "—" },
+    { key: "I_despues",      lbl: "I después (A)", fmt: v => v != null ? v.toFixed(1) : "—" },
+    { lbl: "Δ (A)",          isDelta: true },
+    { key: "uso_antes_pct",  lbl: "FU antes (%)",  fmt: v => v != null ? v.toFixed(1) + "%" : "—" },
+    { key: "uso_despues_pct",lbl: "FU después (%)",fmt: v => v != null ? v.toFixed(1) + "%" : "—", fu: true },
+    { key: "estado",         lbl: "Estado",         isEstado: true },
+  ];
+  const rowBgT = { viable: "#E8F7EE", prealerta: "#FEF3E2", critico: "#FCECEA" };
+  const tBody = tMetricas.map(m => {
+    const cells = tTabla.map((r, i) => {
+      const v = r[m.key]; const est = r.estado || "";
+      const wst = i === worstTIdx ? W_TD_T : "";
+      if (m.isEstado) {
+        const bg = rowBgT[est] || "";
+        const st = [bg ? `background:${bg}` : "", wst].filter(Boolean).join(";");
+        return `<td class="text-center" style="${st}"><span class="badge ${_badgeClass[est]||""}">${_estadoLabel[est]||est}</span></td>`;
+      }
+      if (m.isDelta) {
+        const dd = r.delta != null ? r.delta :
+                  (r.I_despues != null && r.I_antes != null) ? r.I_despues - r.I_antes : null;
+        const txt = dd != null ? (dd >= 0 ? "+" : "") + dd.toFixed(1) : "—";
+        return `<td class="text-center" style="${wst}">${txt}</td>`;
+      }
+      const fuBg = m.fu ? (rowBgT[est] || "") : "";
+      const st = [fuBg ? `background:${fuBg}` : "", wst].filter(Boolean).join(";");
+      return `<td class="text-center" style="${st}">${m.fmt(v)}</td>`;
+    }).join("");
+    return `<tr><td class="fw-semibold small" style="white-space:nowrap;background:#f8f9fa">${m.lbl}</td>${cells}</tr>`;
+  }).join("");
+  return `
+  <div class="mt-3">
+    <h6 class="fw-semibold"><i class="bi bi-lightning me-1"></i>${titulo}</h6>
+    ${subtituloHtml ? `<div class="mb-1">${subtituloHtml}</div>` : ""}
+    <div class="d-flex gap-3 align-items-baseline mb-1">
+      <span class="text-muted small">${cnStr}</span>
+      <span class="text-muted small">${mesMax}</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table tabla-sim mb-0" style="font-size:.78rem">
+        <thead>${tHead}</thead>
+        <tbody>${tBody}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 function renderTrafos(trafoOrig, trafoDest, nomOrig = "Origen", nomDest = "Destino") {
   const sec = document.getElementById("sec-trafos");
   const secOrig = document.getElementById("trafo-orig-section");
@@ -1866,73 +1938,25 @@ async function verDetalleFeeder(nombre) {
          </details>`
       : "";
 
-    // Cargabilidad del transformador de potencia asociado al feeder
-    let trafoHTML = "";
-    if (d.trafo) {
-      const t = d.trafo;
-      if (t.sin_datos) {
-        trafoHTML = `<div class="alert alert-secondary py-2 mt-3 small">
-          <i class="bi bi-info-circle me-1"></i>Transformador encontrado pero sin datos de demanda.</div>`;
-      } else {
-        const cnStr = t.cn_trafo != null ? `CN = ${t.cn_trafo.toFixed(0)} A` : "CN no disponible";
-        const mesMax = t.mes_max_uso ? `Mes peor: <strong>${t.mes_max_uso}</strong> (${t.pct_max_uso?.toFixed(1)}%)` : "";
-        const _badgeClass  = { viable: "badge-viable", prealerta: "badge-prealerta", critico: "badge-critico" };
-        const _estadoLabel = { viable: "Viable", prealerta: "Prealerta", critico: "Crítico", sin_datos: "—" };
-        // Tabla transpuesta: filas = métricas, columnas = meses
-        const tTabla = t.tabla || [];
-        const worstTIdx = tTabla.reduce((best, r, i) =>
-          (r.uso_despues_pct || 0) > (tTabla[best]?.uso_despues_pct || 0) ? i : best, 0);
-        const W_TH_T = "border-left:2px solid rgba(192,0,0,0.6);border-right:2px solid rgba(192,0,0,0.6);background:rgba(231,76,60,0.12);font-weight:bold;color:#000";
-        const W_TD_T = "border-left:2px solid rgba(192,0,0,0.5);border-right:2px solid rgba(192,0,0,0.5);font-weight:bold;color:#000";
-        const tHead = `<tr>
-          <th class="py-1" style="min-width:140px;white-space:nowrap">Métrica</th>
-          ${tTabla.map((r, i) => `<th class="py-1 text-center" style="white-space:nowrap${i===worstTIdx?';'+W_TH_T:''}">${_mesLabel(r.mes)}</th>`).join("")}
-        </tr>`;
-        const tMetricas = [
-          { key: "I_antes",        lbl: "I antes (A)",   fmt: v => v != null ? v.toFixed(1) : "—" },
-          { key: "I_despues",      lbl: "I después (A)", fmt: v => v != null ? v.toFixed(1) : "—" },
-          { lbl: "Δ (A)",          isDelta: true },
-          { key: "uso_antes_pct",  lbl: "FU antes (%)",  fmt: v => v != null ? v.toFixed(1) + "%" : "—" },
-          { key: "uso_despues_pct",lbl: "FU después (%)",fmt: v => v != null ? v.toFixed(1) + "%" : "—", fu: true },
-          { key: "estado",         lbl: "Estado",         isEstado: true },
-        ];
-        const rowBgT = { viable: "#E8F7EE", prealerta: "#FEF3E2", critico: "#FCECEA" };
-        const tBody = tMetricas.map(m => {
-          const cells = tTabla.map((r, i) => {
-            const v = r[m.key]; const est = r.estado || "";
-            const wst = i === worstTIdx ? W_TD_T : "";
-            if (m.isEstado) {
-              const bg = rowBgT[est] || "";
-              const st = [bg ? `background:${bg}` : "", wst].filter(Boolean).join(";");
-              return `<td class="text-center" style="${st}"><span class="badge ${_badgeClass[est]||""}">${_estadoLabel[est]||est}</span></td>`;
-            }
-            if (m.isDelta) {
-              const d = r.delta != null ? r.delta :
-                        (r.I_despues != null && r.I_antes != null) ? r.I_despues - r.I_antes : null;
-              const txt = d != null ? (d >= 0 ? "+" : "") + d.toFixed(1) : "—";
-              return `<td class="text-center" style="${wst}">${txt}</td>`;
-            }
-            const fuBg = m.fu ? (rowBgT[est] || "") : "";
-            const st = [fuBg ? `background:${fuBg}` : "", wst].filter(Boolean).join(";");
-            return `<td class="text-center" style="${st}">${m.fmt(v)}</td>`;
-          }).join("");
-          return `<tr><td class="fw-semibold small" style="white-space:nowrap;background:#f8f9fa">${m.lbl}</td>${cells}</tr>`;
-        }).join("");
-        trafoHTML = `
-        <div class="mt-3">
-          <h6 class="fw-semibold"><i class="bi bi-lightning me-1"></i>${_trafoLabel(t)}</h6>
-          <div class="d-flex gap-3 align-items-baseline mb-1">
-            <span class="text-muted small">${cnStr}</span>
-            <span class="text-muted small">${mesMax}</span>
-          </div>
-          <div style="overflow-x:auto">
-            <table class="table tabla-sim mb-0" style="font-size:.78rem">
-              <thead>${tHead}</thead>
-              <tbody>${tBody}</tbody>
-            </table>
-          </div>
-        </div>`;
-      }
+    // Cargabilidad del transformador de potencia asociado al feeder (PUSER)
+    let trafoHTML = d.trafo ? _trafoTablaTranspuestaHTML(d.trafo, _trafoLabel(d.trafo)) : "";
+
+    // Trafos NETOS de los alimentadores existentes tocados por el proyecto (multi-alim).
+    const _rolLblTrafo = { nuevo: "nuevo", receptor: "recibe", donante: "cede", mixto: "cede + recibe" };
+    const _rolBgTrafo  = { receptor: "#E8F7EE", donante: "#EAF2FB", mixto: "#FEF3E2" };
+    if (Array.isArray(d.trafos_neto) && d.trafos_neto.length) {
+      trafoHTML += `<div class="mt-4"><h6 class="fw-semibold text-muted mb-1">
+        <i class="bi bi-diagram-3 me-1"></i>Transformadores involucrados (neto del proyecto)</h6></div>`;
+      trafoHTML += d.trafos_neto.map(blk => {
+        const titulo = blk.barra || "Transformador";
+        const rol    = blk.rol || "";
+        const feeders = Array.isArray(blk.feeders) ? blk.feeders.join(", ") : "";
+        const badge  = rol
+          ? `<span class="badge" style="background:${_rolBgTrafo[rol]||'#eee'};color:#333;font-weight:600">${_rolLblTrafo[rol]||rol}</span>`
+          : "";
+        const sub = `<span class="text-muted small">${feeders}</span> ${badge}`;
+        return _trafoTablaTranspuestaHTML(blk, titulo, sub);
+      }).join("");
     }
 
     const modalHTML = `
